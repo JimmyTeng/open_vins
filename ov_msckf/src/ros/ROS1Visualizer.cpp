@@ -480,7 +480,7 @@ void ROS1Visualizer::callback_inertial(const sensor_msgs::Imu::ConstPtr &msg) {
         camera_queue.pop_front();
         auto rT0_2 = boost::posix_time::microsec_clock::local_time();
         double time_total = (rT0_2 - rT0_1).total_microseconds() * 1e-6;
-        PRINT_INFO(BLUE "[TIME]: %.4f seconds total (%.1f hz, %.2f ms behind)\n" RESET, time_total, 1.0 / time_total, update_dt);
+        // PRINT_INFO(BLUE "[TIME]: %.4f seconds total (%.1f hz, %.2f ms behind)\n" RESET, time_total, 1.0 / time_total, update_dt);  // Temporarily disabled
       }
     }
     thread_update_running = false;
@@ -500,7 +500,28 @@ void ROS1Visualizer::callback_monocular(const sensor_msgs::ImageConstPtr &msg0, 
   // Check if we should drop this image
   double timestamp = msg0->header.stamp.toSec();
   double time_delta = 1.0 / _app->get_params().track_frequency;
+  
+  // Print timestamp information for debugging
+  static int image_count = 0;
+  image_count++;
+  double time_interval = 0.0;
+  if (camera_last_timestamp.find(cam_id0) != camera_last_timestamp.end()) {
+    time_interval = timestamp - camera_last_timestamp.at(cam_id0);
+  }
+  
+  // Print every image or every 10th image after first 5
+  bool should_print = (image_count <= 5) || (image_count % 10 == 0);
+  if (should_print) {
+    PRINT_INFO(CYAN "[CAM%d] Image #%d - timestamp: %.6f sec, interval: %.6f sec (%.2f Hz), time_delta_thresh: %.6f sec\n" RESET,
+               cam_id0, image_count, timestamp, time_interval, 
+               (time_interval > 0 ? 1.0/time_interval : 0.0), time_delta);
+  }
+  
   if (camera_last_timestamp.find(cam_id0) != camera_last_timestamp.end() && timestamp < camera_last_timestamp.at(cam_id0) + time_delta) {
+    if (should_print) {
+      PRINT_INFO(YELLOW "[CAM%d] Image dropped - timestamp too close (%.6f < %.6f)\n" RESET,
+                 cam_id0, timestamp - camera_last_timestamp.at(cam_id0), time_delta);
+    }
     return;
   }
   camera_last_timestamp[cam_id0] = timestamp;

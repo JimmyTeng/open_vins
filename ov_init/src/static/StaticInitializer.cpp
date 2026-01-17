@@ -37,8 +37,13 @@ using namespace ov_init;
 bool StaticInitializer::initialize(double &timestamp, Eigen::MatrixXd &covariance, std::vector<std::shared_ptr<Type>> &order,
                                    std::shared_ptr<IMU> t_imu, bool wait_for_jerk) {
 
+  PRINT_INFO(CYAN "========================================\n" RESET);
+  PRINT_INFO(CYAN "[INIT-S] Static Initialization STARTED\n" RESET);
+  PRINT_INFO(CYAN "========================================\n" RESET);
+
   // Return if we don't have any measurements
   if (imu_data->size() < 2) {
+    PRINT_INFO(YELLOW "[INIT-S] Static Initialization FAILED: not enough IMU measurements\n" RESET);
     return false;
   }
 
@@ -49,6 +54,7 @@ bool StaticInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarianc
   // Return if we don't have enough for two windows
   if (newesttime - oldesttime < params.init_window_time) {
     PRINT_INFO(YELLOW "[init-s]: unable to select window of IMU readings, not enough readings\n" RESET);
+    PRINT_INFO(YELLOW "[INIT-S] Static Initialization FAILED: not enough time window\n" RESET);
     return false;
   }
 
@@ -66,6 +72,7 @@ bool StaticInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarianc
   // Return if both of these failed
   if (window_1to0.size() < 2 || window_2to1.size() < 2) {
     PRINT_INFO(YELLOW "[init-s]: unable to select window of IMU readings, not enough readings\n" RESET);
+    PRINT_INFO(YELLOW "[INIT-S] Static Initialization FAILED: window selection failed\n" RESET);
     return false;
   }
 
@@ -100,6 +107,7 @@ bool StaticInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarianc
   // If it is below the threshold and we want to wait till we detect a jerk
   if (a_var_1to0 < params.init_imu_thresh && wait_for_jerk) {
     PRINT_INFO(YELLOW "[init-s]: no IMU excitation, below threshold %.3f < %.3f\n" RESET, a_var_1to0, params.init_imu_thresh);
+    PRINT_INFO(YELLOW "[INIT-S] Static Initialization FAILED: no IMU excitation\n" RESET);
     return false;
   }
 
@@ -107,6 +115,7 @@ bool StaticInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarianc
   // This is the case when we have started up moving, and thus we need to wait for a period of stationary motion
   if (a_var_2to1 > params.init_imu_thresh && wait_for_jerk) {
     PRINT_INFO(YELLOW "[init-s]: to much IMU excitation, above threshold %.3f > %.3f\n" RESET, a_var_2to1, params.init_imu_thresh);
+    PRINT_INFO(YELLOW "[INIT-S] Static Initialization FAILED: too much IMU excitation\n" RESET);
     return false;
   }
 
@@ -159,6 +168,10 @@ bool StaticInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarianc
   // covariance(2, 2) = std::pow(1e-4, 2);
   // covariance.block(0, 0, 3, 3) = R_GtoI * covariance.block(0, 0, 3, 3) * R_GtoI.transpose();
   // covariance.block(3, 3, 3, 3) = std::pow(1e-3, 2) * Eigen::Matrix3d::Identity();
+
+  PRINT_INFO(CYAN "========================================\n" RESET);
+  PRINT_INFO(CYAN "[INIT-S] Static Initialization SUCCESS\n" RESET);
+  PRINT_INFO(CYAN "========================================\n" RESET);
 
   // Return :D
   return true;

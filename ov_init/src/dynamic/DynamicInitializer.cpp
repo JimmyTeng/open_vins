@@ -45,6 +45,10 @@ bool DynamicInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarian
                                     std::shared_ptr<ov_type::IMU> &_imu, std::map<double, std::shared_ptr<ov_type::PoseJPL>> &_clones_IMU,
                                     std::unordered_map<size_t, std::shared_ptr<ov_type::Landmark>> &_features_SLAM) {
 
+  PRINT_INFO(CYAN "========================================\n" RESET);
+  PRINT_INFO(CYAN "[INIT-D] Dynamic Initialization STARTED\n" RESET);
+  PRINT_INFO(CYAN "========================================\n" RESET);
+
   // Get the newest and oldest timestamps we will try to initialize between!
   auto rT1 = boost::posix_time::microsec_clock::local_time();
   double newest_cam_time = -1;
@@ -57,6 +61,7 @@ bool DynamicInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarian
   }
   double oldest_time = newest_cam_time - params.init_window_time;
   if (newest_cam_time < 0 || oldest_time < 0) {
+    PRINT_INFO(YELLOW "[INIT-D] Dynamic Initialization FAILED: invalid timestamps\n" RESET);
     return false;
   }
 
@@ -72,12 +77,17 @@ bool DynamicInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarian
   if (_db->get_internal_data().size() < 0.75 * params.init_max_features) {
     PRINT_WARNING(RED "[init-d]: only %zu valid features of required (%.0f thresh)!!\n" RESET, _db->get_internal_data().size(),
                   0.95 * params.init_max_features);
+    PRINT_INFO(YELLOW "[init-d-debug]: Feature database check failed - have %zu features, need %.0f\n" RESET, 
+               _db->get_internal_data().size(), 0.75 * params.init_max_features);
     return false;
   }
   if (imu_data->size() < 2 || !have_old_imu_readings) {
-    // PRINT_WARNING(RED "[init-d]: waiting for window to reach full size (%zu imu readings)!!\n" RESET, imu_data->size());
+    PRINT_INFO(YELLOW "[init-d-debug]: IMU data check failed - imu_data->size()=%zu, have_old_imu_readings=%d\n" RESET, 
+               imu_data->size(), have_old_imu_readings);
     return false;
   }
+  PRINT_INFO(CYAN "[init-d-debug]: Initial checks passed - features: %zu, IMU readings: %zu\n" RESET, 
+             _db->get_internal_data().size(), imu_data->size());
 
   // Now we will make a copy of our features here
   // We do this to ensure that the feature database can continue to have new
@@ -156,11 +166,71 @@ bool DynamicInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarian
   // Return if we do not have our full window or not enough measurements
   // Also check that we have enough features to initialize with
   if ((int)map_camera_times.size() < params.init_dyn_num_pose) {
+    PRINT_INFO(YELLOW "[init-d-debug]: Not enough camera poses - have %zu, need %d\n" RESET, 
+               map_camera_times.size(), params.init_dyn_num_pose);
+    // Print timestamp information for debugging
+    if (map_camera_times.size() > 0) {
+      PRINT_INFO(YELLOW "[init-d-debug]: Camera pose timestamps collected:\n" RESET);
+      int idx = 0;
+      for (auto const &timepair : map_camera_times) {
+        double time_relative = timepair.first - oldest_camera_time;
+        PRINT_INFO(YELLOW "  [%d] timestamp: %.6f sec, relative: %.6f sec\n" RESET, 
+                   idx++, timepair.first, time_relative);
+      }
+      if (map_camera_times.size() > 1) {
+        auto it = map_camera_times.begin();
+        double first_time = it->first;
+        ++it;
+        double second_time = it->first;
+        double time_interval = second_time - first_time;
+        PRINT_INFO(YELLOW "[init-d-debug]: First two timestamps interval: %.6f sec (required: >= %.6f sec)\n" RESET,
+                   time_interval, pose_dt_avg);
+      }
+    }
+    PRINT_INFO(YELLOW "[init-d-debug]: pose_dt_avg threshold: %.6f sec, init_window_time: %.2f sec\n" RESET,
+               pose_dt_avg, params.init_window_time);
     return false;
   }
   if (count_valid_features < min_valid_features) {
     PRINT_WARNING(RED "[init-d]: only %zu valid features of required %d!!\n" RESET, count_valid_features, min_valid_features);
+    PRINT_INFO(YELLOW "[init-d-debug]: Feature validation failed - valid: %d, required: %d, min_num_meas: %d\n" RESET, 
+               count_valid_features, min_valid_features, min_num_meas_to_optimize);
+    // Print statistics about features
+    int feat_with_enough_meas = 0;
+    for (auto const &feat : features) {
+      if (map_features_num_meas[feat.first] >= min_num_meas_to_optimize) {
+        feat_with_enough_meas++;
+      }
+    }
+    PRINT_INFO(YELLOW "[init-d-debug]: Features with enough measurements: %d / %zu\n" RESET, 
+               feat_with_enough_meas, features.size());
     return false;
+  }
+  PRINT_INFO(CYAN "[init-d-debug]: Feature validation passed - valid features: %d, camera poses: %zu, measurements: %d\n" RESET, 
+             count_valid_features, map_camera_times.size(), num_measurements);
+  // Print camera pose timestamps for debugging
+  PRINT_INFO(CYAN "[init-d-debug]: Camera pose timestamps (total %zu):\n" RESET, map_camera_times.size());
+  int idx = 0;
+  for (auto const &timepair : map_camera_times) {
+    double time_relative = timepair.first - oldest_camera_time;
+    double time_from_newest = newest_cam_time - timepair.first;
+    PRINT_INFO(CYAN "  [%d] timestamp: %.6f sec, relative: %.6f sec, from_newest: %.6f sec\n" RESET,
+               idx++, timepair.first, time_relative, time_from_newest);
+  }
+  if (map_camera_times.size() > 1) {
+    auto it = map_camera_times.begin();
+    double prev_time = it->first;
+    ++it;
+    PRINT_INFO(CYAN "[init-d-debug]: Timestamp intervals:\n" RESET);
+    int interval_idx = 0;
+    for (; it != map_camera_times.end(); ++it) {
+      double interval = it->first - prev_time;
+      PRINT_INFO(CYAN "  [%d->%d] interval: %.6f sec (required: >= %.6f sec) %s\n" RESET,
+                 interval_idx, interval_idx+1, interval, pose_dt_avg,
+                 (interval >= pose_dt_avg ? "✓" : "✗"));
+      prev_time = it->first;
+      interval_idx++;
+    }
   }
 
   // Bias initial guesses specified by the launch file
@@ -232,8 +302,12 @@ bool DynamicInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarian
   int system_size = size_feature * num_features + 3 + 3;
 
   // Make sure we have enough measurements to fully constrain the system
+  PRINT_INFO(CYAN "[init-d-debug]: System size check - measurements: %d, system_size: %d, features: %d\n" RESET, 
+             num_measurements, system_size, num_features);
   if (num_measurements < system_size) {
     PRINT_WARNING(YELLOW "[init-d]: not enough feature measurements (%d meas vs %d state size)!\n" RESET, num_measurements, system_size);
+    PRINT_INFO(YELLOW "[init-d-debug]: Measurement constraint failed - need %d measurements for %d states\n" RESET, 
+               system_size, system_size);
     return false;
   }
 
@@ -479,6 +553,8 @@ bool DynamicInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarian
   }
   PRINT_INFO("[init-d]: gravity in I0 was %.3f,%.3f,%.3f and |g| = %.4f\n", gravity_inI0(0), gravity_inI0(1), gravity_inI0(2),
              gravity_inI0.norm());
+  PRINT_INFO(CYAN "[init-d-debug]: MLE optimization completed - velocity: |v|=%.4f, gravity: |g|=%.4f\n" RESET,
+             v_I0inI0.norm(), gravity_inI0.norm());
   auto rT4 = boost::posix_time::microsec_clock::local_time();
 
   // ======================================================
@@ -517,9 +593,19 @@ bool DynamicInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarian
   // Recover the features in the first IMU frame
   count_valid_features = 0;
   std::map<size_t, Eigen::Vector3d> features_inI0;
+  int total_features_checked = 0;
+  int features_behind_camera = 0;
+  int features_with_insufficient_meas = 0;
+  
+  PRINT_INFO(CYAN "[init-d-debug]: Starting feature recovery after MLE - checking %zu features\n" RESET, features.size());
+  
   for (auto const &feat : features) {
-    if (map_features_num_meas[feat.first] < min_num_meas_to_optimize)
+    if (map_features_num_meas[feat.first] < min_num_meas_to_optimize) {
+      features_with_insufficient_meas++;
       continue;
+    }
+    total_features_checked++;
+    
     Eigen::Vector3d p_FinI0;
     if (size_feature == 1) {
       assert(false);
@@ -528,23 +614,56 @@ bool DynamicInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarian
     } else {
       p_FinI0 = x_hat.block(size_feature * A_index_features.at(feat.first), 0, 3, 1);
     }
+    
     bool is_behind = false;
+    Eigen::Vector3d p_FinC0_last;
     for (auto const &camtime : feat.second->timestamps) {
       size_t cam_id = camtime.first;
       Eigen::Vector4d q_ItoC = params.camera_extrinsics.at(cam_id).block(0, 0, 4, 1);
       Eigen::Vector3d p_IinC = params.camera_extrinsics.at(cam_id).block(4, 0, 3, 1);
-      Eigen::Vector3d p_FinC0 = quat_2_Rot(q_ItoC) * p_FinI0 + p_IinC;
+      Eigen::Matrix3d R_ItoC = quat_2_Rot(q_ItoC);
+      Eigen::Vector3d p_FinC0 = R_ItoC * p_FinI0 + p_IinC;
+      p_FinC0_last = p_FinC0;
+      
       if (p_FinC0(2) < 0) {
         is_behind = true;
+        if (total_features_checked <= 5) {  // Print first 5 features for debugging
+          PRINT_INFO(YELLOW "[init-d-debug]: Feature %zu behind camera - p_FinI0=(%.3f,%.3f,%.3f), p_FinC0=(%.3f,%.3f,%.3f), z=%.3f\n" RESET,
+                     feat.first, p_FinI0(0), p_FinI0(1), p_FinI0(2), 
+                     p_FinC0(0), p_FinC0(1), p_FinC0(2), p_FinC0(2));
+        }
       }
     }
-    if (!is_behind) {
+    
+    if (is_behind) {
+      features_behind_camera++;
+    } else {
       features_inI0.insert({feat.first, p_FinI0});
       count_valid_features++;
+      if (count_valid_features <= 3) {  // Print first 3 valid features
+        PRINT_INFO(GREEN "[init-d-debug]: Valid feature %zu - p_FinI0=(%.3f,%.3f,%.3f), p_FinC0=(%.3f,%.3f,%.3f)\n" RESET,
+                   feat.first, p_FinI0(0), p_FinI0(1), p_FinI0(2),
+                   p_FinC0_last(0), p_FinC0_last(1), p_FinC0_last(2));
+      }
     }
   }
+  
+  PRINT_INFO(YELLOW "[init-d-debug]: Feature recovery summary:\n" RESET);
+  PRINT_INFO(YELLOW "  - Total features: %zu\n" RESET, features.size());
+  PRINT_INFO(YELLOW "  - Features with insufficient measurements: %d\n" RESET, features_with_insufficient_meas);
+  PRINT_INFO(YELLOW "  - Features checked: %d\n" RESET, total_features_checked);
+  PRINT_INFO(YELLOW "  - Features behind camera: %d\n" RESET, features_behind_camera);
+  PRINT_INFO(YELLOW "  - Valid features: %d (required: %d)\n" RESET, count_valid_features, min_valid_features);
+  
   if (count_valid_features < min_valid_features) {
     PRINT_ERROR(YELLOW "[init-d]: not enough features for our mle (%zu < %d)!\n" RESET, count_valid_features, min_valid_features);
+    // Print camera extrinsics for debugging
+    for (auto const &ext : params.camera_extrinsics) {
+      Eigen::Vector4d q_ItoC = ext.second.block(0, 0, 4, 1);
+      Eigen::Vector3d p_IinC = ext.second.block(4, 0, 3, 1);
+      PRINT_INFO(YELLOW "[init-d-debug]: Camera %zu extrinsics - q_ItoC=(%.4f,%.4f,%.4f,%.4f), p_IinC=(%.4f,%.4f,%.4f)\n" RESET,
+                 ext.first, q_ItoC(0), q_ItoC(1), q_ItoC(2), q_ItoC(3), p_IinC(0), p_IinC(1), p_IinC(2));
+    }
     return false;
   }
 
@@ -1103,5 +1222,9 @@ bool DynamicInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarian
   PRINT_DEBUG("[TIME]: %.4f sec for ceres covariance\n", (rT7 - rT6).total_microseconds() * 1e-6);
   PRINT_DEBUG("[TIME]: %.4f sec total for initialization\n", (rT7 - rT1).total_microseconds() * 1e-6);
   free_state_memory();
+  
+  PRINT_INFO(CYAN "========================================\n" RESET);
+  PRINT_INFO(CYAN "[INIT-D] Dynamic Initialization SUCCESS\n" RESET);
+  PRINT_INFO(CYAN "========================================\n" RESET);
   return true;
 }

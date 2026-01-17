@@ -47,6 +47,10 @@ using namespace ov_core;
 using namespace ov_type;
 using namespace ov_msckf;
 
+// Static variables for tracking statistics
+static size_t num_features_before_tracking = 0;
+static size_t num_features_after_tracking = 0;
+
 VioManager::VioManager(VioManagerOptions &params_) : thread_init_running(false), thread_init_success(false) {
 
   // Nice startup message
@@ -258,6 +262,24 @@ void VioManager::track_image_and_update(const ov_core::CameraData &message_const
   // Start timing
   rT1 = boost::posix_time::microsec_clock::local_time();
 
+  // Print timestamp information for debugging (especially during initialization)
+  static int processed_image_count = 0;
+  static double last_processed_timestamp = 0.0;
+  processed_image_count++;
+  double time_interval = 0.0;
+  if (last_processed_timestamp > 0.0) {
+    time_interval = message_const.timestamp - last_processed_timestamp;
+  }
+  last_processed_timestamp = message_const.timestamp;
+  
+  // Print during initialization phase or every 20th image
+  bool should_print = (!is_initialized_vio) || (processed_image_count % 20 == 0);
+  if (should_print) {
+    PRINT_INFO(CYAN "[VIO] Processing image #%d - timestamp: %.6f sec, interval: %.6f sec (%.2f Hz), initialized: %d\n" RESET,
+               processed_image_count, message_const.timestamp, time_interval,
+               (time_interval > 0 ? 1.0/time_interval : 0.0), (int)is_initialized_vio);
+  }
+
   // Assert we have valid measurement data and ids
   assert(!message_const.sensor_ids.empty());
   assert(message_const.sensor_ids.size() == message_const.images.size());
@@ -278,7 +300,30 @@ void VioManager::track_image_and_update(const ov_core::CameraData &message_const
   }
 
   // Perform our feature tracking!
+  // Get feature count before tracking (for tracking statistics)
+  num_features_before_tracking = trackFEATS->get_feature_database()->size();
   trackFEATS->feed_new_camera(message);
+  num_features_after_tracking = trackFEATS->get_feature_database()->size();
+  
+  // Get lost features for tracking statistics
+  // Use message timestamp to find features that were not tracked into this frame
+  std::vector<std::shared_ptr<Feature>> feats_lost_temp = 
+      trackFEATS->get_feature_database()->features_not_containing_newer(message.timestamp, false, true);
+  size_t num_features_lost_this_frame = feats_lost_temp.size();
+  
+  // Print tracking statistics for debugging
+  static int tracking_frame_count = 0;
+  tracking_frame_count++;
+  long num_features_new = (long)num_features_after_tracking - (long)num_features_before_tracking;
+  long net_change = (long)num_features_after_tracking - (long)num_features_before_tracking;
+  
+  // Print during initialization phase or every 20th frame
+  bool should_print_tracking = (!is_initialized_vio) || (tracking_frame_count % 20 == 0);
+  if (should_print_tracking) {
+    PRINT_INFO(CYAN "[TRACK] Frame #%d - Total: %zu, Lost: %zu, New: %ld, Net: %ld\n" RESET,
+               tracking_frame_count, num_features_after_tracking, num_features_lost_this_frame, 
+               num_features_new, net_change);
+  }
 
   // If the aruco tracker is available, the also pass to it
   // NOTE: binocular tracking for aruco doesn't make sense as we by default have the ids
@@ -367,6 +412,23 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
   // We explicitly request features that have not been deleted (used) in another update step
   std::vector<std::shared_ptr<Feature>> feats_lost, feats_marg, feats_slam;
   feats_lost = trackFEATS->get_feature_database()->features_not_containing_newer(state->_timestamp, false, true);
+  
+  // Print tracking statistics for debugging
+  static int tracking_update_count = 0;
+  tracking_update_count++;
+  size_t num_features_current = trackFEATS->get_feature_database()->size();
+  size_t num_features_lost = feats_lost.size();
+  
+  // Calculate new features and net change (using static variables from tracking step)
+  long num_features_new = (long)num_features_after_tracking - (long)num_features_before_tracking;
+  long net_change = (long)num_features_after_tracking - (long)num_features_before_tracking;
+  
+  // Print during initialization phase or every 20th frame
+  bool should_print_tracking = (!is_initialized_vio) || (tracking_update_count % 20 == 0);
+  if (should_print_tracking) {
+    PRINT_INFO(CYAN "[TRACK] Update #%d - Total features: %zu, Lost: %zu, New: %ld, Net change: %ld\n" RESET,
+               tracking_update_count, num_features_current, num_features_lost, num_features_new, net_change);
+  }
 
   // Don't need to get the oldest features until we reach our max number of clones
   if ((int)state->_clones_IMU.size() > state->_options.max_clone_size || (int)state->_clones_IMU.size() > 5) {
@@ -651,11 +713,11 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
   timelastupdate = message.timestamp;
 
   // Debug, print our current state
-  PRINT_INFO("q_GtoI = %.3f,%.3f,%.3f,%.3f | p_IinG = %.3f,%.3f,%.3f | dist = %.2f (meters)\n", state->_imu->quat()(0),
-             state->_imu->quat()(1), state->_imu->quat()(2), state->_imu->quat()(3), state->_imu->pos()(0), state->_imu->pos()(1),
-             state->_imu->pos()(2), distance);
-  PRINT_INFO("bg = %.4f,%.4f,%.4f | ba = %.4f,%.4f,%.4f\n", state->_imu->bias_g()(0), state->_imu->bias_g()(1), state->_imu->bias_g()(2),
-             state->_imu->bias_a()(0), state->_imu->bias_a()(1), state->_imu->bias_a()(2));
+  // PRINT_INFO("q_GtoI = %.3f,%.3f,%.3f,%.3f | p_IinG = %.3f,%.3f,%.3f | dist = %.2f (meters)\n", state->_imu->quat()(0),
+  //            state->_imu->quat()(1), state->_imu->quat()(2), state->_imu->quat()(3), state->_imu->pos()(0), state->_imu->pos()(1),
+  //            state->_imu->pos()(2), distance);
+  // PRINT_INFO("bg = %.4f,%.4f,%.4f | ba = %.4f,%.4f,%.4f\n", state->_imu->bias_g()(0), state->_imu->bias_g()(1), state->_imu->bias_g()(2),
+  //            state->_imu->bias_a()(0), state->_imu->bias_a()(1), state->_imu->bias_a()(2));
 
   // Debug for camera imu offset
   if (state->_options.do_calib_camera_timeoffset) {
