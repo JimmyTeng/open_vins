@@ -43,116 +43,94 @@ class State;
 class Propagator;
 
 /**
- * @brief Will try to *detect* and then update using zero velocity assumption.
+ * @brief 尝试检测并使用零速度假设进行更新
  *
- * Consider the case that a VIO unit remains stationary for a period time.
- * Typically this can cause issues in a monocular system without SLAM features since no features can be triangulated.
- * Additional, if features could be triangulated (e.g. stereo) the quality can be poor and hurt performance.
- * If we can detect the cases where we are stationary then we can leverage this to prevent the need to do feature update during this period.
- * The main application would be using this on a **wheeled vehicle** which needs to stop (e.g. stop lights or parking).
+ * 考虑VIO单元在一段时间内保持静止的情况。
+ * 通常这会在没有SLAM特征的单目系统中引起问题，因为无法对特征进行三角化。
+ * 此外，即使特征可以被三角化（例如立体视觉），质量也可能很差并影响性能。
+ * 如果我们能够检测到静止的情况，就可以利用这一点来避免在此期间进行特征更新。
+ * 主要应用场景是在需要停止的**轮式车辆**上（例如红绿灯或停车）。
  */
 class UpdaterZeroVelocity {
 
 public:
   /**
-   * @brief Default constructor for our zero velocity detector and updater.
-   * @param options Updater options (chi2 multiplier)
-   * @param noises imu noise characteristics (continuous time)
-   * @param db Feature tracker database with all features in it
-   * @param prop Propagator class object which can predict the state forward in time
-   * @param gravity_mag Global gravity magnitude of the system (normally 9.81)
-   * @param zupt_max_velocity Max velocity we should consider to do a update with
-   * @param zupt_noise_multiplier Multiplier of our IMU noise matrix (default should be 1.0)
-   * @param zupt_max_disparity Max disparity we should consider to do a update with
+   * @brief 零速度检测器和更新器的默认构造函数
+   * @param options 更新器选项（chi2乘数）
+   * @param noises IMU噪声特性（连续时间）
+   * @param db 包含所有特征的特征跟踪器数据库
+   * @param prop 可以在时间上向前预测状态的传播器类对象
+   * @param gravity_mag 系统的全局重力大小（通常为9.81）
+   * @param zupt_max_velocity 进行更新时应考虑的最大速度
+   * @param zupt_noise_multiplier IMU噪声矩阵的乘数（默认应为1.0）
+   * @param zupt_max_disparity 进行更新时应考虑的最大视差
    */
   UpdaterZeroVelocity(UpdaterOptions &options, NoiseManager &noises, std::shared_ptr<ov_core::FeatureDatabase> db,
                       std::shared_ptr<Propagator> prop, double gravity_mag, double zupt_max_velocity, double zupt_noise_multiplier,
                       double zupt_max_disparity);
 
   /**
-   * @brief Feed function for inertial data
-   * @param message Contains our timestamp and inertial information
-   * @param oldest_time Time that we can discard measurements before
+   * @brief 惯性数据的输入函数
+   * @param message 包含时间戳和惯性信息的消息
+   * @param oldest_time 可以丢弃此时间之前的测量值
    */
-  void feed_imu(const ov_core::ImuData &message, double oldest_time = -1) {
-
-    // Append it to our vector
-    imu_data.emplace_back(message);
-
-    // Sort our imu data (handles any out of order measurements)
-    // std::sort(imu_data.begin(), imu_data.end(), [](const IMUDATA i, const IMUDATA j) {
-    //    return i.timestamp < j.timestamp;
-    //});
-
-    // Clean old measurements
-    // std::cout << "ZVUPT: imu_data.size() " << imu_data.size() << std::endl;
-    clean_old_imu_measurements(oldest_time - 0.10);
-  }
+  void feed_imu(const ov_core::ImuData &message, double oldest_time = -1);
 
   /**
-   * @brief This will remove any IMU measurements that are older then the given measurement time
-   * @param oldest_time Time that we can discard measurements before (in IMU clock)
+   * @brief 移除比给定测量时间更早的任何IMU测量值
+   * @param oldest_time 可以丢弃此时间之前的测量值（IMU时钟）
    */
-  void clean_old_imu_measurements(double oldest_time) {
-    if (oldest_time < 0)
-      return;
-    auto it0 = imu_data.begin();
-    while (it0 != imu_data.end()) {
-      if (it0->timestamp < oldest_time) {
-        it0 = imu_data.erase(it0);
-      } else {
-        it0++;
-      }
-    }
-  }
+  void clean_old_imu_measurements(double oldest_time);
 
   /**
-   * @brief Will first detect if the system is zero velocity, then will update.
-   * @param state State of the filter
-   * @param timestamp Next camera timestamp we want to see if we should propagate to.
-   * @return True if the system is currently at zero velocity
+   * @brief 首先检测系统是否为零速度，然后进行更新
+   * @param state 滤波器的状态
+   * @param timestamp 下一个相机时间戳，用于判断是否应该传播到该时间
+   * @return 如果系统当前处于零速度则返回true
    */
   bool try_update(std::shared_ptr<State> state, double timestamp);
 
 protected:
-  /// Options used during update (chi2 multiplier)
+
+  bool print_debug = false;
+  /// 更新期间使用的选项（chi2乘数）
   UpdaterOptions _options;
 
-  /// Container for the imu noise values
+  /// IMU噪声值的容器
   NoiseManager _noises;
 
-  /// Feature tracker database with all features in it
+  /// 包含所有特征的特征跟踪器数据库
   std::shared_ptr<ov_core::FeatureDatabase> _db;
 
-  /// Our propagator!
+  /// 状态传播器
   std::shared_ptr<Propagator> _prop;
 
-  /// Gravity vector
+  /// 重力向量
   Eigen::Vector3d _gravity;
 
-  /// Max velocity (m/s) that we should consider a zupt with
+  /// 进行零速度更新时应考虑的最大速度（m/s）
   double _zupt_max_velocity = 1.0;
 
-  /// Multiplier of our IMU noise matrix (default should be 1.0)
+  /// IMU噪声矩阵的乘数（默认应为1.0）
   double _zupt_noise_multiplier = 1.0;
 
-  /// Max disparity (pixels) that we should consider a zupt with
+  /// 进行零速度更新时应考虑的最大视差（像素）
   double _zupt_max_disparity = 1.0;
 
-  /// Chi squared 95th percentile table (lookup would be size of residual)
+  /// 卡方分布95百分位表（查找键为残差的大小）
   std::map<int, double> chi_squared_table;
 
-  /// Our history of IMU messages (time, angular, linear)
+  /// IMU消息历史记录（时间、角速度、线加速度）
   std::vector<ov_core::ImuData> imu_data;
 
-  /// Estimate for time offset at last propagation time
+  /// 上次传播时间的偏移估计
   double last_prop_time_offset = 0.0;
   bool have_last_prop_time_offset = false;
 
-  /// Last timestamp we did zero velocity update with
+  /// 上次进行零速度更新的时间戳
   double last_zupt_state_timestamp = 0.0;
 
-  /// Number of times we have called update
+  /// 调用更新的次数
   int last_zupt_count = 0;
 };
 

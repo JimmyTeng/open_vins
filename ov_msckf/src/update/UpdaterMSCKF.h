@@ -39,42 +39,42 @@ namespace ov_msckf {
 class State;
 
 /**
- * @brief Will compute the system for our sparse features and update the filter.
+ * @brief 计算稀疏特征系统并更新滤波器
  *
- * This class is responsible for computing the entire linear system for all features that are going to be used in an update.
- * This follows the original MSCKF, where we first triangulate features, we then nullspace project the feature Jacobian.
- * After this we compress all the measurements to have an efficient update and update the state.
+ * 此类负责计算用于更新的所有特征的整个线性系统。
+ * 这遵循原始MSCKF，首先对特征进行三角化，然后对特征雅可比矩阵进行零空间投影。
+ * 之后压缩所有测量值以实现高效更新并更新状态。
  */
 class UpdaterMSCKF {
 
 public:
   /**
-   * @brief Default constructor for our MSCKF updater
+   * @brief MSCKF更新器的默认构造函数
    *
-   * Our updater has a feature initializer which we use to initialize features as needed.
-   * Also the options allow for one to tune the different parameters for update.
+   * 更新器具有特征初始化器，用于根据需要初始化特征。
+   * 选项允许调整更新的不同参数。
    *
-   * @param options Updater options (include measurement noise value)
-   * @param feat_init_options Feature initializer options
+   * @param options 更新器选项（包括测量噪声值）
+   * @param feat_init_options 特征初始化器选项
    */
   UpdaterMSCKF(UpdaterOptions &options, ov_core::FeatureInitializerOptions &feat_init_options);
 
   /**
-   * @brief Given tracked features, this will try to use them to update the state.
+   * @brief 给定跟踪的特征，尝试使用它们更新状态
    *
-   * @param state State of the filter
-   * @param feature_vec Features that can be used for update
+   * @param state 滤波器的状态
+   * @param feature_vec 可用于更新的特征
    */
   void update(std::shared_ptr<State> state, std::vector<std::shared_ptr<ov_core::Feature>> &feature_vec);
 
 protected:
-  /// Options used during update
+  /// 更新期间使用的选项
   UpdaterOptions _options;
 
-  /// Feature initializer class object
+  /// 特征初始化器类对象
   std::shared_ptr<ov_core::FeatureInitializer> initializer_feat;
 
-  /// Chi squared 95th percentile table (lookup would be size of residual)
+  /// 卡方分布95百分位表（查找键为残差的大小）
   std::map<int, double> chi_squared_table;
 };
 

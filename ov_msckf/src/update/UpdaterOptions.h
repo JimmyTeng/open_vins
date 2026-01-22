@@ -27,20 +27,20 @@
 namespace ov_msckf {
 
 /**
- * @brief Struct which stores general updater options
+ * @brief 存储通用更新器选项的结构体
  */
 struct UpdaterOptions {
 
-  /// What chi-squared multipler we should apply
+  /// 应该应用的卡方乘数
   double chi2_multipler = 5;
 
-  /// Noise sigma for our raw pixel measurements
+  /// 原始像素测量的噪声标准差
   double sigma_pix = 1;
 
-  /// Covariance for our raw pixel measurements
+  /// 原始像素测量的协方差
   double sigma_pix_sq = 1;
 
-  /// Nice print function of what parameters we have loaded
+  /// 打印已加载参数的函数
   void print() {
     PRINT_DEBUG("    - chi2_multipler: %.1f\n", chi2_multipler);
     PRINT_DEBUG("    - sigma_pix: %.2f\n", sigma_pix);

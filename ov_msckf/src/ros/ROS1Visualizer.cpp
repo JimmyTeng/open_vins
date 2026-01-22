@@ -39,12 +39,15 @@ ROS1Visualizer::ROS1Visualizer(std::shared_ptr<ros::NodeHandle> nh, std::shared_
     : _nh(nh), _app(app), _sim(sim), thread_update_running(false) {
 
   // Setup our transform broadcaster
+  // 设置TF变换广播器
   mTfBr = std::make_shared<tf::TransformBroadcaster>();
 
   // Create image transport
+  // 创建图像传输对象
   image_transport::ImageTransport it(*_nh);
 
   // Setup pose and path publisher
+  // 设置位姿和路径发布者
   pub_poseimu = nh->advertise<geometry_msgs::PoseWithCovarianceStamped>("poseimu", 2);
   PRINT_DEBUG("Publishing: %s\n", pub_poseimu.getTopic().c_str());
   pub_odomimu = nh->advertise<nav_msgs::Odometry>("odomimu", 2);
@@ -53,6 +56,7 @@ ROS1Visualizer::ROS1Visualizer(std::shared_ptr<ros::NodeHandle> nh, std::shared_
   PRINT_DEBUG("Publishing: %s\n", pub_pathimu.getTopic().c_str());
 
   // 3D points publishing
+  // 3D点云发布
   pub_points_msckf = nh->advertise<sensor_msgs::PointCloud2>("points_msckf", 2);
   PRINT_DEBUG("Publishing: %s\n", pub_points_msckf.getTopic().c_str());
   pub_points_slam = nh->advertise<sensor_msgs::PointCloud2>("points_slam", 2);
@@ -63,16 +67,19 @@ ROS1Visualizer::ROS1Visualizer(std::shared_ptr<ros::NodeHandle> nh, std::shared_
   PRINT_DEBUG("Publishing: %s\n", pub_points_sim.getTopic().c_str());
 
   // Our tracking image
+  // 跟踪图像发布者
   it_pub_tracks = it.advertise("trackhist", 2);
   PRINT_DEBUG("Publishing: %s\n", it_pub_tracks.getTopic().c_str());
 
   // Groundtruth publishers
+  // 真值发布者
   pub_posegt = nh->advertise<geometry_msgs::PoseStamped>("posegt", 2);
   PRINT_DEBUG("Publishing: %s\n", pub_posegt.getTopic().c_str());
   pub_pathgt = nh->advertise<nav_msgs::Path>("pathgt", 2);
   PRINT_DEBUG("Publishing: %s\n", pub_pathgt.getTopic().c_str());
 
   // Loop closure publishers
+  // 回环闭合发布者
   pub_loop_pose = nh->advertise<nav_msgs::Odometry>("loop_pose", 2);
   pub_loop_point = nh->advertise<sensor_msgs::PointCloud>("loop_feats", 2);
   pub_loop_extrinsic = nh->advertise<nav_msgs::Odometry>("loop_extrinsic", 2);
@@ -81,11 +88,14 @@ ROS1Visualizer::ROS1Visualizer(std::shared_ptr<ros::NodeHandle> nh, std::shared_
   it_pub_loop_img_depth_color = it.advertise("loop_depth_colored", 2);
 
   // option to enable publishing of global to IMU transformation
+  // 启用发布全局到IMU变换的选项
   nh->param<bool>("publish_global_to_imu_tf", publish_global2imu_tf, true);
   nh->param<bool>("publish_calibration_tf", publish_calibration_tf, true);
 
   // Load groundtruth if we have it and are not doing simulation
   // NOTE: needs to be a csv ASL format file
+  // 如果存在真值且不在仿真，则加载真值
+  // 注意：需要是CSV ASL格式文件
   if (nh->hasParam("path_gt") && _sim == nullptr) {
     std::string path_to_gt;
     nh->param<std::string>("path_gt", path_to_gt, "");
@@ -97,6 +107,8 @@ ROS1Visualizer::ROS1Visualizer(std::shared_ptr<ros::NodeHandle> nh, std::shared_
 
   // Load if we should save the total state to file
   // If so, then open the file and create folders as needed
+  // 加载是否应该将总状态保存到文件
+  // 如果是，则打开文件并按需创建文件夹
   nh->param<bool>("save_total_state", save_total_state, false);
   if (save_total_state) {
 
@@ -136,6 +148,7 @@ ROS1Visualizer::ROS1Visualizer(std::shared_ptr<ros::NodeHandle> nh, std::shared_
   }
 
   // Start thread for the image publishing
+  // 启动图像发布线程
   if (_app->get_params().use_multi_threading_pubs) {
     std::thread thread([&] {
       ros::Rate loop_rate(20);
@@ -151,45 +164,53 @@ ROS1Visualizer::ROS1Visualizer(std::shared_ptr<ros::NodeHandle> nh, std::shared_
 void ROS1Visualizer::setup_subscribers(std::shared_ptr<ov_core::YamlParser> parser) {
 
   // We need a valid parser
+  // 需要有效的解析器
   assert(parser != nullptr);
 
   // Create imu subscriber (handle legacy ros param info)
+  // 创建IMU订阅者（处理遗留的ROS参数信息）
   std::string topic_imu;
   _nh->param<std::string>("topic_imu", topic_imu, "/imu0");
   parser->parse_external("relative_config_imu", "imu0", "rostopic", topic_imu);
   sub_imu = _nh->subscribe(topic_imu, 1000, &ROS1Visualizer::callback_inertial, this);
-  PRINT_INFO("subscribing to IMU: %s\n", topic_imu.c_str());
+  PRINT_INFO("[ROS1Visualizer] 订阅IMU: %s\n", topic_imu.c_str());
 
   // Logic for sync stereo subscriber
   // https://answers.ros.org/question/96346/subscribe-to-two-image_raws-with-one-function/?answer=96491#post-id-96491
+  // 同步双目订阅者的逻辑
   if (_app->get_params().state_options.num_cameras == 2) {
     // Read in the topics
+    // 读取话题名称
     std::string cam_topic0, cam_topic1;
     _nh->param<std::string>("topic_camera" + std::to_string(0), cam_topic0, "/cam" + std::to_string(0) + "/image_raw");
     _nh->param<std::string>("topic_camera" + std::to_string(1), cam_topic1, "/cam" + std::to_string(1) + "/image_raw");
     parser->parse_external("relative_config_imucam", "cam" + std::to_string(0), "rostopic", cam_topic0);
     parser->parse_external("relative_config_imucam", "cam" + std::to_string(1), "rostopic", cam_topic1);
     // Create sync filter (they have unique pointers internally, so we have to use move logic here...)
+    // 创建同步过滤器（内部使用唯一指针，所以这里必须使用移动逻辑）
     auto image_sub0 = std::make_shared<message_filters::Subscriber<sensor_msgs::Image>>(*_nh, cam_topic0, 1);
     auto image_sub1 = std::make_shared<message_filters::Subscriber<sensor_msgs::Image>>(*_nh, cam_topic1, 1);
     auto sync = std::make_shared<message_filters::Synchronizer<sync_pol>>(sync_pol(10), *image_sub0, *image_sub1);
     sync->registerCallback(boost::bind(&ROS1Visualizer::callback_stereo, this, _1, _2, 0, 1));
     // Append to our vector of subscribers
+    // 添加到订阅者向量
     sync_cam.push_back(sync);
     sync_subs_cam.push_back(image_sub0);
     sync_subs_cam.push_back(image_sub1);
-    PRINT_INFO("subscribing to cam (stereo): %s\n", cam_topic0.c_str());
-    PRINT_INFO("subscribing to cam (stereo): %s\n", cam_topic1.c_str());
+    PRINT_INFO("[ROS1Visualizer] 订阅双目相机: %s and %s\n", cam_topic0.c_str(), cam_topic1.c_str());
   } else {
     // Now we should add any non-stereo callbacks here
+    // 现在应该在这里添加非双目回调
     for (int i = 0; i < _app->get_params().state_options.num_cameras; i++) {
       // read in the topic
+      // 读取话题名称
       std::string cam_topic;
       _nh->param<std::string>("topic_camera" + std::to_string(i), cam_topic, "/cam" + std::to_string(i) + "/image_raw");
       parser->parse_external("relative_config_imucam", "cam" + std::to_string(i), "rostopic", cam_topic);
       // create subscriber
+      // 创建订阅者
       subs_cam.push_back(_nh->subscribe<sensor_msgs::Image>(cam_topic, 10, boost::bind(&ROS1Visualizer::callback_monocular, this, _1, i)));
-      PRINT_INFO("subscribing to cam (mono): %s\n", cam_topic.c_str());
+      PRINT_INFO("[ROS1Visualizer] 订阅单目相机: %s\n", cam_topic.c_str());
     }
   }
 }
@@ -197,41 +218,51 @@ void ROS1Visualizer::setup_subscribers(std::shared_ptr<ov_core::YamlParser> pars
 void ROS1Visualizer::visualize() {
 
   // Return if we have already visualized
+  // 如果已经可视化过，则返回
   if (last_visualization_timestamp == _app->get_state()->_timestamp && _app->initialized())
     return;
   last_visualization_timestamp = _app->get_state()->_timestamp;
 
   // Start timing
+  // 开始计时
   // boost::posix_time::ptime rT0_1, rT0_2;
   // rT0_1 = boost::posix_time::microsec_clock::local_time();
 
   // publish current image (only if not multi-threaded)
+  // 发布当前图像（仅在非多线程模式下）
   if (!_app->get_params().use_multi_threading_pubs)
     publish_images();
 
   // Return if we have not inited
+  // 如果未初始化，则返回
   if (!_app->initialized())
     return;
 
   // Save the start time of this dataset
+  // 保存数据集的开始时间
   if (!start_time_set) {
     rT1 = boost::posix_time::microsec_clock::local_time();
     start_time_set = true;
   }
 
   // publish state
+  // 发布状态
   publish_state();
 
   // publish points
+  // 发布特征点
   publish_features();
 
   // Publish gt if we have it
+  // 如果有真值，则发布
   publish_groundtruth();
 
   // Publish keyframe information
+  // 发布关键帧信息
   publish_loopclosure_information();
 
   // Save total state
+  // 保存总状态
   if (save_total_state) {
     ROSVisualizerHelper::sim_save_total_state_to_file(_app->get_state(), _sim, of_state_est, of_state_std, of_state_gt);
   }
@@ -245,10 +276,12 @@ void ROS1Visualizer::visualize() {
 void ROS1Visualizer::visualize_odometry(double timestamp) {
 
   // Return if we have not inited
+  // 如果未初始化，则返回
   if (!_app->initialized())
     return;
 
   // Get fast propagate state at the desired timestamp
+  // 在所需时间戳处获取快速传播的状态
   std::shared_ptr<State> state = _app->get_state();
   Eigen::Matrix<double, 13, 1> state_plus = Eigen::Matrix<double, 13, 1>::Zero();
   Eigen::Matrix<double, 12, 12> cov_plus = Eigen::Matrix<double, 12, 12>::Zero();
@@ -283,6 +316,7 @@ void ROS1Visualizer::visualize_odometry(double timestamp) {
   //  }
 
   // Publish our odometry message if requested
+  // 如果请求，则发布里程计消息
   if (pub_odomimu.getNumSubscribers() != 0) {
 
     nav_msgs::Odometry odomIinM;
@@ -290,6 +324,7 @@ void ROS1Visualizer::visualize_odometry(double timestamp) {
     odomIinM.header.frame_id = "global";
 
     // The POSE component (orientation and position)
+    // 位姿组件（方向和位置）
     odomIinM.pose.pose.orientation.x = state_plus(0);
     odomIinM.pose.pose.orientation.y = state_plus(1);
     odomIinM.pose.pose.orientation.z = state_plus(2);
@@ -299,6 +334,7 @@ void ROS1Visualizer::visualize_odometry(double timestamp) {
     odomIinM.pose.pose.position.z = state_plus(6);
 
     // The TWIST component (angular and linear velocities)
+    // 速度组件（角速度和线速度）
     odomIinM.child_frame_id = "imu";
     odomIinM.twist.twist.linear.x = state_plus(7);   // vel in local frame
     odomIinM.twist.twist.linear.y = state_plus(8);   // vel in local frame
@@ -308,6 +344,7 @@ void ROS1Visualizer::visualize_odometry(double timestamp) {
     odomIinM.twist.twist.angular.z = state_plus(12); // we do not estimate this...
 
     // Finally set the covariance in the message (in the order position then orientation as per ros convention)
+    // 最后在消息中设置协方差（按照ROS约定，顺序为位置然后方向）
     Eigen::Matrix<double, 12, 12> Phi = Eigen::Matrix<double, 12, 12>::Zero();
     Phi.block(0, 3, 3, 3).setIdentity();
     Phi.block(3, 0, 3, 3).setIdentity();
@@ -329,6 +366,9 @@ void ROS1Visualizer::visualize_odometry(double timestamp) {
   // Publish our transform on TF
   // NOTE: since we use JPL we have an implicit conversion to Hamilton when we publish
   // NOTE: a rotation from GtoI in JPL has the same xyzw as a ItoG Hamilton rotation
+  // 在TF上发布变换
+  // 注意：由于我们使用JPL，发布时会隐式转换为Hamilton
+  // 注意：JPL中从GtoI的旋转与Hamilton中ItoG旋转具有相同的xyzw
   auto odom_pose = std::make_shared<ov_type::PoseJPL>();
   odom_pose->set_value(state_plus.block(0, 0, 7, 1));
   tf::StampedTransform trans = ROSVisualizerHelper::get_stamped_transform_from_pose(odom_pose, false);
@@ -339,6 +379,7 @@ void ROS1Visualizer::visualize_odometry(double timestamp) {
   }
 
   // Loop through each camera calibration and publish it
+  // 遍历每个相机标定并发布
   for (const auto &calib : state->_calib_IMUtoCAM) {
     tf::StampedTransform trans_calib = ROSVisualizerHelper::get_stamped_transform_from_pose(calib.second, true);
     trans_calib.frame_id_ = "imu";
@@ -352,36 +393,40 @@ void ROS1Visualizer::visualize_odometry(double timestamp) {
 void ROS1Visualizer::visualize_final() {
 
   // Final time offset value
+  // 最终时间偏移值
   if (_app->get_state()->_options.do_calib_camera_timeoffset) {
-    PRINT_INFO(REDPURPLE "camera-imu timeoffset = %.5f\n\n" RESET, _app->get_state()->_calib_dt_CAMtoIMU->value()(0));
+    PRINT_INFO(REDPURPLE "[ROS1Visualizer] camera-imu timeoffset = %.5f\n\n" RESET, _app->get_state()->_calib_dt_CAMtoIMU->value()(0));
   }
 
   // Final camera intrinsics
+  // 最终相机内参
   if (_app->get_state()->_options.do_calib_camera_intrinsics) {
     for (int i = 0; i < _app->get_state()->_options.num_cameras; i++) {
       std::shared_ptr<Vec> calib = _app->get_state()->_cam_intrinsics.at(i);
-      PRINT_INFO(REDPURPLE "cam%d intrinsics:\n" RESET, (int)i);
-      PRINT_INFO(REDPURPLE "%.3f,%.3f,%.3f,%.3f\n" RESET, calib->value()(0), calib->value()(1), calib->value()(2), calib->value()(3));
-      PRINT_INFO(REDPURPLE "%.5f,%.5f,%.5f,%.5f\n\n" RESET, calib->value()(4), calib->value()(5), calib->value()(6), calib->value()(7));
+      PRINT_INFO(REDPURPLE "[ROS1Visualizer] cam%d intrinsics:\n" RESET, (int)i);
+      PRINT_INFO(REDPURPLE "[ROS1Visualizer] %.3f,%.3f,%.3f,%.3f\n" RESET, calib->value()(0), calib->value()(1), calib->value()(2), calib->value()(3));
+      PRINT_INFO(REDPURPLE "[ROS1Visualizer] %.5f,%.5f,%.5f,%.5f\n\n" RESET, calib->value()(4), calib->value()(5), calib->value()(6), calib->value()(7));
     }
   }
 
   // Final camera extrinsics
+  // 最终相机外参
   if (_app->get_state()->_options.do_calib_camera_pose) {
     for (int i = 0; i < _app->get_state()->_options.num_cameras; i++) {
       std::shared_ptr<PoseJPL> calib = _app->get_state()->_calib_IMUtoCAM.at(i);
       Eigen::Matrix4d T_CtoI = Eigen::Matrix4d::Identity();
       T_CtoI.block(0, 0, 3, 3) = quat_2_Rot(calib->quat()).transpose();
       T_CtoI.block(0, 3, 3, 1) = -T_CtoI.block(0, 0, 3, 3) * calib->pos();
-      PRINT_INFO(REDPURPLE "T_C%dtoI:\n" RESET, i);
-      PRINT_INFO(REDPURPLE "%.3f,%.3f,%.3f,%.3f,\n" RESET, T_CtoI(0, 0), T_CtoI(0, 1), T_CtoI(0, 2), T_CtoI(0, 3));
-      PRINT_INFO(REDPURPLE "%.3f,%.3f,%.3f,%.3f,\n" RESET, T_CtoI(1, 0), T_CtoI(1, 1), T_CtoI(1, 2), T_CtoI(1, 3));
-      PRINT_INFO(REDPURPLE "%.3f,%.3f,%.3f,%.3f,\n" RESET, T_CtoI(2, 0), T_CtoI(2, 1), T_CtoI(2, 2), T_CtoI(2, 3));
-      PRINT_INFO(REDPURPLE "%.3f,%.3f,%.3f,%.3f\n\n" RESET, T_CtoI(3, 0), T_CtoI(3, 1), T_CtoI(3, 2), T_CtoI(3, 3));
+      PRINT_INFO(REDPURPLE "[ROS1Visualizer] T_C%dtoI:\n" RESET, i);
+      PRINT_INFO(REDPURPLE "[ROS1Visualizer] %.3f,%.3f,%.3f,%.3f,\n" RESET, T_CtoI(0, 0), T_CtoI(0, 1), T_CtoI(0, 2), T_CtoI(0, 3));
+      PRINT_INFO(REDPURPLE "[ROS1Visualizer] %.3f,%.3f,%.3f,%.3f,\n" RESET, T_CtoI(1, 0), T_CtoI(1, 1), T_CtoI(1, 2), T_CtoI(1, 3));
+      PRINT_INFO(REDPURPLE "[ROS1Visualizer] %.3f,%.3f,%.3f,%.3f,\n" RESET, T_CtoI(2, 0), T_CtoI(2, 1), T_CtoI(2, 2), T_CtoI(2, 3));
+      PRINT_INFO(REDPURPLE "[ROS1Visualizer] %.3f,%.3f,%.3f,%.3f\n\n" RESET, T_CtoI(3, 0), T_CtoI(3, 1), T_CtoI(3, 2), T_CtoI(3, 3));
     }
   }
 
   // IMU intrinsics
+  // IMU内参
   if (_app->get_state()->_options.do_calib_imu_intrinsics) {
     Eigen::Matrix3d Dw = State::Dm(_app->get_state()->_options.imu_model, _app->get_state()->_calib_imu_dw->value());
     Eigen::Matrix3d Da = State::Dm(_app->get_state()->_options.imu_model, _app->get_state()->_calib_imu_da->value());
@@ -389,75 +434,86 @@ void ROS1Visualizer::visualize_final() {
     Eigen::Matrix3d Ta = Da.colPivHouseholderQr().solve(Eigen::Matrix3d::Identity());
     Eigen::Matrix3d R_IMUtoACC = _app->get_state()->_calib_imu_ACCtoIMU->Rot().transpose();
     Eigen::Matrix3d R_IMUtoGYRO = _app->get_state()->_calib_imu_GYROtoIMU->Rot().transpose();
-    PRINT_INFO(REDPURPLE "Tw:\n" RESET);
-    PRINT_INFO(REDPURPLE "%.5f,%.5f,%.5f,\n" RESET, Tw(0, 0), Tw(0, 1), Tw(0, 2));
-    PRINT_INFO(REDPURPLE "%.5f,%.5f,%.5f,\n" RESET, Tw(1, 0), Tw(1, 1), Tw(1, 2));
-    PRINT_INFO(REDPURPLE "%.5f,%.5f,%.5f\n\n" RESET, Tw(2, 0), Tw(2, 1), Tw(2, 2));
-    PRINT_INFO(REDPURPLE "Ta:\n" RESET);
-    PRINT_INFO(REDPURPLE "%.5f,%.5f,%.5f,\n" RESET, Ta(0, 0), Ta(0, 1), Ta(0, 2));
-    PRINT_INFO(REDPURPLE "%.5f,%.5f,%.5f,\n" RESET, Ta(1, 0), Ta(1, 1), Ta(1, 2));
-    PRINT_INFO(REDPURPLE "%.5f,%.5f,%.5f\n\n" RESET, Ta(2, 0), Ta(2, 1), Ta(2, 2));
-    PRINT_INFO(REDPURPLE "R_IMUtoACC:\n" RESET);
-    PRINT_INFO(REDPURPLE "%.5f,%.5f,%.5f,\n" RESET, R_IMUtoACC(0, 0), R_IMUtoACC(0, 1), R_IMUtoACC(0, 2));
-    PRINT_INFO(REDPURPLE "%.5f,%.5f,%.5f,\n" RESET, R_IMUtoACC(1, 0), R_IMUtoACC(1, 1), R_IMUtoACC(1, 2));
-    PRINT_INFO(REDPURPLE "%.5f,%.5f,%.5f\n\n" RESET, R_IMUtoACC(2, 0), R_IMUtoACC(2, 1), R_IMUtoACC(2, 2));
-    PRINT_INFO(REDPURPLE "R_IMUtoGYRO:\n" RESET);
-    PRINT_INFO(REDPURPLE "%.5f,%.5f,%.5f,\n" RESET, R_IMUtoGYRO(0, 0), R_IMUtoGYRO(0, 1), R_IMUtoGYRO(0, 2));
-    PRINT_INFO(REDPURPLE "%.5f,%.5f,%.5f,\n" RESET, R_IMUtoGYRO(1, 0), R_IMUtoGYRO(1, 1), R_IMUtoGYRO(1, 2));
-    PRINT_INFO(REDPURPLE "%.5f,%.5f,%.5f\n\n" RESET, R_IMUtoGYRO(2, 0), R_IMUtoGYRO(2, 1), R_IMUtoGYRO(2, 2));
+    PRINT_INFO(REDPURPLE "[ROS1Visualizer] Tw:\n" RESET);
+    PRINT_INFO(REDPURPLE "[ROS1Visualizer] %.5f,%.5f,%.5f,\n" RESET, Tw(0, 0), Tw(0, 1), Tw(0, 2));
+    PRINT_INFO(REDPURPLE "[ROS1Visualizer] %.5f,%.5f,%.5f,\n" RESET, Tw(1, 0), Tw(1, 1), Tw(1, 2));
+    PRINT_INFO(REDPURPLE "[ROS1Visualizer] %.5f,%.5f,%.5f\n\n" RESET, Tw(2, 0), Tw(2, 1), Tw(2, 2));
+    PRINT_INFO(REDPURPLE "[ROS1Visualizer] Ta:\n" RESET);
+    PRINT_INFO(REDPURPLE "[ROS1Visualizer] %.5f,%.5f,%.5f,\n" RESET, Ta(0, 0), Ta(0, 1), Ta(0, 2));
+    PRINT_INFO(REDPURPLE "[ROS1Visualizer] %.5f,%.5f,%.5f,\n" RESET, Ta(1, 0), Ta(1, 1), Ta(1, 2));
+    PRINT_INFO(REDPURPLE "[ROS1Visualizer] %.5f,%.5f,%.5f\n\n" RESET, Ta(2, 0), Ta(2, 1), Ta(2, 2));
+    PRINT_INFO(REDPURPLE "[ROS1Visualizer] R_IMUtoACC:\n" RESET);
+    PRINT_INFO(REDPURPLE "[ROS1Visualizer] %.5f,%.5f,%.5f,\n" RESET, R_IMUtoACC(0, 0), R_IMUtoACC(0, 1), R_IMUtoACC(0, 2));
+    PRINT_INFO(REDPURPLE "[ROS1Visualizer] %.5f,%.5f,%.5f,\n" RESET, R_IMUtoACC(1, 0), R_IMUtoACC(1, 1), R_IMUtoACC(1, 2));
+    PRINT_INFO(REDPURPLE "[ROS1Visualizer] %.5f,%.5f,%.5f\n\n" RESET, R_IMUtoACC(2, 0), R_IMUtoACC(2, 1), R_IMUtoACC(2, 2));
+    PRINT_INFO(REDPURPLE "[ROS1Visualizer] R_IMUtoGYRO:\n" RESET);
+    PRINT_INFO(REDPURPLE "[ROS1Visualizer] %.5f,%.5f,%.5f,\n" RESET, R_IMUtoGYRO(0, 0), R_IMUtoGYRO(0, 1), R_IMUtoGYRO(0, 2));
+    PRINT_INFO(REDPURPLE "[ROS1Visualizer] %.5f,%.5f,%.5f,\n" RESET, R_IMUtoGYRO(1, 0), R_IMUtoGYRO(1, 1), R_IMUtoGYRO(1, 2));
+    PRINT_INFO(REDPURPLE "[ROS1Visualizer] %.5f,%.5f,%.5f\n\n" RESET, R_IMUtoGYRO(2, 0), R_IMUtoGYRO(2, 1), R_IMUtoGYRO(2, 2));
   }
 
   // IMU intrinsics gravity sensitivity
+  // IMU内参重力敏感性
   if (_app->get_state()->_options.do_calib_imu_g_sensitivity) {
     Eigen::Matrix3d Tg = State::Tg(_app->get_state()->_calib_imu_tg->value());
-    PRINT_INFO(REDPURPLE "Tg:\n" RESET);
-    PRINT_INFO(REDPURPLE "%.6f,%.6f,%.6f,\n" RESET, Tg(0, 0), Tg(0, 1), Tg(0, 2));
-    PRINT_INFO(REDPURPLE "%.6f,%.6f,%.6f,\n" RESET, Tg(1, 0), Tg(1, 1), Tg(1, 2));
-    PRINT_INFO(REDPURPLE "%.6f,%.6f,%.6f\n\n" RESET, Tg(2, 0), Tg(2, 1), Tg(2, 2));
+    PRINT_INFO(REDPURPLE "[ROS1Visualizer] Tg:\n" RESET);
+    PRINT_INFO(REDPURPLE "[ROS1Visualizer] %.6f,%.6f,%.6f,\n" RESET, Tg(0, 0), Tg(0, 1), Tg(0, 2));
+    PRINT_INFO(REDPURPLE "[ROS1Visualizer] %.6f,%.6f,%.6f,\n" RESET, Tg(1, 0), Tg(1, 1), Tg(1, 2));
+    PRINT_INFO(REDPURPLE "[ROS1Visualizer] %.6f,%.6f,%.6f\n\n" RESET, Tg(2, 0), Tg(2, 1), Tg(2, 2));
   }
 
   // Publish RMSE if we have it
+  // 如果有真值，则发布RMSE
   if (!gt_states.empty()) {
-    PRINT_INFO(REDPURPLE "RMSE: %.3f (deg) orientation\n" RESET, std::sqrt(summed_mse_ori / summed_number));
-    PRINT_INFO(REDPURPLE "RMSE: %.3f (m) position\n\n" RESET, std::sqrt(summed_mse_pos / summed_number));
+    PRINT_INFO(REDPURPLE "[ROS1Visualizer] RMSE: %.3f (deg) orientation\n" RESET, std::sqrt(summed_mse_ori / summed_number));
+    PRINT_INFO(REDPURPLE "[ROS1Visualizer] RMSE: %.3f (m) position\n\n" RESET, std::sqrt(summed_mse_pos / summed_number));
   }
 
   // Publish RMSE and NEES if doing simulation
+  // 如果进行仿真，则发布RMSE和NEES
   if (_sim != nullptr) {
-    PRINT_INFO(REDPURPLE "RMSE: %.3f (deg) orientation\n" RESET, std::sqrt(summed_mse_ori / summed_number));
-    PRINT_INFO(REDPURPLE "RMSE: %.3f (m) position\n\n" RESET, std::sqrt(summed_mse_pos / summed_number));
-    PRINT_INFO(REDPURPLE "NEES: %.3f (deg) orientation\n" RESET, summed_nees_ori / summed_number);
-    PRINT_INFO(REDPURPLE "NEES: %.3f (m) position\n\n" RESET, summed_nees_pos / summed_number);
+    PRINT_INFO(REDPURPLE "[ROS1Visualizer] RMSE: %.3f (deg) orientation\n" RESET, std::sqrt(summed_mse_ori / summed_number));
+    PRINT_INFO(REDPURPLE "[ROS1Visualizer] RMSE: %.3f (m) position\n\n" RESET, std::sqrt(summed_mse_pos / summed_number));
+    PRINT_INFO(REDPURPLE "[ROS1Visualizer] NEES: %.3f (deg) orientation\n" RESET, summed_nees_ori / summed_number);
+    PRINT_INFO(REDPURPLE "[ROS1Visualizer] NEES: %.3f (m) position\n\n" RESET, summed_nees_pos / summed_number);
   }
 
   // Print the total time
+  // 打印总时间
   rT2 = boost::posix_time::microsec_clock::local_time();
-  PRINT_INFO(REDPURPLE "TIME: %.3f seconds\n\n" RESET, (rT2 - rT1).total_microseconds() * 1e-6);
+  PRINT_INFO(REDPURPLE "[ROS1Visualizer] TIME: %.3f seconds\n\n" RESET, (rT2 - rT1).total_microseconds() * 1e-6);
 }
 
 void ROS1Visualizer::callback_inertial(const sensor_msgs::Imu::ConstPtr &msg) {
 
   // convert into correct format
+  // 转换为正确格式
   ov_core::ImuData message;
   message.timestamp = msg->header.stamp.toSec();
   message.wm << msg->angular_velocity.x, msg->angular_velocity.y, msg->angular_velocity.z;
   message.am << msg->linear_acceleration.x, msg->linear_acceleration.y, msg->linear_acceleration.z;
 
   // send it to our VIO system
+  // 发送到VIO系统
   _app->feed_measurement_imu(message);
   visualize_odometry(message.timestamp);
 
   // If the processing queue is currently active / running just return so we can keep getting measurements
   // Otherwise create a second thread to do our update in an async manor
   // The visualization of the state, images, and features will be synchronous with the update!
+  // 如果处理队列当前正在运行，则直接返回以便继续接收测量
+  // 否则创建第二个线程以异步方式进行更新
+  // 状态、图像和特征的可视化将与更新同步！
   if (thread_update_running)
     return;
   thread_update_running = true;
   std::thread thread([&] {
     // Lock on the queue (prevents new images from appending)
+    // 锁定队列（防止新图像追加）
     std::lock_guard<std::mutex> lck(camera_queue_mtx);
 
     // Count how many unique image streams
+    // 计算有多少个唯一的图像流
     std::map<int, bool> unique_cam_ids;
     for (const auto &cam_msg : camera_queue) {
       unique_cam_ids[cam_msg.sensor_ids.at(0)] = true;
@@ -465,12 +521,16 @@ void ROS1Visualizer::callback_inertial(const sensor_msgs::Imu::ConstPtr &msg) {
 
     // If we do not have enough unique cameras then we need to wait
     // We should wait till we have one of each camera to ensure we propagate in the correct order
+    // 如果没有足够的唯一相机，则需要等待
+    // 应该等待直到每个相机都有一个图像，以确保按正确顺序传播
     auto params = _app->get_params();
     size_t num_unique_cameras = (params.state_options.num_cameras == 2) ? 1 : params.state_options.num_cameras;
     if (unique_cam_ids.size() == num_unique_cameras) {
 
       // Loop through our queue and see if we are able to process any of our camera measurements
       // We are able to process if we have at least one IMU measurement greater than the camera time
+      // 遍历队列，查看是否能够处理任何相机测量
+      // 如果至少有一个IMU测量的时间大于相机时间，则能够处理
       double timestamp_imu_inC = message.timestamp - _app->get_state()->_calib_dt_CAMtoIMU->value()(0);
       while (!camera_queue.empty() && camera_queue.at(0).timestamp < timestamp_imu_inC) {
         auto rT0_1 = boost::posix_time::microsec_clock::local_time();
@@ -488,6 +548,8 @@ void ROS1Visualizer::callback_inertial(const sensor_msgs::Imu::ConstPtr &msg) {
 
   // If we are single threaded, then run single threaded
   // Otherwise detach this thread so it runs in the background!
+  // 如果是单线程，则单线程运行
+  // 否则分离此线程以便在后台运行！
   if (!_app->get_params().use_multi_threading_subs) {
     thread.join();
   } else {
@@ -498,10 +560,12 @@ void ROS1Visualizer::callback_inertial(const sensor_msgs::Imu::ConstPtr &msg) {
 void ROS1Visualizer::callback_monocular(const sensor_msgs::ImageConstPtr &msg0, int cam_id0) {
 
   // Check if we should drop this image
+  // 检查是否应该丢弃此图像
   double timestamp = msg0->header.stamp.toSec();
-  double time_delta = 1.0 / _app->get_params().track_frequency;
+  double time_delta = 1.0 / _app->get_params().track_frequency - 0.002;
   
   // Print timestamp information for debugging
+  // 打印时间戳信息用于调试
   static int image_count = 0;
   image_count++;
   double time_interval = 0.0;
@@ -510,32 +574,34 @@ void ROS1Visualizer::callback_monocular(const sensor_msgs::ImageConstPtr &msg0, 
   }
   
   // Print every image or every 10th image after first 5
+  // 打印每张图像或前5张后每10张
   bool should_print = (image_count <= 5) || (image_count % 10 == 0);
+  should_print = true;
   if (should_print) {
-    PRINT_INFO(CYAN "[CAM%d] Image #%d - timestamp: %.6f sec, interval: %.6f sec (%.2f Hz), time_delta_thresh: %.6f sec\n" RESET,
+    PRINT_INFO(CYAN "[ROS1Visualizer] [CAM%d] Image #%d - timestamp: %.6f sec, interval: %.6f sec (%.2f Hz), time_delta_thresh: %.6f sec\n" RESET,
                cam_id0, image_count, timestamp, time_interval, 
                (time_interval > 0 ? 1.0/time_interval : 0.0), time_delta);
   }
   
   if (camera_last_timestamp.find(cam_id0) != camera_last_timestamp.end() && timestamp < camera_last_timestamp.at(cam_id0) + time_delta) {
-    if (should_print) {
-      PRINT_INFO(YELLOW "[CAM%d] Image dropped - timestamp too close (%.6f < %.6f)\n" RESET,
+      PRINT_INFO(YELLOW "[ROS1Visualizer] [CAM%d] Image dropped - timestamp too close (%.6f < %.6f)\n" RESET,
                  cam_id0, timestamp - camera_last_timestamp.at(cam_id0), time_delta);
-    }
-    return;
+      return;
   }
   camera_last_timestamp[cam_id0] = timestamp;
 
   // Get the image
+  // 获取图像
   cv_bridge::CvImageConstPtr cv_ptr;
   try {
     cv_ptr = cv_bridge::toCvShare(msg0, sensor_msgs::image_encodings::MONO8);
   } catch (cv_bridge::Exception &e) {
-    PRINT_ERROR("cv_bridge exception: %s", e.what());
+    PRINT_ERROR("[ROS1Visualizer] cv_bridge exception: %s", e.what());
     return;
   }
 
   // Create the measurement
+  // 创建测量数据
   ov_core::CameraData message;
   message.timestamp = cv_ptr->header.stamp.toSec();
   message.sensor_ids.push_back(cam_id0);
@@ -543,6 +609,8 @@ void ROS1Visualizer::callback_monocular(const sensor_msgs::ImageConstPtr &msg0, 
 
   // Load the mask if we are using it, else it is empty
   // TODO: in the future we should get this from external pixel segmentation
+  // 如果使用掩码，则加载掩码，否则为空
+  // TODO: 将来应该从外部像素分割获取
   if (_app->get_params().use_mask) {
     message.masks.push_back(_app->get_params().masks.at(cam_id0));
   } else {
@@ -550,6 +618,7 @@ void ROS1Visualizer::callback_monocular(const sensor_msgs::ImageConstPtr &msg0, 
   }
 
   // append it to our queue of images
+  // 将其追加到图像队列
   std::lock_guard<std::mutex> lck(camera_queue_mtx);
   camera_queue.push_back(message);
   std::sort(camera_queue.begin(), camera_queue.end());
@@ -559,6 +628,7 @@ void ROS1Visualizer::callback_stereo(const sensor_msgs::ImageConstPtr &msg0, con
                                      int cam_id1) {
 
   // Check if we should drop this image
+  // 检查是否应该丢弃此图像
   double timestamp = msg0->header.stamp.toSec();
   double time_delta = 1.0 / _app->get_params().track_frequency;
   if (camera_last_timestamp.find(cam_id0) != camera_last_timestamp.end() && timestamp < camera_last_timestamp.at(cam_id0) + time_delta) {
@@ -567,24 +637,27 @@ void ROS1Visualizer::callback_stereo(const sensor_msgs::ImageConstPtr &msg0, con
   camera_last_timestamp[cam_id0] = timestamp;
 
   // Get the image
+  // 获取第一张图像
   cv_bridge::CvImageConstPtr cv_ptr0;
   try {
     cv_ptr0 = cv_bridge::toCvShare(msg0, sensor_msgs::image_encodings::MONO8);
   } catch (cv_bridge::Exception &e) {
-    PRINT_ERROR("cv_bridge exception: %s\n", e.what());
+    PRINT_ERROR("[ROS1Visualizer] cv_bridge exception: %s\n", e.what());
     return;
   }
 
   // Get the image
+  // 获取第二张图像
   cv_bridge::CvImageConstPtr cv_ptr1;
   try {
     cv_ptr1 = cv_bridge::toCvShare(msg1, sensor_msgs::image_encodings::MONO8);
   } catch (cv_bridge::Exception &e) {
-    PRINT_ERROR("cv_bridge exception: %s\n", e.what());
+    PRINT_ERROR("[ROS1Visualizer] cv_bridge exception: %s\n", e.what());
     return;
   }
 
   // Create the measurement
+  // 创建测量数据
   ov_core::CameraData message;
   message.timestamp = cv_ptr0->header.stamp.toSec();
   message.sensor_ids.push_back(cam_id0);
@@ -594,6 +667,8 @@ void ROS1Visualizer::callback_stereo(const sensor_msgs::ImageConstPtr &msg0, con
 
   // Load the mask if we are using it, else it is empty
   // TODO: in the future we should get this from external pixel segmentation
+  // 如果使用掩码，则加载掩码，否则为空
+  // TODO: 将来应该从外部像素分割获取
   if (_app->get_params().use_mask) {
     message.masks.push_back(_app->get_params().masks.at(cam_id0));
     message.masks.push_back(_app->get_params().masks.at(cam_id1));
@@ -604,6 +679,7 @@ void ROS1Visualizer::callback_stereo(const sensor_msgs::ImageConstPtr &msg0, con
   }
 
   // append it to our queue of images
+  // 将其追加到图像队列
   std::lock_guard<std::mutex> lck(camera_queue_mtx);
   camera_queue.push_back(message);
   std::sort(camera_queue.begin(), camera_queue.end());
@@ -612,14 +688,18 @@ void ROS1Visualizer::callback_stereo(const sensor_msgs::ImageConstPtr &msg0, con
 void ROS1Visualizer::publish_state() {
 
   // Get the current state
+  // 获取当前状态
   std::shared_ptr<State> state = _app->get_state();
 
   // We want to publish in the IMU clock frame
   // The timestamp in the state will be the last camera time
+  // 我们想在IMU时钟帧中发布
+  // 状态中的时间戳将是最后一个相机时间
   double t_ItoC = state->_calib_dt_CAMtoIMU->value()(0);
   double timestamp_inI = state->_timestamp + t_ItoC;
 
   // Create pose of IMU (note we use the bag time)
+  // 创建IMU位姿（注意我们使用bag时间）
   geometry_msgs::PoseWithCovarianceStamped poseIinM;
   poseIinM.header.stamp = ros::Time(timestamp_inI);
   poseIinM.header.seq = poses_seq_imu;
@@ -633,6 +713,7 @@ void ROS1Visualizer::publish_state() {
   poseIinM.pose.pose.position.z = state->_imu->pos()(2);
 
   // Finally set the covariance in the message (in the order position then orientation as per ros convention)
+  // 最后在消息中设置协方差（按照ROS约定，顺序为位置然后方向）
   std::vector<std::shared_ptr<Type>> statevars;
   statevars.push_back(state->_imu->pose()->p());
   statevars.push_back(state->_imu->pose()->q());
@@ -648,6 +729,7 @@ void ROS1Visualizer::publish_state() {
   //=========================================================
 
   // Append to our pose vector
+  // 追加到位姿向量
   geometry_msgs::PoseStamped posetemp;
   posetemp.header = poseIinM.header;
   posetemp.pose = poseIinM.pose.pose;
@@ -656,6 +738,8 @@ void ROS1Visualizer::publish_state() {
   // Create our path (imu)
   // NOTE: We downsample the number of poses as needed to prevent rviz crashes
   // NOTE: https://github.com/ros-visualization/rviz/issues/1107
+  // 创建路径（IMU）
+  // 注意：根据需要下采样位姿数量以防止rviz崩溃
   nav_msgs::Path arrIMU;
   arrIMU.header.stamp = ros::Time::now();
   arrIMU.header.seq = poses_seq_imu;
@@ -666,12 +750,14 @@ void ROS1Visualizer::publish_state() {
   pub_pathimu.publish(arrIMU);
 
   // Move them forward in time
+  // 时间向前推进
   poses_seq_imu++;
 }
 
 void ROS1Visualizer::publish_images() {
 
   // Return if we have already visualized
+  // 如果已经可视化过，则返回
   if (_app->get_state() == nullptr)
     return;
   if (last_visualization_timestamp_image == _app->get_state()->_timestamp && _app->initialized())
@@ -679,51 +765,61 @@ void ROS1Visualizer::publish_images() {
   last_visualization_timestamp_image = _app->get_state()->_timestamp;
 
   // Check if we have subscribers
+  // 检查是否有订阅者
   if (it_pub_tracks.getNumSubscribers() == 0)
     return;
 
   // Get our image of history tracks
+  // 获取历史轨迹图像
   cv::Mat img_history = _app->get_historical_viz_image();
   if (img_history.empty())
     return;
 
   // Create our message
+  // 创建消息
   std_msgs::Header header;
   header.stamp = ros::Time::now();
   header.frame_id = "cam0";
   sensor_msgs::ImagePtr exl_msg = cv_bridge::CvImage(header, "bgr8", img_history).toImageMsg();
 
   // Publish
+  // 发布
   it_pub_tracks.publish(exl_msg);
 }
 
 void ROS1Visualizer::publish_features() {
 
   // Check if we have subscribers
+  // 检查是否有订阅者
   if (pub_points_msckf.getNumSubscribers() == 0 && pub_points_slam.getNumSubscribers() == 0 && pub_points_aruco.getNumSubscribers() == 0 &&
       pub_points_sim.getNumSubscribers() == 0)
     return;
 
   // Get our good MSCKF features
+  // 获取MSCKF特征点
   std::vector<Eigen::Vector3d> feats_msckf = _app->get_good_features_MSCKF();
   sensor_msgs::PointCloud2 cloud = ROSVisualizerHelper::get_ros_pointcloud(feats_msckf);
   pub_points_msckf.publish(cloud);
 
   // Get our good SLAM features
+  // 获取SLAM特征点
   std::vector<Eigen::Vector3d> feats_slam = _app->get_features_SLAM();
   sensor_msgs::PointCloud2 cloud_SLAM = ROSVisualizerHelper::get_ros_pointcloud(feats_slam);
   pub_points_slam.publish(cloud_SLAM);
 
   // Get our good ARUCO features
+  // 获取ARUCO特征点
   std::vector<Eigen::Vector3d> feats_aruco = _app->get_features_ARUCO();
   sensor_msgs::PointCloud2 cloud_ARUCO = ROSVisualizerHelper::get_ros_pointcloud(feats_aruco);
   pub_points_aruco.publish(cloud_ARUCO);
 
   // Skip the rest of we are not doing simulation
+  // 如果不进行仿真，则跳过其余部分
   if (_sim == nullptr)
     return;
 
   // Get our good SIMULATION features
+  // 获取仿真特征点
   std::vector<Eigen::Vector3d> feats_sim = _sim->get_map_vec();
   sensor_msgs::PointCloud2 cloud_SIM = ROSVisualizerHelper::get_ros_pointcloud(feats_sim);
   pub_points_sim.publish(cloud_SIM);
@@ -732,20 +828,26 @@ void ROS1Visualizer::publish_features() {
 void ROS1Visualizer::publish_groundtruth() {
 
   // Our groundtruth state
+  // 真值状态
   Eigen::Matrix<double, 17, 1> state_gt;
 
   // We want to publish in the IMU clock frame
   // The timestamp in the state will be the last camera time
+  // 我们想在IMU时钟帧中发布
+  // 状态中的时间戳将是最后一个相机时间
   double t_ItoC = _app->get_state()->_calib_dt_CAMtoIMU->value()(0);
   double timestamp_inI = _app->get_state()->_timestamp + t_ItoC;
 
   // Check that we have the timestamp in our GT file [time(sec),q_GtoI,p_IinG,v_IinG,b_gyro,b_accel]
+  // 检查GT文件中是否有该时间戳 [时间(秒),q_GtoI,p_IinG,v_IinG,b_gyro,b_accel]
   if (_sim == nullptr && (gt_states.empty() || !DatasetReader::get_gt_state(timestamp_inI, state_gt, gt_states))) {
     return;
   }
 
   // Get the simulated groundtruth
   // NOTE: we get the true time in the IMU clock frame
+  // 获取仿真真值
+  // 注意：我们在IMU时钟帧中获取真实时间
   if (_sim != nullptr) {
     timestamp_inI = _app->get_state()->_timestamp + _sim->get_true_parameters().calib_camimu_dt;
     if (!_sim->get_state(timestamp_inI, state_gt))
@@ -753,9 +855,11 @@ void ROS1Visualizer::publish_groundtruth() {
   }
 
   // Get the GT and system state state
+  // 获取真值和系统状态
   Eigen::Matrix<double, 16, 1> state_ekf = _app->get_state()->_imu->value();
 
   // Create pose of IMU
+  // 创建IMU位姿
   geometry_msgs::PoseStamped poseIinM;
   poseIinM.header.stamp = ros::Time(timestamp_inI);
   poseIinM.header.seq = poses_seq_gt;
@@ -770,11 +874,14 @@ void ROS1Visualizer::publish_groundtruth() {
   pub_posegt.publish(poseIinM);
 
   // Append to our pose vector
+  // 追加到位姿向量
   poses_gt.push_back(poseIinM);
 
   // Create our path (imu)
   // NOTE: We downsample the number of poses as needed to prevent rviz crashes
   // NOTE: https://github.com/ros-visualization/rviz/issues/1107
+  // 创建路径（IMU）
+  // 注意：根据需要下采样位姿数量以防止rviz崩溃
   nav_msgs::Path arrIMU;
   arrIMU.header.stamp = ros::Time::now();
   arrIMU.header.seq = poses_seq_gt;
@@ -785,9 +892,11 @@ void ROS1Visualizer::publish_groundtruth() {
   pub_pathgt.publish(arrIMU);
 
   // Move them forward in time
+  // 时间向前推进
   poses_seq_gt++;
 
   // Publish our transform on TF
+  // 在TF上发布变换
   tf::StampedTransform trans;
   trans.stamp_ = ros::Time::now();
   trans.frame_id_ = "global";
@@ -804,12 +913,14 @@ void ROS1Visualizer::publish_groundtruth() {
   //==========================================================================
 
   // Difference between positions
+  // 位置差
   double dx = state_ekf(4, 0) - state_gt(5, 0);
   double dy = state_ekf(5, 0) - state_gt(6, 0);
   double dz = state_ekf(6, 0) - state_gt(7, 0);
   double err_pos = std::sqrt(dx * dx + dy * dy + dz * dz);
 
   // Quaternion error
+  // 四元数误差
   Eigen::Matrix<double, 4, 1> quat_gt, quat_st, quat_diff;
   quat_gt << state_gt(1, 0), state_gt(2, 0), state_gt(3, 0), state_gt(4, 0);
   quat_st << state_ekf(0, 0), state_ekf(1, 0), state_ekf(2, 0), state_ekf(3, 0);
@@ -820,6 +931,7 @@ void ROS1Visualizer::publish_groundtruth() {
   //==========================================================================
 
   // Get covariance of pose
+  // 获取位姿协方差
   std::vector<std::shared_ptr<Type>> statevars;
   statevars.push_back(_app->get_state()->_imu->q());
   statevars.push_back(_app->get_state()->_imu->p());
@@ -830,6 +942,8 @@ void ROS1Visualizer::publish_groundtruth() {
   // NOTE: https://github.com/rpng/open_vins/pull/226
   // NOTE: https://github.com/rpng/open_vins/issues/236
   // NOTE: https://gitlab.com/libeigen/eigen/-/issues/1664
+  // 计算NEES值
+  // 注意：需要手动展开乘法以使静态断言工作
   Eigen::Vector3d quat_diff_vec = quat_diff.block(0, 0, 3, 1);
   Eigen::Vector3d cov_vec = covariance.block(0, 0, 3, 3).inverse() * 2 * quat_diff.block(0, 0, 3, 1);
   double ori_nees = 2 * quat_diff_vec.dot(cov_vec);
@@ -840,6 +954,7 @@ void ROS1Visualizer::publish_groundtruth() {
   //==========================================================================
 
   // Update our average variables
+  // 更新平均变量
   if (!std::isnan(ori_nees) && !std::isnan(pos_nees)) {
     summed_mse_ori += err_ori * err_ori;
     summed_mse_pos += err_pos * err_pos;
@@ -849,6 +964,7 @@ void ROS1Visualizer::publish_groundtruth() {
   }
 
   // Nice display for the user
+  // 为用户显示友好信息
   PRINT_INFO(REDPURPLE "error to gt => %.3f, %.3f (deg,m) | rmse => %.3f, %.3f (deg,m) | called %d times\n" RESET, err_ori, err_pos,
              std::sqrt(summed_mse_ori / summed_number), std::sqrt(summed_mse_pos / summed_number), (int)summed_number);
   PRINT_INFO(REDPURPLE "nees => %.1f, %.1f (ori,pos) | avg nees = %.1f, %.1f (ori,pos)\n" RESET, ori_nees, pos_nees,
@@ -861,6 +977,7 @@ void ROS1Visualizer::publish_groundtruth() {
 void ROS1Visualizer::publish_loopclosure_information() {
 
   // Get the current tracks in this frame
+  // 获取当前帧中的轨迹
   double active_tracks_time1 = -1;
   double active_tracks_time2 = -1;
   std::unordered_map<size_t, Eigen::Vector3d> active_tracks_posinG;
@@ -878,15 +995,18 @@ void ROS1Visualizer::publish_loopclosure_information() {
     return;
 
   // Default header
+  // 默认消息头
   std_msgs::Header header;
   header.stamp = ros::Time(active_tracks_time1);
 
   //======================================================
   // Check if we have subscribers for the pose odometry, camera intrinsics, or extrinsics
+  // 检查是否有位姿里程计、相机内参或外参的订阅者
   if (pub_loop_pose.getNumSubscribers() != 0 || pub_loop_extrinsic.getNumSubscribers() != 0 ||
       pub_loop_intrinsics.getNumSubscribers() != 0) {
 
     // PUBLISH HISTORICAL POSE ESTIMATE
+    // 发布历史位姿估计
     nav_msgs::Odometry odometry_pose;
     odometry_pose.header = header;
     odometry_pose.header.frame_id = "global";
@@ -901,6 +1021,8 @@ void ROS1Visualizer::publish_loopclosure_information() {
 
     // PUBLISH IMU TO CAMERA0 EXTRINSIC
     // need to flip the transform to the IMU frame
+    // 发布IMU到相机0的外参
+    // 需要将变换翻转到IMU坐标系
     Eigen::Vector4d q_ItoC = _app->get_state()->_calib_IMUtoCAM.at(0)->quat();
     Eigen::Vector3d p_CinI = -_app->get_state()->_calib_IMUtoCAM.at(0)->Rot().transpose() * _app->get_state()->_calib_IMUtoCAM.at(0)->pos();
     nav_msgs::Odometry odometry_calib;
@@ -916,6 +1038,7 @@ void ROS1Visualizer::publish_loopclosure_information() {
     pub_loop_extrinsic.publish(odometry_calib);
 
     // PUBLISH CAMERA0 INTRINSICS
+    // 发布相机0内参
     bool is_fisheye = (std::dynamic_pointer_cast<ov_core::CamEqui>(_app->get_params().camera_intrinsics.at(0)) != nullptr);
     sensor_msgs::CameraInfo cameraparams;
     cameraparams.header = header;
@@ -929,15 +1052,18 @@ void ROS1Visualizer::publish_loopclosure_information() {
 
   //======================================================
   // PUBLISH FEATURE TRACKS IN THE GLOBAL FRAME OF REFERENCE
+  // 在全局参考系中发布特征轨迹
   if (pub_loop_point.getNumSubscribers() != 0) {
 
     // Construct the message
+    // 构造消息
     sensor_msgs::PointCloud point_cloud;
     point_cloud.header = header;
     point_cloud.header.frame_id = "global";
     for (const auto &feattimes : active_tracks_posinG) {
 
       // Get this feature information
+      // 获取此特征信息
       size_t featid = feattimes.first;
       Eigen::Vector3d uvd = Eigen::Vector3d::Zero();
       if (active_tracks_uvd.find(featid) != active_tracks_uvd.end()) {
@@ -946,6 +1072,7 @@ void ROS1Visualizer::publish_loopclosure_information() {
       Eigen::Vector3d pFinG = active_tracks_posinG.at(featid);
 
       // Push back 3d point
+      // 添加3D点
       geometry_msgs::Point32 p;
       p.x = pFinG(0);
       p.y = pFinG(1);
@@ -955,6 +1082,9 @@ void ROS1Visualizer::publish_loopclosure_information() {
       // Push back the uv_norm, uv_raw, and feature id
       // NOTE: we don't use the normalized coordinates to save time here
       // NOTE: they will have to be re-normalized in the loop closure code
+      // 添加uv_norm、uv_raw和特征ID
+      // 注意：这里不使用归一化坐标以节省时间
+      // 注意：它们将在回环闭合代码中重新归一化
       sensor_msgs::ChannelFloat32 p_2d;
       p_2d.values.push_back(0);
       p_2d.values.push_back(0);
@@ -968,21 +1098,26 @@ void ROS1Visualizer::publish_loopclosure_information() {
 
   //======================================================
   // Depth images of sparse points and its colorized version
+  // 稀疏点的深度图像及其彩色版本
   if (it_pub_loop_img_depth.getNumSubscribers() != 0 || it_pub_loop_img_depth_color.getNumSubscribers() != 0) {
 
     // Create the images we will populate with the depths
+    // 创建将填充深度的图像
     std::pair<int, int> wh_pair = {active_cam0_image.cols, active_cam0_image.rows};
     cv::Mat depthmap = cv::Mat::zeros(wh_pair.second, wh_pair.first, CV_16UC1);
     cv::Mat depthmap_viz = active_cam0_image;
 
     // Loop through all points and append
+    // 遍历所有点并添加
     for (const auto &feattimes : active_tracks_uvd) {
 
       // Get this feature information
+      // 获取此特征信息
       size_t featid = feattimes.first;
       Eigen::Vector3d uvd = active_tracks_uvd.at(featid);
 
       // Skip invalid points
+      // 跳过无效点
       double dw = 4;
       if (uvd(0) < dw || uvd(0) > wh_pair.first - dw || uvd(1) < dw || uvd(1) > wh_pair.second - dw) {
         continue;
@@ -991,10 +1126,14 @@ void ROS1Visualizer::publish_loopclosure_information() {
       // Append the depth
       // NOTE: scaled by 1000 to fit the 16U
       // NOTE: access order is y,x (stupid opencv convention stuff)
+      // 添加深度
+      // 注意：缩放1000倍以适配16U
+      // 注意：访问顺序是y,x（opencv的约定）
       depthmap.at<uint16_t>((int)uvd(1), (int)uvd(0)) = (uint16_t)(1000 * uvd(2));
 
       // Taken from LSD-SLAM codebase segment into 0-4 meter segments:
       // https://github.com/tum-vision/lsd_slam/blob/d1e6f0e1a027889985d2e6b4c0fe7a90b0c75067/lsd_slam_core/src/util/globalFuncs.cpp#L87-L96
+      // 从LSD-SLAM代码库中获取，将深度分段为0-4米段
       float id = 1.0f / (float)uvd(2);
       float r = (0.0f - id) * 255 / 1.0f;
       if (r < 0)
@@ -1011,12 +1150,14 @@ void ROS1Visualizer::publish_loopclosure_information() {
       cv::Scalar color(255 - rc, 255 - gc, 255 - bc);
 
       // Small square around the point (note the above bound check needs to take into account this width)
+      // 点周围的小方块（注意上面的边界检查需要考虑此宽度）
       cv::Point p0(uvd(0) - dw, uvd(1) - dw);
       cv::Point p1(uvd(0) + dw, uvd(1) + dw);
       cv::rectangle(depthmap_viz, p0, p1, color, -1);
     }
 
     // Create our messages
+    // 创建消息
     header.frame_id = "cam0";
     sensor_msgs::ImagePtr exl_msg1 = cv_bridge::CvImage(header, sensor_msgs::image_encodings::TYPE_16UC1, depthmap).toImageMsg();
     it_pub_loop_img_depth.publish(exl_msg1);

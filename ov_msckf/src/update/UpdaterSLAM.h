@@ -42,71 +42,71 @@ namespace ov_msckf {
 class State;
 
 /**
- * @brief Will compute the system for our sparse SLAM features and update the filter.
+ * @brief 计算稀疏SLAM特征系统并更新滤波器
  *
- * This class is responsible for performing delayed feature initialization, SLAM update, and
- * SLAM anchor change for anchored feature representations.
+ * 此类负责执行延迟特征初始化、SLAM更新和
+ * 锚定特征表示的SLAM锚点更改。
  */
 class UpdaterSLAM {
 
 public:
   /**
-   * @brief Default constructor for our SLAM updater
+   * @brief SLAM更新器的默认构造函数
    *
-   * Our updater has a feature initializer which we use to initialize features as needed.
-   * Also the options allow for one to tune the different parameters for update.
+   * 更新器具有特征初始化器，用于根据需要初始化特征。
+   * 选项允许调整更新的不同参数。
    *
-   * @param options_slam Updater options (include measurement noise value) for SLAM features
-   * @param options_aruco Updater options (include measurement noise value) for ARUCO features
-   * @param feat_init_options Feature initializer options
+   * @param options_slam SLAM特征的更新器选项（包括测量噪声值）
+   * @param options_aruco ARUCO特征的更新器选项（包括测量噪声值）
+   * @param feat_init_options 特征初始化器选项
    */
   UpdaterSLAM(UpdaterOptions &options_slam, UpdaterOptions &options_aruco, ov_core::FeatureInitializerOptions &feat_init_options);
 
   /**
-   * @brief Given tracked SLAM features, this will try to use them to update the state.
-   * @param state State of the filter
-   * @param feature_vec Features that can be used for update
+   * @brief 给定跟踪的SLAM特征，尝试使用它们更新状态
+   * @param state 滤波器的状态
+   * @param feature_vec 可用于更新的特征
    */
   void update(std::shared_ptr<State> state, std::vector<std::shared_ptr<ov_core::Feature>> &feature_vec);
 
   /**
-   * @brief Given max track features, this will try to use them to initialize them in the state.
-   * @param state State of the filter
-   * @param feature_vec Features that can be used for update
+   * @brief 给定最大跟踪特征，尝试在状态中初始化它们
+   * @param state 滤波器的状态
+   * @param feature_vec 可用于更新的特征
    */
   void delayed_init(std::shared_ptr<State> state, std::vector<std::shared_ptr<ov_core::Feature>> &feature_vec);
 
   /**
-   * @brief Will change SLAM feature anchors if it will be marginalized
+   * @brief 如果SLAM特征将被边缘化，则更改其锚点
    *
-   * Makes sure that if any clone is about to be marginalized, it changes anchor representation.
-   * By default, this will shift the anchor into the newest IMU clone and keep the camera calibration anchor the same.
+   * 确保如果任何克隆即将被边缘化，则更改锚点表示。
+   * 默认情况下，这将把锚点转移到最新的IMU克隆，并保持相机标定锚点不变。
    *
-   * @param state State of the filter
+   * @param state 滤波器的状态
    */
   void change_anchors(std::shared_ptr<State> state);
 
 protected:
   /**
-   * @brief Shifts landmark anchor to new clone
-   * @param state State of filter
-   * @param landmark landmark whose anchor is being shifter
-   * @param new_anchor_timestamp Clone timestamp we want to move to
-   * @param new_cam_id Which camera frame we want to move to
+   * @brief 将地标锚点转移到新克隆
+   * @param state 滤波器状态
+   * @param landmark 正在转移锚点的地标
+   * @param new_anchor_timestamp 要转移到的克隆时间戳
+   * @param new_cam_id 要转移到的相机帧
    */
   void perform_anchor_change(std::shared_ptr<State> state, std::shared_ptr<ov_type::Landmark> landmark, double new_anchor_timestamp,
                              size_t new_cam_id);
 
-  /// Options used during update for slam features
+  /// SLAM特征更新期间使用的选项
   UpdaterOptions _options_slam;
 
-  /// Options used during update for aruco features
+  /// ARUCO特征更新期间使用的选项
   UpdaterOptions _options_aruco;
 
-  /// Feature initializer class object
+  /// 特征初始化器类对象
   std::shared_ptr<ov_core::FeatureInitializer> initializer_feat;
 
-  /// Chi squared 95th percentile table (lookup would be size of residual)
+  /// 卡方分布95百分位表（查找键为残差的大小）
   std::map<int, double> chi_squared_table;
 };
 
