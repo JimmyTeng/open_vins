@@ -32,24 +32,23 @@
 namespace ov_core {
 
 /**
- * @brief B-Spline which performs interpolation over SE(3) manifold.
+ * @brief 在SE(3)流形上执行插值的B样条
  *
- * This class implements the b-spline functionality that allows for interpolation over the \f$\mathbb{SE}(3)\f$ manifold.
- * This is based off of the derivations from [Continuous-Time Visual-Inertial Odometry for Event
- * Cameras](https://ieeexplore.ieee.org/abstract/document/8432102/) and [A Spline-Based Trajectory Representation for Sensor Fusion and
- * Rolling Shutter Cameras](https://link.springer.com/article/10.1007/s11263-015-0811-3) with some additional derivations being available in
- * [these notes](http://udel.edu/~pgeneva/downloads/notes/2018_notes_mueffler2017arxiv.pdf). The use of b-splines for \f$\mathbb{SE}(3)\f$
- * interpolation has the following properties:
+ * 此类实现了b样条功能，允许在\f$\mathbb{SE}(3)\f$流形上进行插值。
+ * 这基于[Continuous-Time Visual-Inertial Odometry for Event
+ * Cameras](https://ieeexplore.ieee.org/abstract/document/8432102/)和[A Spline-Based Trajectory Representation for Sensor Fusion and
+ * Rolling Shutter Cameras](https://link.springer.com/article/10.1007/s11263-015-0811-3)中的推导，一些额外的推导可在
+ * [these notes](http://udel.edu/~pgeneva/downloads/notes/2018_notes_mueffler2017arxiv.pdf)中找到。使用b样条进行\f$\mathbb{SE}(3)\f$
+ * 插值具有以下特性：
  *
- * 1. Local control, allowing the system to function online as well as in batch
- * 2. \f$C^2\f$-continuity to enable inertial predictions and calculations
- * 3. Good approximation of minimal torque trajectories
- * 4. A parameterization of rigid-body motion devoid of singularities
+ * 1. 局部控制，允许系统在线和批处理模式下运行
+ * 2. \f$C^2\f$连续性，以支持惯性预测和计算
+ * 3. 对最小力矩轨迹的良好近似
+ * 4. 无奇点的刚体运动参数化
  *
- * The key idea is to convert a set of trajectory points into a continuous-time *uniform cubic cumulative* b-spline.
- * As compared to standard b-spline representations, the cumulative form ensures local continuity which is needed for on-manifold
- * interpolation. We leverage the cubic b-spline to ensure \f$C^2\f$-continuity to ensure that we can calculate accelerations at any point
- * along the trajectory. The general equations are the following
+ * 关键思想是将一组轨迹点转换为连续时间*均匀三次累积*b样条。
+ * 与标准b样条表示相比，累积形式确保了流形上插值所需的局部连续性。我们利用三次b样条来确保\f$C^2\f$连续性，以便能够计算轨迹上任意点的加速度。
+ * 通用方程如下
  *
  * \f{align*}{
  *  {}^{w}_{s}\mathbf{T}(u(t))
@@ -95,112 +94,111 @@ namespace ov_core {
  *  \ddot{{B}}_2(u(t)) &= \frac{1}{3!}~\frac{1}{\Delta t^2}~(6u)
  * \f}
  *
- * where \f$u(t_s)=(t_s-t_i)/\Delta t=(t_s-t_i)/(t_{i+1}-t_i)\f$ is used for all values of *u*.
- * Note that one needs to ensure that they use the SE(3) matrix expodential, logorithm, and hat operation for all above equations.
- * The indexes correspond to the the two poses that are older and two poses that are newer then the current time we want to get (i.e. i-1
- * and i are less than s, while i+1 and i+2 are both greater than time s). Some additional derivations are available in [these
- * notes](http://udel.edu/~pgeneva/downloads/notes/2018_notes_mueffler2017arxiv.pdf).
+ * 其中\f$u(t_s)=(t_s-t_i)/\Delta t=(t_s-t_i)/(t_{i+1}-t_i)\f$用于所有*u*值。
+ * 注意，需要确保在上述所有方程中使用SE(3)矩阵指数、对数和hat运算。
+ * 索引对应于比我们要获取的当前时间更旧的两个位姿和更新的两个位姿（即i-1和i小于s，而i+1和i+2都大于时间s）。
+ * 一些额外的推导可在[these notes](http://udel.edu/~pgeneva/downloads/notes/2018_notes_mueffler2017arxiv.pdf)中找到。
  */
 class BsplineSE3 {
 
 public:
   /**
-   * @brief Default constructor
+   * @brief 默认构造函数
    */
   BsplineSE3() {}
 
   /**
-   * @brief Will feed in a series of poses that we will then convert into control points.
+   * @brief 将输入一系列位姿，然后将其转换为控制点
    *
-   * Our control points need to be uniformly spaced over the trajectory, thus given a trajectory we will
-   * uniformly sample based on the average spacing between the pose points specified.
+   * 我们的控制点需要在轨迹上均匀分布，因此给定轨迹后，我们将
+   * 根据指定的位姿点之间的平均间距进行均匀采样。
    *
-   * @param traj_points Trajectory poses that we will convert into control points (timestamp(s), q_GtoI, p_IinG)
+   * @param traj_points 我们将转换为控制点的轨迹位姿 (timestamp(s), q_GtoI, p_IinG)
    */
   void feed_trajectory(std::vector<Eigen::VectorXd> traj_points);
 
   /**
-   * @brief Gets the orientation and position at a given timestamp
-   * @param timestamp Desired time to get the pose at
-   * @param R_GtoI SO(3) orientation of the pose in the global frame
-   * @param p_IinG Position of the pose in the global
-   * @return False if we can't find it
+   * @brief 获取给定时间戳的朝向和位置
+   * @param timestamp 要获取位姿的期望时间
+   * @param R_GtoI 全局坐标系中的SO(3)朝向
+   * @param p_IinG 全局坐标系中的位姿位置
+   * @return 如果找不到则返回false
    */
   bool get_pose(double timestamp, Eigen::Matrix3d &R_GtoI, Eigen::Vector3d &p_IinG);
 
   /**
-   * @brief Gets the angular and linear velocity at a given timestamp
-   * @param timestamp Desired time to get the pose at
-   * @param R_GtoI SO(3) orientation of the pose in the global frame
-   * @param p_IinG Position of the pose in the global
-   * @param w_IinI Angular velocity in the inertial frame
-   * @param v_IinG Linear velocity in the global frame
-   * @return False if we can't find it
+   * @brief 获取给定时间戳的角速度和线速度
+   * @param timestamp 要获取位姿的期望时间
+   * @param R_GtoI 全局坐标系中的SO(3)朝向
+   * @param p_IinG 全局坐标系中的位姿位置
+   * @param w_IinI 惯性坐标系中的角速度
+   * @param v_IinG 全局坐标系中的线速度
+   * @return 如果找不到则返回false
    */
   bool get_velocity(double timestamp, Eigen::Matrix3d &R_GtoI, Eigen::Vector3d &p_IinG, Eigen::Vector3d &w_IinI, Eigen::Vector3d &v_IinG);
 
   /**
-   * @brief Gets the angular and linear acceleration at a given timestamp
-   * @param timestamp Desired time to get the pose at
-   * @param R_GtoI SO(3) orientation of the pose in the global frame
-   * @param p_IinG Position of the pose in the global
-   * @param w_IinI Angular velocity in the inertial frame
-   * @param v_IinG Linear velocity in the global frame
-   * @param alpha_IinI Angular acceleration in the inertial frame
-   * @param a_IinG Linear acceleration in the global frame
-   * @return False if we can't find it
+   * @brief 获取给定时间戳的角加速度和线加速度
+   * @param timestamp 要获取位姿的期望时间
+   * @param R_GtoI 全局坐标系中的SO(3)朝向
+   * @param p_IinG 全局坐标系中的位姿位置
+   * @param w_IinI 惯性坐标系中的角速度
+   * @param v_IinG 全局坐标系中的线速度
+   * @param alpha_IinI 惯性坐标系中的角加速度
+   * @param a_IinG 全局坐标系中的线加速度
+   * @return 如果找不到则返回false
    */
   bool get_acceleration(double timestamp, Eigen::Matrix3d &R_GtoI, Eigen::Vector3d &p_IinG, Eigen::Vector3d &w_IinI,
                         Eigen::Vector3d &v_IinG, Eigen::Vector3d &alpha_IinI, Eigen::Vector3d &a_IinG);
 
-  /// Returns the simulation start time that we should start simulating from
+  /// 返回应该开始仿真的仿真开始时间
   double get_start_time() { return timestamp_start; }
 
 protected:
-  /// Uniform sampling time for our control points
+  /// 控制点的均匀采样时间
   double dt;
 
-  /// Start time of the system
+  /// 系统的开始时间
   double timestamp_start;
 
-  /// Type defintion of our aligned eigen4d matrix: https://eigen.tuxfamily.org/dox/group__TopicStlContainers.html
+  /// 对齐的eigen4d矩阵的类型定义: https://eigen.tuxfamily.org/dox/group__TopicStlContainers.html
   typedef std::map<double, Eigen::Matrix4d, std::less<double>, Eigen::aligned_allocator<std::pair<const double, Eigen::Matrix4d>>>
       AlignedEigenMat4d;
 
-  /// Our control SE3 control poses (R_ItoG, p_IinG)
+  /// 我们的SE3控制位姿 (R_ItoG, p_IinG)
   AlignedEigenMat4d control_points;
 
   /**
-   * @brief Will find the two bounding poses for a given timestamp.
+   * @brief 将查找给定时间戳的两个边界位姿
    *
-   * This will loop through the passed map of poses and find two bounding poses.
-   * If there are no bounding poses then this will return false.
+   * 这将遍历传入的位姿映射并找到两个边界位姿。
+   * 如果没有边界位姿，则返回false。
    *
-   * @param timestamp Desired timestamp we want to get two bounding poses of
-   * @param poses Map of poses and timestamps
-   * @param t0 Timestamp of the first pose
-   * @param pose0 SE(3) pose of the first pose
-   * @param t1 Timestamp of the second pose
-   * @param pose1 SE(3) pose of the second pose
-   * @return False if we are unable to find bounding poses
+   * @param timestamp 我们要获取两个边界位姿的期望时间戳
+   * @param poses 位姿和时间戳的映射
+   * @param t0 第一个位姿的时间戳
+   * @param pose0 第一个位姿的SE(3)位姿
+   * @param t1 第二个位姿的时间戳
+   * @param pose1 第二个位姿的SE(3)位姿
+   * @return 如果无法找到边界位姿则返回false
    */
   static bool find_bounding_poses(const double timestamp, const AlignedEigenMat4d &poses, double &t0, Eigen::Matrix4d &pose0, double &t1,
                                   Eigen::Matrix4d &pose1);
 
   /**
-   * @brief Will find two older poses and two newer poses for the current timestamp
+   * @brief 将为当前时间戳查找两个更旧的位姿和两个更新的位姿
    *
-   * @param timestamp Desired timestamp we want to get four bounding poses of
-   * @param poses Map of poses and timestamps
-   * @param t0 Timestamp of the first pose
-   * @param pose0 SE(3) pose of the first pose
-   * @param t1 Timestamp of the second pose
-   * @param pose1 SE(3) pose of the second pose
-   * @param t2 Timestamp of the third pose
-   * @param pose2 SE(3) pose of the third pose
-   * @param t3 Timestamp of the fourth pose
-   * @param pose3 SE(3) pose of the fourth pose
-   * @return False if we are unable to find bounding poses
+   * @param timestamp 我们要获取四个边界位姿的期望时间戳
+   * @param poses 位姿和时间戳的映射
+   * @param t0 第一个位姿的时间戳
+   * @param pose0 第一个位姿的SE(3)位姿
+   * @param t1 第二个位姿的时间戳
+   * @param pose1 第二个位姿的SE(3)位姿
+   * @param t2 第三个位姿的时间戳
+   * @param pose2 第三个位姿的SE(3)位姿
+   * @param t3 第四个位姿的时间戳
+   * @param pose3 第四个位姿的SE(3)位姿
+   * @return 如果无法找到边界位姿则返回false
    */
   static bool find_bounding_control_points(const double timestamp, const AlignedEigenMat4d &poses, double &t0, Eigen::Matrix4d &pose0,
                                            double &t1, Eigen::Matrix4d &pose1, double &t2, Eigen::Matrix4d &pose2, double &t3,
