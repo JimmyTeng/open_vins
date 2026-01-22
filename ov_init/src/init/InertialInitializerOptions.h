@@ -152,18 +152,18 @@ struct InertialInitializerOptions {
     PRINT_DEBUG("  - init_max_disparity: %.2f\n", init_max_disparity);
     PRINT_DEBUG("  - init_max_features: %.2f\n", init_max_features);
     if (init_max_features < 15) {
-      PRINT_ERROR(RED "number of requested feature tracks to init not enough!!\n" RESET);
+      PRINT_ERROR(RED "请求的特征点轨迹数不足！！\n" RESET);
       PRINT_ERROR(RED "  init_max_features = %d\n" RESET, init_max_features);
       std::exit(EXIT_FAILURE);
     }
     if (init_imu_thresh <= 0.0 && !init_dyn_use) {
-      PRINT_ERROR(RED "need to have an IMU threshold for static initialization!\n" RESET);
+      PRINT_ERROR(RED "需要一个IMU阈值用于静态初始化！\n" RESET);
       PRINT_ERROR(RED "  init_imu_thresh = %.3f\n" RESET, init_imu_thresh);
       PRINT_ERROR(RED "  init_dyn_use = %d\n" RESET, init_dyn_use);
       std::exit(EXIT_FAILURE);
     }
     if (init_max_disparity <= 0.0 && !init_dyn_use) {
-      PRINT_ERROR(RED "need to have an DISPARITY threshold for static initialization!\n" RESET);
+      PRINT_ERROR(RED "需要一个视差阈值用于静态初始化！\n" RESET);
       PRINT_ERROR(RED "  init_max_disparity = %.3f\n" RESET, init_max_disparity);
       PRINT_ERROR(RED "  init_dyn_use = %d\n" RESET, init_dyn_use);
       std::exit(EXIT_FAILURE);
@@ -181,7 +181,7 @@ struct InertialInitializerOptions {
     PRINT_DEBUG("  - init_dyn_inflation_ba: %.2e\n", init_dyn_inflation_bias_accel);
     PRINT_DEBUG("  - init_dyn_min_rec_cond: %.2e\n", init_dyn_min_rec_cond);
     if (init_dyn_num_pose < 4) {
-      PRINT_ERROR(RED "number of requested frames to init not enough!!\n" RESET);
+      PRINT_ERROR(RED "请求的帧数不足！！\n" RESET);
       PRINT_ERROR(RED "  init_dyn_num_pose = %d (4 min)\n" RESET, init_dyn_num_pose);
       std::exit(EXIT_FAILURE);
     }
@@ -314,7 +314,7 @@ struct InertialInitializerOptions {
         camera_extrinsics.insert({i, cam_eigen});
       }
     }
-    PRINT_DEBUG("STATE PARAMETERS:\n");
+    PRINT_DEBUG("状态参数:\n");
     PRINT_DEBUG("  - gravity_mag: %.4f\n", gravity_mag);
     PRINT_DEBUG("  - gravity: %.3f, %.3f, %.3f\n", 0.0, 0.0, gravity_mag);
     PRINT_DEBUG("  - num_cameras: %d\n", num_cameras);
