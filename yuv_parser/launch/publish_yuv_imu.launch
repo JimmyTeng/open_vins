@@ -1,0 +1,24 @@
+<launch>
+    <!-- 
+        Launch file for publishing YUV frames and IMU data
+        用于播包（发布 YUV 帧和 IMU 数据）
+    -->
+    
+    <!-- 参数配置 -->
+    <!-- 数据目录路径，默认为工作空间下的 data 目录，可以通过命令行参数覆盖 -->
+    <arg name="data_dir" default="$(env HOME)/project/open_vins_ws/data/yuv_data/250704/8" />
+    <arg name="topic_imu" default="/imu0" />
+    <arg name="topic_camera" default="/cam0/image_raw" />
+    <arg name="publish_rate" default="1.0" />  <!-- 1.0 = 实时, >1.0 = 加速播放 -->
+    <arg name="frame_by_frame" default="false" />  <!-- 是否逐帧播放（每帧图像后暂停等待按键） -->
+    
+    <!-- YUV/IMU 发布节点 -->
+    <node name="yuv_imu_publisher" pkg="yuv_parser" type="ros_publisher_node" output="screen">
+        <param name="data_dir" type="string" value="$(arg data_dir)" />
+        <param name="topic_imu" type="string" value="$(arg topic_imu)" />
+        <param name="topic_camera" type="string" value="$(arg topic_camera)" />
+        <param name="publish_rate" type="double" value="$(arg publish_rate)" />
+        <param name="frame_by_frame" type="bool" value="$(arg frame_by_frame)" />
+    </node>
+    
+</launch>

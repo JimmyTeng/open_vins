@@ -1,0 +1,13 @@
+<launch>
+    <!-- 
+        Launch file for RVIZ visualization only
+        仅用于启动 RVIZ 可视化
+    -->
+    
+    <!-- RVIZ 可视化参数 -->
+    <arg name="rviz_config" default="$(find ov_msckf)/launch/display.rviz" />  <!-- RVIZ 配置文件路径 -->
+    
+    <!-- 启动 RVIZ 可视化 -->
+    <node name="rviz" pkg="rviz" type="rviz" output="screen" args="-d $(arg rviz_config)" />
+    
+</launch>

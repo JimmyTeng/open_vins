@@ -1,0 +1,55 @@
+<launch>
+    <!-- 
+        Launch file for running OpenVINS estimator
+        用于启动 OpenVINS 估计器
+    -->
+    
+    <!-- 参数配置 -->
+    <arg name="verbosity" default="ALL" />  <!-- ALL, DEBUG, INFO, WARNING, ERROR, SILENT -->
+    <!-- 配置文件路径：在 yuv_parser 工程下的 config/openvins/ 目录 -->
+    <arg name="config_path" default="$(find yuv_parser)/config/openvins/estimator_config.yaml" />
+    <arg name="max_cameras" default="1" />  <!-- 单目相机 -->
+    <arg name="use_stereo" default="false" />  <!-- 不使用立体视觉 -->
+    
+    <!-- 保存轨迹参数 -->
+    <arg name="dosave" default="false" />
+    <arg name="path_est" default="/tmp/traj_estimate.txt" />
+    
+    <!-- 记录时间统计信息 -->
+    <arg name="dotime" default="false" />
+    <arg name="path_time" default="/tmp/traj_timing.txt" />
+    
+    <!-- RVIZ 可视化参数 -->
+    <arg name="rviz_enable" default="false" />  <!-- 是否启动 RVIZ -->
+    <arg name="rviz_config" default="$(find ov_msckf)/launch/display.rviz" />  <!-- RVIZ 配置文件路径 -->
+    
+    <!-- OpenVINS 主节点 -->
+    <node name="ov_msckf" pkg="ov_msckf" type="run_subscribe_msckf" output="screen" clear_params="true" required="true">
+        <!-- 主配置对象 -->
+        <param name="verbosity" type="string" value="$(arg verbosity)" />
+        <param name="config_path" type="string" value="$(arg config_path)" />
+        
+        <!-- 世界/滤波器参数 -->
+        <param name="use_stereo" type="bool" value="$(arg use_stereo)" />
+        <param name="max_cameras" type="int" value="$(arg max_cameras)" />
+        
+        <!-- 时间统计记录 -->
+        <param name="record_timing_information" type="bool" value="$(arg dotime)" />
+        <param name="record_timing_filepath" type="string" value="$(arg path_time)" />
+    </node>
+    
+    <!-- 记录轨迹（如果启用） -->
+    <group if="$(arg dosave)">
+        <node name="recorder_estimate" pkg="ov_eval" type="pose_to_file" output="screen" required="true">
+            <param name="topic" type="str" value="/ov_msckf/poseimu" />
+            <param name="topic_type" type="str" value="PoseWithCovarianceStamped" />
+            <param name="output" type="str" value="$(arg path_est)" />
+        </node>
+    </group>
+    
+    <!-- 启动 RVIZ 可视化（如果启用） -->
+    <include if="$(arg rviz_enable)" file="$(find yuv_parser)/launch/run_rviz.launch">
+        <arg name="rviz_config" value="$(arg rviz_config)" />
+    </include>
+    
+</launch>

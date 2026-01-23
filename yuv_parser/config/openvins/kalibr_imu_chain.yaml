@@ -1,0 +1,46 @@
+%YAML:1.0
+
+imu0:
+  T_i_b:
+    - [1.0, 0.0, 0.0, 0.0]
+    - [0.0, 1.0, 0.0, 0.0]
+    - [0.0, 0.0, 1.0, 0.0]
+    - [0.0, 0.0, 0.0, 1.0]
+  # IMU noise parameters from Kalibr report
+  accelerometer_noise_density: 0.1  # [ m / s^2 / sqrt(Hz) ] - Noise density: 0.1
+  accelerometer_random_walk: 0.001   # [ m / s^3 / sqrt(Hz) ] - Random walk: 0.001
+  gyroscope_noise_density: 0.00045    # [ rad / s / sqrt(Hz) ] - Noise density: 0.0045
+  gyroscope_random_walk: 0.000045     # [ rad / s^2 / sqrt(Hz) ] - Random walk: 0.00045
+  rostopic: /imu0
+  # Time offset from Kalibr report: timeshift cam0 to imu0 (t_imu = t_cam + shift)
+  time_offset: 0.0004526049510845013
+  update_rate: 500.0
+  # three different modes supported:
+  # "calibrated" (same as "kalibr"), "kalibr", "rpng"
+  model: "calibrated"
+  # how to get from Kalibr imu.yaml result file:
+  #   - Tw is imu0:gyroscopes:M:
+  #   - R_IMUtoGYRO: is imu0:gyroscopes:C_gyro_i:
+  #   - Ta is imu0:accelerometers:M:
+  #   - R_IMUtoACC not used by Kalibr
+  #   - Tg is imu0:gyroscopes:A:
+  Tw:
+    - [0.998463, 0.0031813028106000003, 0.00723763862514]
+    - [0.0, 1.00412, 0.00056853374812]
+    - [0.0, 0.0, 1.00247]
+  R_IMUtoGYRO:
+    - [1.0, 0.0, 0.0]
+    - [0.0, 1.0, 0.0]
+    - [0.0, 0.0, 1.0]
+  Ta:
+    - [1.0001038439007086, 0.0026695269633004136, 0.006360727212495577]
+    - [-0.002403443625408917, 1.0005863423671062, 0.0009181542202587344]
+    - [-0.005151628263649664, -0.0005145755238918502, 1.0046002282398734]
+  R_IMUtoACC:
+    - [1.0, 0.0, 0.0]
+    - [0.0, 1.0, 0.0]
+    - [0.0, 0.0, 1.0]
+  Tg:
+    - [0.0, 0.0, 0.0]
+    - [0.0, 0.0, 0.0]
+    - [0.0, 0.0, 0.0]

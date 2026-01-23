@@ -1,0 +1,22 @@
+%YAML:1.0
+
+cam0:
+  # T_imu_cam: Transformation from camera to IMU (T_ic from Kalibr report)
+  # Format: [R_CtoI | p_CinI] where R_CtoI is rotation from camera to IMU, p_CinI is position of camera in IMU frame
+  # Source: Kalibr calibration report - T_ic (cam0 to imu0)
+  T_imu_cam:
+    - [0.00793851, -0.99956867, 0.02827475, -0.02720239]
+    - [-0.99988143, -0.00756153, 0.01341474, 0.01081322]
+    - [-0.01319515, -0.02837789, -0.99951017, -0.23832459]
+    - [0.0, 0.0, 0.0, 1.0]
+  cam_overlaps: [0]
+  camera_model: pinhole
+  # Distortion coefficients from Kalibr report
+  distortion_coeffs: [0.00875612059365822, -0.007079887259609222, -0.0016651205125619982, 0.0011694768423960067]
+  distortion_model: radtan
+  # Intrinsics from Kalibr report: [fx, fy, cx, cy]
+  intrinsics: [267.16355374135185, 267.62580693405454, 325.734911944596, 250.052614525017]
+  resolution: [640, 480]
+  rostopic: /cam0/image_raw
+  # Time offset from Kalibr report: t_imu = t_cam + timeshift_cam_imu
+  timeshift_cam_imu: 0.00012404842377866743
