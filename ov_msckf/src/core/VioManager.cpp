@@ -525,7 +525,7 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
   // This isn't super ideal, but it keeps the logic after this easier...
   // We can start processing things when we have at least 5 clones since we can start triangulating things...
   if ((int)state->_clones_IMU.size() < std::min(state->_options.max_clone_size, 5)) {
-    PRINT_DEBUG("等待足够的克隆状态 (%d / %d)....\n", (int)state->_clones_IMU.size(),
+    PRINT_DEBUG("[VM]: 等待足够的克隆状态 (%d / %d)....\n", (int)state->_clones_IMU.size(),
                 std::min(state->_options.max_clone_size, 5));
     return;
   }
@@ -533,8 +533,8 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
   // 如果无法传播，则返回
   // Return if we where unable to propagate
   if (state->_timestamp != message.timestamp) {
-    PRINT_WARNING(RED "[传播]: 传播器无法将状态向前传播到指定时间！\n" RESET);
-    PRINT_WARNING(RED "[传播]: 距离上次传播已经过了 %.3f 秒\n" RESET, message.timestamp - state->_timestamp);
+    PRINT_WARNING(RED "[VM]: 传播器无法将状态向前传播到指定时间！\n" RESET);
+    PRINT_WARNING(RED "[VM]: 距离上次传播已经过了 %.3f 秒\n" RESET, message.timestamp - state->_timestamp);
     return;
   }
   has_moved_since_zupt = true;
@@ -963,17 +963,17 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
   // 调试：打印当前状态
   // Debug, print our current state
   // q_GtoI: 全局到IMU的旋转四元数, p_IinG: IMU在全局坐标系中的位置, dist: 累计距离
-  PRINT_INFO("q_GtoI = %.3f,%.3f,%.3f,%.3f | p_IinG = %.3f,%.3f,%.3f | Dist = %.2f s, \n", state->_imu->quat()(0),
+  PRINT_INFO("[VM]: q_GtoI = %.3f,%.3f,%.3f,%.3f | p_IinG = %.3f,%.3f,%.3f | Dist = %.2f s, \n", state->_imu->quat()(0),
              state->_imu->quat()(1), state->_imu->quat()(2), state->_imu->quat()(3), state->_imu->pos()(0), state->_imu->pos()(1),
              state->_imu->pos()(2), distance);
   // bg: 陀螺仪偏差, ba: 加速度计偏差
-  PRINT_INFO("bg = %.4f,%.4f,%.4f | ba = %.4f,%.4f,%.4f\n", state->_imu->bias_g()(0), state->_imu->bias_g()(1), state->_imu->bias_g()(2),
+  PRINT_INFO("[VM]: bg = %.4f,%.4f,%.4f | ba = %.4f,%.4f,%.4f\n", state->_imu->bias_g()(0), state->_imu->bias_g()(1), state->_imu->bias_g()(2),
              state->_imu->bias_a()(0), state->_imu->bias_a()(1), state->_imu->bias_a()(2));
 
   // 调试：相机-IMU时间偏移
   // Debug for camera imu offset
   if (state->_options.do_calib_camera_timeoffset) {
-    PRINT_INFO("相机-IMU时间偏移 = %.5f\n", state->_calib_dt_CAMtoIMU->value()(0));
+    PRINT_INFO("[VM]: 相机-IMU时间偏移 = %.5f\n", state->_calib_dt_CAMtoIMU->value()(0));
   }
 
   // 调试：相机内参
@@ -981,7 +981,7 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
   if (state->_options.do_calib_camera_intrinsics) {
     for (int i = 0; i < state->_options.num_cameras; i++) {
       std::shared_ptr<Vec> calib = state->_cam_intrinsics.at(i);
-      PRINT_INFO("相机%d 内参 = %.3f,%.3f,%.3f,%.3f | %.3f,%.3f,%.3f,%.3f\n", (int)i, calib->value()(0), calib->value()(1),
+      PRINT_INFO("[VM]: 相机%d 内参 = %.3f,%.3f,%.3f,%.3f | %.3f,%.3f,%.3f,%.3f\n", (int)i, calib->value()(0), calib->value()(1),
                  calib->value()(2), calib->value()(3), calib->value()(4), calib->value()(5), calib->value()(6), calib->value()(7));
     }
   }
@@ -991,7 +991,7 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
   if (state->_options.do_calib_camera_pose) {
     for (int i = 0; i < state->_options.num_cameras; i++) {
       std::shared_ptr<PoseJPL> calib = state->_calib_IMUtoCAM.at(i);
-      PRINT_INFO("相机%d 外参 = %.3f,%.3f,%.3f,%.3f | %.3f,%.3f,%.3f\n", (int)i, calib->quat()(0), calib->quat()(1), calib->quat()(2),
+      PRINT_INFO("[VM]: 相机%d 外参 = %.3f,%.3f,%.3f,%.3f | %.3f,%.3f,%.3f\n", (int)i, calib->quat()(0), calib->quat()(1), calib->quat()(2),
                  calib->quat()(3), calib->pos()(0), calib->pos()(1), calib->pos()(2));
     }
   }
