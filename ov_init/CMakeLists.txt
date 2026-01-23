@@ -14,7 +14,7 @@ find_package(Ceres REQUIRED)
 message(STATUS "OPENCV: " ${OpenCV_VERSION} " | BOOST: " ${Boost_VERSION} " | CERES: " ${Ceres_VERSION})
 
 # By default we build with ROS, but you can disable this and just build as a library
-option(ENABLE_ROS "Enable or disable building with ROS (if it is found)" ON)
+option(ENABLE_ROS "Enable or disable building with ROS (if it is found)" OFF)
 
 # check if we have our python libs files (will search for python3 then python2 installs)
 # sudo apt-get install python-matplotlib python-numpy python-dev
