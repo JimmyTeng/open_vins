@@ -7,7 +7,7 @@ imu0:
     - [0.0, 0.0, 1.0, 0.0]
     - [0.0, 0.0, 0.0, 1.0]
   # IMU noise parameters from Kalibr report
-  accelerometer_noise_density: 0.1  # [ m / s^2 / sqrt(Hz) ] - Noise density: 0.1
+  accelerometer_noise_density: 0.05  # [ m / s^2 / sqrt(Hz) ] - Noise density: 0.1
   accelerometer_random_walk: 0.001   # [ m / s^3 / sqrt(Hz) ] - Random walk: 0.001
   gyroscope_noise_density: 0.00045    # [ rad / s / sqrt(Hz) ] - Noise density: 0.0045
   gyroscope_random_walk: 0.000045     # [ rad / s^2 / sqrt(Hz) ] - Random walk: 0.00045
