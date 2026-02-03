@@ -9,6 +9,7 @@ if (NOT OpenCV_FOUND)
     find_package(OpenCV 4 REQUIRED)
 endif ()
 find_package(Boost REQUIRED COMPONENTS system filesystem thread date_time)
+find_package(Ceres REQUIRED)
 message(STATUS "OPENCV: " ${OpenCV_VERSION} " | BOOST: " ${Boost_VERSION})
 
 # By default we build with ROS, but you can disable this and just build as a library
@@ -49,21 +50,114 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -fsee -fomit-frame-pointer -fno-sign
 # Enable debug flags (use if you want to debug in gdb)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g3 -Wall -Wuninitialized -Wmaybe-uninitialized -fno-omit-frame-pointer")
 
-# Find our ROS version!
-# NOTE: Default to using the ROS1 package if both are in our enviroment
-# NOTE: https://github.com/romainreignier/share_ros1_ros2_lib_demo
-find_package(catkin QUIET COMPONENTS roscpp)
-find_package(ament_cmake QUIET)
-if (catkin_FOUND AND ENABLE_ROS)
-    message(STATUS "ROS *1* version found, building ROS1.cmake")
-    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ROS1.cmake)
-elseif (ament_cmake_FOUND AND ENABLE_ROS)
-    message(STATUS "ROS *2* version found, building ROS2.cmake")
-    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ROS2.cmake)
-else ()
-    message(STATUS "No ROS versions found or building with ROS disabled, building ROS1.cmake without ROS")
-    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ROS1.cmake)
-endif ()
+
+add_definitions(-DROS_AVAILABLE=0)
+message(WARNING "BUILDING WITHOUT ROS!")
+include(GNUInstallDirs)
+set(CATKIN_PACKAGE_LIB_DESTINATION "${CMAKE_INSTALL_LIBDIR}")
+set(CATKIN_PACKAGE_BIN_DESTINATION "${CMAKE_INSTALL_BINDIR}")
+set(CATKIN_GLOBAL_INCLUDE_DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/open_vins/")
+
+# Include our header files
+include_directories(
+        src
+        ${EIGEN3_INCLUDE_DIR}
+        ${Boost_INCLUDE_DIRS}
+        ${CERES_INCLUDE_DIRS}
+)
+
+# Set link libraries used by all binaries
+list(APPEND thirdparty_libraries
+        ${Boost_LIBRARIES}
+        ${OpenCV_LIBRARIES}
+        ${CERES_LIBRARIES}
+)
+
+##################################################
+# Make the core library
+##################################################
+
+# Collect all source files
+file(GLOB_RECURSE SRC_LIST_CPP
+        "${PROJECT_SOURCE_DIR}/src/cam/*.cpp"
+        "${PROJECT_SOURCE_DIR}/src/ceres/*.cpp"
+        "${PROJECT_SOURCE_DIR}/src/core/*.cpp"
+        "${PROJECT_SOURCE_DIR}/src/cpi/*.cpp"
+        "${PROJECT_SOURCE_DIR}/src/dynamic/*.cpp"
+        "${PROJECT_SOURCE_DIR}/src/feat/*.cpp"
+        "${PROJECT_SOURCE_DIR}/src/init/*.cpp"
+        "${PROJECT_SOURCE_DIR}/src/plot/*.cpp"
+        "${PROJECT_SOURCE_DIR}/src/sim/*.cpp"
+        "${PROJECT_SOURCE_DIR}/src/state/*.cpp"
+        "${PROJECT_SOURCE_DIR}/src/static/*.cpp"
+        "${PROJECT_SOURCE_DIR}/src/types/*.cpp"
+        "${PROJECT_SOURCE_DIR}/src/track/*.cpp"
+        "${PROJECT_SOURCE_DIR}/src/update/*.cpp"
+        "${PROJECT_SOURCE_DIR}/src/utils/*.cpp"
+)
+
+file(GLOB_RECURSE SRC_LIST_H
+        "${PROJECT_SOURCE_DIR}/src/cam/*.h"
+        "${PROJECT_SOURCE_DIR}/src/ceres/*.h"
+        "${PROJECT_SOURCE_DIR}/src/core/*.h"
+        "${PROJECT_SOURCE_DIR}/src/cpi/*.h"
+        "${PROJECT_SOURCE_DIR}/src/dynamic/*.h"
+        "${PROJECT_SOURCE_DIR}/src/feat/*.h"
+        "${PROJECT_SOURCE_DIR}/src/init/*.h"
+        "${PROJECT_SOURCE_DIR}/src/plot/*.h"
+        "${PROJECT_SOURCE_DIR}/src/sim/*.h"
+        "${PROJECT_SOURCE_DIR}/src/state/*.h"
+        "${PROJECT_SOURCE_DIR}/src/static/*.h"
+        "${PROJECT_SOURCE_DIR}/src/types/*.h"
+        "${PROJECT_SOURCE_DIR}/src/track/*.h"
+        "${PROJECT_SOURCE_DIR}/src/update/*.h"
+        "${PROJECT_SOURCE_DIR}/src/utils/*.h"
+)
+
+# Add the library
+add_library(${PROJECT_NAME}_lib ${SRC_LIST_CPP} ${SRC_LIST_H})
+
+# Add include directories
+target_include_directories(${PROJECT_NAME}_lib
+        PUBLIC
+        $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:include>
+        PRIVATE src)
+
+
+target_link_libraries(${PROJECT_NAME}_lib PUBLIC ${thirdparty_libraries})
+target_include_directories(${PROJECT_NAME}_lib PUBLIC src/)
+install(TARGETS ${PROJECT_NAME}_lib
+        ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+        LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+        RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+)
+install(DIRECTORY src/
+        DESTINATION ${CATKIN_GLOBAL_INCLUDE_DESTINATION}
+        FILES_MATCHING PATTERN "*.h" PATTERN "*.hpp"
+)
+
+##################################################
+# Make binary files!
+##################################################
+
+
+add_executable(test_webcam src/test_webcam.cpp)
+target_link_libraries(test_webcam ${PROJECT_NAME}_lib ${thirdparty_libraries})
+install(TARGETS test_webcam
+        ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+        LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+        RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+)
+
+add_executable(test_profile src/test_profile.cpp)
+target_link_libraries(test_profile ${PROJECT_NAME}_lib ${thirdparty_libraries})
+install(TARGETS test_profile
+        ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+        LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+        RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+)
+
 
 
 
