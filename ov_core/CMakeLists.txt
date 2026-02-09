@@ -44,6 +44,9 @@ set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# 静态库被链接到共享库时需要 -fPIC (Position Independent Code)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
 # Enable compile optimizations
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -fsee -fomit-frame-pointer -fno-signed-zeros -fno-math-errno -funroll-loops")
 
@@ -115,7 +118,7 @@ file(GLOB_RECURSE SRC_LIST_H
 )
 
 # Add the library
-add_library(${PROJECT_NAME}_lib ${SRC_LIST_CPP} ${SRC_LIST_H})
+add_library(${PROJECT_NAME}_lib SHARED ${SRC_LIST_CPP} ${SRC_LIST_H})
 
 # Add include directories
 target_include_directories(${PROJECT_NAME}_lib

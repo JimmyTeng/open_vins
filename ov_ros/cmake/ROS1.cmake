@@ -156,8 +156,12 @@ install(TARGETS test_sim_repeat
 
 # YUV/IMU publisher node (moved from ov_yuv_parser)
 add_executable(ros_publisher_node src/ros_publisher_node.cpp)
+target_include_directories(ros_publisher_node PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../ov_yuv_parser/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/../ov_yuv_parser/src/parser
+)
 target_link_libraries(ros_publisher_node
-        PUBLIC ${ov_yuv_parser_LIBRARIES}
+        PUBLIC ov_yuv_parser_lib
         PUBLIC ${thirdparty_libraries})
 install(TARGETS ros_publisher_node
         ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}

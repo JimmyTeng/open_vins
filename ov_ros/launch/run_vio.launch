@@ -1,0 +1,54 @@
+<launch>
+    <!-- 
+        Combined launch file for running VIO system
+        组合启动文件：同时启动播包和 OpenVINS
+        通过 include 包含另外两个 launch 文件，避免代码重复
+    -->
+    
+    <!-- ========== 播包参数 ========== -->
+    <arg name="data_dir" default="$(env HOME)/project/open_vins_ws/data/yuv_data/init/outdoor/grass/static" />
+    <arg name="topic_imu" default="/imu0" />
+    <arg name="topic_camera" default="/cam0/image_raw" />
+    <arg name="publish_rate" default="1.0" />  <!-- 1.0 = 实时, >1.0 = 加速播放 -->
+    
+    <!-- ========== OpenVINS 参数 ========== -->
+    <arg name="verbosity" default="INFO" />  <!-- ALL, DEBUG, INFO, WARNING, ERROR, SILENT -->
+    <arg name="config_path" default="$(find ov_ros)/config/openvins/estimator_config.yaml" />
+    <arg name="max_cameras" default="1" />  <!-- 单目相机 -->
+    <arg name="use_stereo" default="false" />  <!-- 不使用立体视觉 -->
+    
+    <!-- ========== 保存轨迹参数 ========== -->
+    <arg name="dosave" default="false" />
+    <arg name="path_est" default="/tmp/traj_estimate.txt" />
+    
+    <!-- ========== 记录时间统计信息 ========== -->
+    <arg name="dotime" default="false" />
+    <arg name="path_time" default="/tmp/traj_timing.txt" />
+    
+    <!-- ========== RVIZ 可视化参数 ========== -->
+    <arg name="rviz_enable" default="true" />  <!-- 是否启动 RVIZ -->
+    <arg name="rviz_config" default="$(find ov_ros)/launch/display.rviz" />  <!-- RVIZ 配置文件路径 -->
+    
+    <!-- ========== 启动播包节点 ========== -->
+    <include file="$(find ov_ros)/launch/publish_yuv_imu.launch">
+        <arg name="data_dir" value="$(arg data_dir)" />
+        <arg name="topic_imu" value="$(arg topic_imu)" />
+        <arg name="topic_camera" value="$(arg topic_camera)" />
+        <arg name="publish_rate" value="$(arg publish_rate)" />
+    </include>
+    
+    <!-- ========== 启动 OpenVINS 节点 ========== -->
+    <include file="$(find ov_ros)/launch/run_openvins.launch">
+        <arg name="verbosity" value="$(arg verbosity)" />
+        <arg name="config_path" value="$(arg config_path)" />
+        <arg name="max_cameras" value="$(arg max_cameras)" />
+        <arg name="use_stereo" value="$(arg use_stereo)" />
+        <arg name="dosave" value="$(arg dosave)" />
+        <arg name="path_est" value="$(arg path_est)" />
+        <arg name="dotime" value="$(arg dotime)" />
+        <arg name="path_time" value="$(arg path_time)" />
+        <arg name="rviz_enable" value="$(arg rviz_enable)" />
+        <arg name="rviz_config" value="$(arg rviz_config)" />
+    </include>
+    
+</launch>
