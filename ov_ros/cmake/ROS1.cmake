@@ -1,12 +1,12 @@
 cmake_minimum_required(VERSION 3.3)
 
 # Find ROS build system
-find_package(catkin QUIET COMPONENTS roscpp rosbag tf std_msgs geometry_msgs sensor_msgs nav_msgs visualization_msgs image_transport cv_bridge)
+find_package(catkin QUIET COMPONENTS roscpp rosbag tf std_msgs geometry_msgs sensor_msgs nav_msgs visualization_msgs image_transport cv_bridge ov_yuv_parser)
 
 # Describe ROS project
 add_definitions(-DROS_AVAILABLE=1)
 catkin_package(
-        CATKIN_DEPENDS roscpp rosbag tf std_msgs geometry_msgs sensor_msgs nav_msgs visualization_msgs image_transport cv_bridge
+        CATKIN_DEPENDS roscpp rosbag tf std_msgs geometry_msgs sensor_msgs nav_msgs visualization_msgs image_transport cv_bridge ov_yuv_parser
         INCLUDE_DIRS src/
         LIBRARIES ov_msckf_lib
 )
@@ -19,6 +19,7 @@ include_directories(
         ${Boost_INCLUDE_DIRS}
         ${CERES_INCLUDE_DIRS}
         ${catkin_INCLUDE_DIRS}
+        ${ov_yuv_parser_INCLUDE_DIRS}
 )
 
 # Set link libraries used by all binaries
@@ -148,6 +149,17 @@ target_link_libraries(test_sim_repeat
         PUBLIC ov_msckf_lib
         PUBLIC ${thirdparty_libraries})
 install(TARGETS test_sim_repeat
+        ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+        LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+        RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+)
+
+# YUV/IMU publisher node (moved from ov_yuv_parser)
+add_executable(ros_publisher_node src/ros_publisher_node.cpp)
+target_link_libraries(ros_publisher_node
+        PUBLIC ${ov_yuv_parser_LIBRARIES}
+        PUBLIC ${thirdparty_libraries})
+install(TARGETS ros_publisher_node
         ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
         LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
         RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}

@@ -40,29 +40,30 @@ include_directories(
 # Catkin package configuration (must be before add_executable)
 catkin_package(
     CATKIN_DEPENDS roscpp sensor_msgs cv_bridge
-    INCLUDE_DIRS
-    LIBRARIES
+    INCLUDE_DIRS src/
+    LIBRARIES ov_yuv_parser_lib
 )
+
+# Create ov_yuv_parser_lib for reuse by other packages (e.g. ov_ros)
+add_library(ov_yuv_parser_lib STATIC
+    src/yuv_parser.cpp
+    src/imu_parser.cpp
+)
+target_include_directories(ov_yuv_parser_lib PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${OpenCV_INCLUDE_DIRS}
+)
+target_link_libraries(ov_yuv_parser_lib PUBLIC ${OpenCV_LIBS})
+install(TARGETS ov_yuv_parser_lib ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION})
 
 # Source files for yuv_parser executable
 set(YUV_PARSER_SOURCES
         src/main.cpp
-        src/yuv_parser.cpp
-        src/imu_parser.cpp
-)
-
-# Source files for ROS publisher node
-set(ROS_PUBLISHER_SOURCES
-        src/ros_publisher_node.cpp
-        src/yuv_parser.cpp
-        src/imu_parser.cpp
 )
 
 # Source files for YUV to PNG converter
 set(YUV_TO_PNG_SOURCES
         src/yuv_to_png.cpp
-        src/yuv_parser.cpp
-        src/imu_parser.cpp
 )
 
 # Source files for VIO YUV runner (暂时注释，因为 vio_interface API 不存在)
@@ -76,9 +77,6 @@ set(YUV_TO_PNG_SOURCES
 # Create yuv_parser executable
 add_executable(ov_yuv_parser ${YUV_PARSER_SOURCES})
 
-# Create ROS publisher node
-add_executable(ros_publisher_node ${ROS_PUBLISHER_SOURCES})
-
 # Create YUV to PNG converter
 add_executable(yuv_to_png ${YUV_TO_PNG_SOURCES})
 
@@ -87,23 +85,12 @@ add_executable(yuv_to_png ${YUV_TO_PNG_SOURCES})
 
 # Link libraries for ov_yuv_parser
 target_link_libraries(ov_yuv_parser
-    ${OpenCV_LIBS}
-)
-
-# Link libraries for ROS publisher node
-target_link_libraries(ros_publisher_node
-    ${catkin_LIBRARIES}
-    ${OpenCV_LIBS}
+    ov_yuv_parser_lib
 )
 
 # Link libraries for YUV to PNG converter
 target_link_libraries(yuv_to_png
-    ${OpenCV_LIBS}
-)
-
-# Include directories for ROS publisher node
-target_include_directories(ros_publisher_node PRIVATE
-    ${catkin_INCLUDE_DIRS}
+    ov_yuv_parser_lib
 )
 
 # Link libraries for VIO YUV runner (暂时注释)
@@ -129,11 +116,6 @@ target_compile_options(ov_yuv_parser PRIVATE
     -Wextra
 )
 
-target_compile_options(ros_publisher_node PRIVATE
-    -Wall
-    -Wextra
-)
-
 target_compile_options(yuv_to_png PRIVATE
     -Wall
     -Wextra
@@ -146,7 +128,7 @@ target_compile_options(yuv_to_png PRIVATE
 # )
 
 # Install executables
-install(TARGETS ov_yuv_parser ros_publisher_node yuv_to_png
+install(TARGETS ov_yuv_parser yuv_to_png
     RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

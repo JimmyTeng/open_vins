@@ -59,8 +59,7 @@ list(APPEND LIBRARY_SOURCES
         src/state/State.cpp
         src/state/StateHelper.cpp
         src/state/Propagator.cpp
-        src/core/VioManager.cpp
-        src/core/VioManagerHelper.cpp
+        # VioManager 已移至 ov_core，通过 ament 依赖 ov_core 获取
         src/update/UpdaterHelper.cpp
         src/update/UpdaterMSCKF.cpp
         src/update/UpdaterSLAM.cpp
