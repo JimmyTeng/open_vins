@@ -103,6 +103,8 @@ void TrackKLT::feed_monocular(const CameraData &message, size_t msg_id) {
   cv::Mat img = img_curr.at(cam_id);
   std::vector<cv::Mat> imgpyr = img_pyramid_curr.at(cam_id);
   cv::Mat mask = message.masks.at(msg_id);
+  if (mask.empty() || mask.rows != img.rows || mask.cols != img.cols)
+    mask = cv::Mat::zeros(img.rows, img.cols, CV_8UC1);
   rT2 = boost::posix_time::microsec_clock::local_time();
 
   // If we didn't have any successful tracks last time, just extract this time
@@ -163,7 +165,7 @@ void TrackKLT::feed_monocular(const CameraData &message, size_t msg_id) {
       continue;
     // Check if it is in the mask
     // NOTE: mask has max value of 255 (white) if it should be
-    if ((int)message.masks.at(msg_id).at<uint8_t>((int)pts_left_new.at(i).pt.y, (int)pts_left_new.at(i).pt.x) > 127)
+    if ((int)mask.at<uint8_t>((int)pts_left_new.at(i).pt.y, (int)pts_left_new.at(i).pt.x) > 127)
       continue;
     // If it is a good track, and also tracked from left to right
     if (mask_ll[i]) {
@@ -214,6 +216,10 @@ void TrackKLT::feed_stereo(const CameraData &message, size_t msg_id_left, size_t
   std::vector<cv::Mat> imgpyr_right = img_pyramid_curr.at(cam_id_right);
   cv::Mat mask_left = message.masks.at(msg_id_left);
   cv::Mat mask_right = message.masks.at(msg_id_right);
+  if (mask_left.empty() || mask_left.rows != img_left.rows || mask_left.cols != img_left.cols)
+    mask_left = cv::Mat::zeros(img_left.rows, img_left.cols, CV_8UC1);
+  if (mask_right.empty() || mask_right.rows != img_right.rows || mask_right.cols != img_right.cols)
+    mask_right = cv::Mat::zeros(img_right.rows, img_right.cols, CV_8UC1);
   rT2 = boost::posix_time::microsec_clock::local_time();
 
   // If we didn't have any successful tracks last time, just extract this time
@@ -405,7 +411,8 @@ void TrackKLT::perform_detection_monocular(const std::vector<cv::Mat> &img0pyr, 
   float size_y = (float)img0pyr.at(0).rows / (float)grid_y;
   cv::Size size_grid(grid_x, grid_y); // width x height
   cv::Mat grid_2d_grid = cv::Mat::zeros(size_grid, CV_8UC1);
-  cv::Mat mask0_updated = mask0.clone();
+  cv::Mat mask0_use = mask0.empty() ? cv::Mat::zeros(img0pyr.at(0).size(), CV_8UC1) : mask0.clone();
+  cv::Mat mask0_updated = mask0_use.clone();
   auto it0 = pts0.begin();
   auto it1 = ids0.begin();
   while (it0 != pts0.end()) {
@@ -443,7 +450,7 @@ void TrackKLT::perform_detection_monocular(const std::vector<cv::Mat> &img0pyr, 
     }
     // Now check if it is in a mask area or not
     // NOTE: mask has max value of 255 (white) if it should be
-    if (mask0.at<uint8_t>(y, x) > 127) {
+    if (mask0_use.at<uint8_t>(y, x) > 127) {
       it0 = pts0.erase(it0);
       it1 = ids0.erase(it1);
       continue;
@@ -477,7 +484,11 @@ void TrackKLT::perform_detection_monocular(const std::vector<cv::Mat> &img0pyr, 
 
   // We also check a downsampled mask such that we don't extract in areas where it is all masked!
   cv::Mat mask0_grid;
-  cv::resize(mask0, mask0_grid, size_grid, 0.0, 0.0, cv::INTER_NEAREST);
+  if (!mask0_use.empty()) {
+    cv::resize(mask0_use, mask0_grid, size_grid, 0.0, 0.0, cv::INTER_NEAREST);
+  } else {
+    mask0_grid = cv::Mat::zeros(size_grid, CV_8UC1);
+  }
 
   // Create grids we need to extract from and then extract our features (use fast with griding)
   int num_features_grid = (int)((double)num_features / (double)(grid_x * grid_y)) + 1;
@@ -541,7 +552,8 @@ void TrackKLT::perform_detection_stereo(const std::vector<cv::Mat> &img0pyr, con
   float size_y0 = (float)img0pyr.at(0).rows / (float)grid_y;
   cv::Size size_grid0(grid_x, grid_y); // width x height
   cv::Mat grid_2d_grid0 = cv::Mat::zeros(size_grid0, CV_8UC1);
-  cv::Mat mask0_updated = mask0.clone();
+  cv::Mat mask0_use = mask0.empty() ? cv::Mat::zeros(img0pyr.at(0).size(), CV_8UC1) : mask0.clone();
+  cv::Mat mask0_updated = mask0_use.clone();
   auto it0 = pts0.begin();
   auto it1 = ids0.begin();
   while (it0 != pts0.end()) {
@@ -579,7 +591,7 @@ void TrackKLT::perform_detection_stereo(const std::vector<cv::Mat> &img0pyr, con
     }
     // Now check if it is in a mask area or not
     // NOTE: mask has max value of 255 (white) if it should be
-    if (mask0.at<uint8_t>(y, x) > 127) {
+    if (mask0_use.at<uint8_t>(y, x) > 127) {
       it0 = pts0.erase(it0);
       it1 = ids0.erase(it1);
       continue;
@@ -615,7 +627,11 @@ void TrackKLT::perform_detection_stereo(const std::vector<cv::Mat> &img0pyr, con
 
     // We also check a downsampled mask such that we don't extract in areas where it is all masked!
     cv::Mat mask0_grid;
-    cv::resize(mask0, mask0_grid, size_grid0, 0.0, 0.0, cv::INTER_NEAREST);
+    if (!mask0_use.empty()) {
+      cv::resize(mask0_use, mask0_grid, size_grid0, 0.0, 0.0, cv::INTER_NEAREST);
+    } else {
+      mask0_grid = cv::Mat::zeros(size_grid0, CV_8UC1);
+    }
 
     // Create grids we need to extract from and then extract our features (use fast with griding)
     int num_features_grid = (int)((double)num_features / (double)(grid_x * grid_y)) + 1;
@@ -718,7 +734,8 @@ void TrackKLT::perform_detection_stereo(const std::vector<cv::Mat> &img0pyr, con
   float size_y1 = (float)img1pyr.at(0).rows / (float)grid_y;
   cv::Size size_grid1(grid_x, grid_y); // width x height
   cv::Mat grid_2d_grid1 = cv::Mat::zeros(size_grid1, CV_8UC1);
-  cv::Mat mask1_updated = mask0.clone();
+  cv::Mat mask1_use = mask1.empty() ? cv::Mat::zeros(img1pyr.at(0).size(), CV_8UC1) : mask1.clone();
+  cv::Mat mask1_updated = mask1_use.clone();
   it0 = pts1.begin();
   it1 = ids1.begin();
   while (it0 != pts1.end()) {
@@ -759,7 +776,7 @@ void TrackKLT::perform_detection_stereo(const std::vector<cv::Mat> &img0pyr, con
     }
     // Now check if it is in a mask area or not
     // NOTE: mask has max value of 255 (white) if it should be
-    if (mask1.at<uint8_t>(y, x) > 127) {
+    if (mask1_use.at<uint8_t>(y, x) > 127) {
       it0 = pts1.erase(it0);
       it1 = ids1.erase(it1);
       continue;
@@ -791,7 +808,11 @@ void TrackKLT::perform_detection_stereo(const std::vector<cv::Mat> &img0pyr, con
 
     // We also check a downsampled mask such that we don't extract in areas where it is all masked!
     cv::Mat mask1_grid;
-    cv::resize(mask1, mask1_grid, size_grid1, 0.0, 0.0, cv::INTER_NEAREST);
+    if (!mask1_use.empty()) {
+      cv::resize(mask1_use, mask1_grid, size_grid1, 0.0, 0.0, cv::INTER_NEAREST);
+    } else {
+      mask1_grid = cv::Mat::zeros(size_grid1, CV_8UC1);
+    }
 
     // Create grids we need to extract from and then extract our features (use fast with griding)
     int num_features_grid = (int)((double)num_features / (double)(grid_x * grid_y)) + 1;

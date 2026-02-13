@@ -36,7 +36,7 @@ inline ov_core::ImuData ToImuData(const vio_imu_msg_t& imu) {
  */
 inline cv::Mat ToCvMat(const vio_image_msg_t& img, bool clone_data = true) {
   if (img.buffer == nullptr || img.width <= 0 || img.height <= 0) {
-    return cv::Mat();
+    return {};
   }
 
   cv::Mat wrap;
@@ -57,7 +57,7 @@ inline cv::Mat ToCvMat(const vio_image_msg_t& img, bool clone_data = true) {
                     img.stride > 0 ? static_cast<size_t>(img.stride) : cv::Mat::AUTO_STEP);
       break;
     default:
-      return cv::Mat();
+      return {};
   }
 
   return clone_data ? wrap.clone() : wrap;
@@ -93,7 +93,7 @@ inline ov_core::CameraData ToCameraData(const vio_image_msg_t& img,
     out.images.push_back(mat);
   }
 
-  out.masks.push_back(cv::Mat());  // 空 mask，OpenVINS 可选
+  out.masks.emplace_back();  // 空 mask，OpenVINS 可选
   return out;
 }
 

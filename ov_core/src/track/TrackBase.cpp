@@ -106,9 +106,12 @@ void TrackBase::display_active(cv::Mat &img_out, int r1, int g1, int b1, int r2,
     } else {
       cv::putText(img_temp, overlay, txtpt, cv::FONT_HERSHEY_COMPLEX_SMALL, (is_small) ? 1.5 : 3.0, cv::Scalar(0, 0, 255), 3);
     }
-    // Overlay the mask
-    cv::Mat mask = cv::Mat::zeros(img_mask_last_cache[pair.first].rows, img_mask_last_cache[pair.first].cols, CV_8UC3);
-    mask.setTo(cv::Scalar(0, 0, 255), img_mask_last_cache[pair.first]);
+    // Overlay the mask (use img_temp size so addWeighted never gets size mismatch)
+    const int r = img_last_cache[pair.first].rows, c = img_last_cache[pair.first].cols;
+    cv::Mat mask = cv::Mat::zeros(r, c, CV_8UC3);
+    const cv::Mat& m = img_mask_last_cache[pair.first];
+    if (!m.empty() && m.rows == r && m.cols == c)
+      mask.setTo(cv::Scalar(0, 0, 255), m);
     cv::addWeighted(mask, 0.1, img_temp, 1.0, 0.0, img_temp);
     // Replace the output image
     img_temp.copyTo(img_out(cv::Rect(max_width * index_cam, 0, img_last_cache[pair.first].cols, img_last_cache[pair.first].rows)));
@@ -217,9 +220,12 @@ void TrackBase::display_history(cv::Mat &img_out, int r1, int g1, int b1, int r2
     } else {
       cv::putText(img_temp, overlay, txtpt, cv::FONT_HERSHEY_COMPLEX_SMALL, (is_small) ? 1.5 : 3.0, cv::Scalar(0, 0, 255), 3);
     }
-    // Overlay the mask
-    cv::Mat mask = cv::Mat::zeros(img_mask_last_cache[pair.first].rows, img_mask_last_cache[pair.first].cols, CV_8UC3);
-    mask.setTo(cv::Scalar(0, 0, 255), img_mask_last_cache[pair.first]);
+    // Overlay the mask (use img_temp size so addWeighted never gets size mismatch)
+    const int r = img_last_cache[pair.first].rows, c = img_last_cache[pair.first].cols;
+    cv::Mat mask = cv::Mat::zeros(r, c, CV_8UC3);
+    const cv::Mat& m = img_mask_last_cache[pair.first];
+    if (!m.empty() && m.rows == r && m.cols == c)
+      mask.setTo(cv::Scalar(0, 0, 255), m);
     cv::addWeighted(mask, 0.1, img_temp, 1.0, 0.0, img_temp);
     // Replace the output image
     img_temp.copyTo(img_out(cv::Rect(max_width * index_cam, 0, img_last_cache[pair.first].cols, img_last_cache[pair.first].rows)));

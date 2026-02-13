@@ -54,8 +54,8 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -fsee -fomit-frame-pointer -fno-sign
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g3 -Wall -Wuninitialized -Wmaybe-uninitialized -fno-omit-frame-pointer")
 
 
-add_definitions(-DROS_AVAILABLE=0)
-message(WARNING "BUILDING WITHOUT ROS!")
+#add_definitions(-DROS_AVAILABLE=0)
+#message(WARNING "BUILDING WITHOUT ROS!")
 include(GNUInstallDirs)
 set(CATKIN_PACKAGE_LIB_DESTINATION "${CMAKE_INSTALL_LIBDIR}")
 set(CATKIN_PACKAGE_BIN_DESTINATION "${CMAKE_INSTALL_BINDIR}")
