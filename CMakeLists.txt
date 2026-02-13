@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.16)
+project(open_vins)
+option(ENABLE_ROS "Enable or disable building with ROS (if it is found)" ON)
+add_subdirectory(ov_core)
+add_subdirectory(ov_yuv_parser)
+if(ENABLE_ROS)
+    add_subdirectory(ov_ros)
+endif()
