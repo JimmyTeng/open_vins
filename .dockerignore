@@ -1,0 +1,20 @@
+# 减小 Docker 构建上下文，避免把 build/install/vcpkg 等发给 daemon
+git
+.git
+*.md
+build
+install
+build-tool/vcpkg/buildtrees
+build-tool/vcpkg/packages
+build-tool/vcpkg/downloads
+build-tool/vcpkg/installed
+*.so
+*.so.*
+*.a
+*.o
+.cache
+*.log
+.vscode
+.idea
+*~
+script/ubuntu-18.04-docker.tar

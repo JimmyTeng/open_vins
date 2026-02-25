@@ -1,0 +1,64 @@
+# 面向 glibc 2.29 设备的 ARM64 构建环境（Ubuntu 18.04 = glibc 2.27，生成的二进制可在 2.29 上运行）
+# 使用 ubuntu:18.04，拉取走 daemon 的 registry-mirrors（需在 /etc/docker/daemon.json 配置可用镜像）
+FROM ubuntu:18.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# 系统依赖与 install_sys_deps.sh 对齐（不含 apt cmake，使用下方 tarball 的 3.31.10）
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    cmake \
+    ninja-build \
+    pkg-config \
+    bison \
+    git \
+    curl \
+    ca-certificates \
+    zip \
+    unzip \
+    tar \
+    autoconf \
+    autoconf-archive \
+    automake \
+    libtool \
+    nasm \
+    python3 \
+    python3-venv \
+    libx11-dev \
+    libxft-dev \
+    libxext-dev \
+    libxi-dev \
+    libxtst-dev \
+    libxkbcommon-dev \
+    libwayland-dev \
+    libltdl-dev \
+    libgl1-mesa-dev \
+    libglu1-mesa-dev \
+    python3-pip \
+    gfortran \
+    gfortran-aarch64-linux-gnu \
+    gcc-aarch64-linux-gnu \
+    g++-aarch64-linux-gnu \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
+
+# CMake 需满足 vcpkg 要求（≥3.31.10），否则 vcpkg 会自己从 GitHub 下；优先用 script/ 下本地包
+ARG CMAKE_VERSION=3.31.10
+COPY script/ /tmp/script/
+RUN _v="${CMAKE_VERSION}" && \
+    if [ -f /tmp/script/cmake-${_v}-linux-x86_64.tar.gz ]; then \
+      cp /tmp/script/cmake-${_v}-linux-x86_64.tar.gz /tmp/cmake.tar.gz; \
+    else \
+      wget --timeout=120 "https://ghproxy.com/https://github.com/Kitware/CMake/releases/download/v${_v}/cmake-${_v}-linux-x86_64.tar.gz" -O /tmp/cmake.tar.gz; \
+    fi && \
+    tar xzf /tmp/cmake.tar.gz -C /usr/local --strip-components=1 && \
+    rm -rf /tmp/cmake.tar.gz /tmp/script
+
+# Ninja 1.13.2 放到 PATH，避免 vcpkg detect_compiler 子 CMake 报 "CMAKE_MAKE_PROGRAM is not set"
+ARG NINJA_VERSION=1.13.2
+RUN wget --timeout=60 "https://github.com/ninja-build/ninja/releases/download/v${NINJA_VERSION}/ninja-linux.zip" -O /tmp/ninja.zip && \
+    unzip -o /tmp/ninja.zip -d /usr/local/bin && chmod +x /usr/local/bin/ninja && rm /tmp/ninja.zip
+
+ENV PATH="/usr/local/bin:${PATH}"
+
+WORKDIR /work
