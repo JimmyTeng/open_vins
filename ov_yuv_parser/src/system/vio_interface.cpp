@@ -34,7 +34,7 @@ public:
         vio_manager_options_ = std::make_shared<ov_msckf::VioManagerOptions>();
         vio_manager_options_->print_and_load(parser_);
         app_ = std::make_shared<ov_msckf::VioManager>(*vio_manager_options_);
-        sim_ = std::make_shared<ov_msckf::Simulator>(*vio_manager_options_);
+        sim_ = nullptr;
 
     }
 

@@ -1,7 +1,7 @@
 {
   "name": "open-vins",
   "version": "0.0.1",
-  "description": "Open VINS dependencies",
+  "description": "Open VINS dependencies (minimal: only what code uses)",
   "builtin-baseline": "774bdd067fa3a5a49e1e8eba5efc891b3092df9b",
   "dependencies": [
     "eigen3",
@@ -9,18 +9,20 @@
       "name": "opencv4",
       "platform": "arm64",
       "default-features": false,
-      "features": ["intrinsics", "carotene", "eigen", "contrib", "sfm", "ffmpeg", "calib3d", "dnn", "fs", "thread", "quirc", "jpeg", "png", "tiff", "webp"]
+      "features": ["intrinsics", "carotene", "eigen", "contrib", "calib3d", "fs", "highgui", "thread", "jpeg", "png"]
     },
     {
       "name": "opencv4",
       "platform": "!arm64",
       "default-features": false,
-      "features": ["world", "eigen", "sfm", "contrib", "ffmpeg", "intrinsics", "ipp", "calib3d", "dnn", "fs", "gapi", "highgui", "jpeg", "png", "quirc", "thread", "tiff", "webp"]
+      "features": ["eigen", "contrib", "intrinsics", "ipp", "calib3d", "fs", "highgui", "thread", "jpeg", "png"]
     },
     "boost-system",
     "boost-filesystem",
-    "boost-thread",
     "boost-date-time",
+    "boost-math",
+    "boost-algorithm",
+    "boost-bind","boost-thread",
     {
       "name": "ceres",
       "features": ["suitesparse", "lapack"]

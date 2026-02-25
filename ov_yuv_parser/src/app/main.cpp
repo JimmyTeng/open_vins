@@ -28,6 +28,7 @@ struct TimestampedData {
 };
 
 int main(int argc, char* argv[]) {
+    std::cout<< "Build Time: " << __DATE__ << " " << __TIME__ << std::endl;
     // Default paths
     std::string input_dir = "data/250704/8";
     

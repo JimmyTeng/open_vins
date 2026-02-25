@@ -76,8 +76,8 @@ VioManager::VioManager(VioManagerOptions &params_) : thread_init_running(false),
   // -1将重置为系统默认线程数（通常是核心数）
   // This will globally set the thread count we will use
   // -1 will reset to the system default threading (usually the num of cores)
-  // cv::setNumThreads(params.num_opencv_threads);
-  cv::setNumThreads(1);
+  cv::setNumThreads(params.num_opencv_threads);
+  //cv::setNumThreads(2);
   
   cv::setRNGSeed(0);
 

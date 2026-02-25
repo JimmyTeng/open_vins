@@ -8,3 +8,5 @@ doxgen_generated
 *.swo
 doc
 .vscode
+script/vcpkg-downloads/
+.vcpkg-docker-cache/

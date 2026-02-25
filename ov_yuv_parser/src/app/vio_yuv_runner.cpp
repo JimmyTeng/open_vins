@@ -120,7 +120,9 @@ vio_timestamp_t convert_timestamp(long long ts_us) {
 
 int main(int argc, char* argv[]) {
     // 默认路径
-    std::string input_dir = "data/yuv_data/2";
+    std::cout << cv::getBuildInformation() << std::endl;
+    std::cout << "Build Time: " <<__DATE__ <<" " << __TIME__ << std::endl;
+    std::string input_dir = "./data/move";
     std::string config_file = "";
     bool show_image = true;
     

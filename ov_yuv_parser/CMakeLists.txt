@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.3)
+cmake_minimum_required(VERSION 3.5)
 project(ov_yuv_parser)
 
 # =============================================================================
@@ -35,12 +35,16 @@ install(TARGETS ov_yuv_parser_lib
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
 
+# 安装后从 bin/ 运行时在 ../lib 查找 libov_yuv_parser_lib.so，无需 LD_LIBRARY_PATH
+set(OV_YUV_PARSER_INSTALL_RPATH "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}")
+
 # =============================================================================
 # Executable: yuv_to_png
 # =============================================================================
 add_executable(yuv_to_png src/app/yuv_to_png.cpp)
 target_link_libraries(yuv_to_png PRIVATE ov_yuv_parser_lib)
 target_compile_options(yuv_to_png PRIVATE -Wall -Wextra)
+set_target_properties(yuv_to_png PROPERTIES INSTALL_RPATH "${OV_YUV_PARSER_INSTALL_RPATH}")
 install(TARGETS yuv_to_png RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 # =============================================================================
@@ -49,6 +53,7 @@ install(TARGETS yuv_to_png RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 add_executable(data_bridge_example src/example/data_bridge_example.cpp)
 target_link_libraries(data_bridge_example PRIVATE ov_yuv_parser_lib)
 target_compile_options(data_bridge_example PRIVATE -Wall -Wextra)
+set_target_properties(data_bridge_example PROPERTIES INSTALL_RPATH "${OV_YUV_PARSER_INSTALL_RPATH}")
 install(TARGETS data_bridge_example RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 # =============================================================================
@@ -57,4 +62,5 @@ install(TARGETS data_bridge_example RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 add_executable(vio_yuv_runner src/app/vio_yuv_runner.cpp)
 target_link_libraries(vio_yuv_runner PRIVATE ov_yuv_parser_lib)
 target_compile_options(vio_yuv_runner PRIVATE -Wall -Wextra)
+set_target_properties(vio_yuv_runner PROPERTIES INSTALL_RPATH "${OV_YUV_PARSER_INSTALL_RPATH}")
 install(TARGETS vio_yuv_runner RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
