@@ -15,7 +15,7 @@
       "name": "opencv4",
       "platform": "!arm64",
       "default-features": false,
-      "features": ["eigen", "contrib", "intrinsics", "ipp", "calib3d", "fs", "highgui", "thread", "jpeg", "png"]
+      "features": ["contrib", "intrinsics", "ipp", "calib3d", "fs", "highgui", "thread", "jpeg", "png"]
     },
     "boost-system",
     "boost-filesystem",
