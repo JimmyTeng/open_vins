@@ -382,6 +382,7 @@ bool DynamicInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarian
     map_camera_cpi_IitoIi1.insert({current_time, cpiIitoIi1});
     last_camera_timestamp = current_time;
   }
+  auto rT2a = boost::posix_time::microsec_clock::local_time();
 
   // 遍历每个特征点观测并添加它！
   // 状态顺序为：[特征点, 速度, 重力]
@@ -696,6 +697,7 @@ bool DynamicInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarian
   for (auto const &feat : features_inI0) {
     features_inG[feat.first] = R_GtoI0.transpose() * feat.second;
   }
+  auto rT4a = boost::posix_time::microsec_clock::local_time();
 
   // ======================================================
   // ======================================================
@@ -1219,23 +1221,26 @@ bool DynamicInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarian
     PRINT_INFO("[DynamicInitializer] 重力先验 = %.3f, %.3f, %.3f\n", sigmas_bg(0), sigmas_bg(1), sigmas_bg(2));
     PRINT_INFO("[DynamicInitializer] 加速度先验 = %.3f, %.3f, %.3f\n", sigmas_ba(0), sigmas_ba(1), sigmas_ba(2));
   }
+  auto rT7 = boost::posix_time::microsec_clock::local_time();
+
   // 将我们的位置设置为零
   Eigen::MatrixXd x = _imu->value();
   x.block(4, 0, 3, 1).setZero();
   _imu->set_value(x);
   _imu->set_fej(x);
 
-  // 调试：关于初始化所需时间的计时信息！！
-  if (print_debug) {
-    auto rT7 = boost::posix_time::microsec_clock::local_time();
-    PRINT_INFO("[DynamicInitializer] 时间: %.4f sec for prelim tests\n", (rT2 - rT1).total_microseconds() * 1e-6);
-    PRINT_INFO("[DynamicInitializer] 时间: %.4f sec for linsys setup\n", (rT3 - rT2).total_microseconds() * 1e-6);
-    PRINT_INFO("[DynamicInitializer] 时间: %.4f sec for linsys\n", (rT4 - rT3).total_microseconds() * 1e-6);
-    PRINT_INFO("[DynamicInitializer] 时间: %.4f sec for ceres opt setup\n", (rT5 - rT4).total_microseconds() * 1e-6);
-    PRINT_INFO("[DynamicInitializer] 时间: %.4f sec for ceres opt\n", (rT6 - rT5).total_microseconds() * 1e-6);
-    PRINT_INFO("[DynamicInitializer] 时间: %.4f sec for ceres covariance\n", (rT7 - rT6).total_microseconds() * 1e-6);
-    PRINT_INFO("[DynamicInitializer] 时间: %.4f sec total for initialization\n", (rT7 - rT1).total_microseconds() * 1e-6);
-  }
+  // 动态初始化各模块耗时（始终打印）
+  PRINT_INFO(CYAN "[DynamicInitializer] 各模块耗时:\n" RESET);
+  PRINT_INFO("  预检查与数据准备:   %.4f s\n", (rT2 - rT1).total_microseconds() * 1e-6);
+  PRINT_INFO("  IMU预积分:         %.4f s\n", (rT2a - rT2).total_microseconds() * 1e-6);
+  PRINT_INFO("  线性系统构建:      %.4f s\n", (rT3 - rT2a).total_microseconds() * 1e-6);
+  PRINT_INFO("  线性系统求解:      %.4f s\n", (rT4 - rT3).total_microseconds() * 1e-6);
+  PRINT_INFO("  特征恢复与坐标变换: %.4f s\n", (rT4a - rT4).total_microseconds() * 1e-6);
+  PRINT_INFO("  Ceres问题构建:     %.4f s\n", (rT5 - rT4a).total_microseconds() * 1e-6);
+  PRINT_INFO("  Ceres优化:         %.4f s\n", (rT6 - rT5).total_microseconds() * 1e-6);
+  PRINT_INFO("  协方差恢复:        %.4f s\n", (rT7 - rT6).total_microseconds() * 1e-6);
+  PRINT_INFO("  总耗时:            %.4f s\n", (rT7 - rT1).total_microseconds() * 1e-6);
+
   free_state_memory();
   
   PRINT_INFO(CYAN "========================================\n" RESET);

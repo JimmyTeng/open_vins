@@ -19,8 +19,15 @@ else
 fi
 
 IMAGE_NAME="${1:-open-vins-arm64-glibc229}"
-# Docker 专用 preset：VCPKG_ROOT=/tmp/vcpkg-docker，避免与宿主机争锁
-PRESET="arm64-release-vcpkg-docker"
+# Docker 专用 preset：VCPKG_ROOT=/tmp/vcpkg-docker，缓存用 /root/.cache/vcpkg-rbs（挂载 .vcpkg-docker-cache），
+# 与本地 build-tool/vcpkg 及 ~/.cache/vcpkg-rbs 完全分离，避免容器内 root 写回项目目录导致权限问题。
+# 禁止在容器内使用非 -docker 的 preset（如 arm64-release-vcpkg），否则会污染宿主机 build-tool/vcpkg/buildtrees。
+PRESET="${PRESET:-arm64-release-vcpkg-docker}"
+if [[ "$PRESET" != *-docker ]]; then
+  echo "错误：在 Docker 构建中必须使用 -docker 的 preset，否则会污染宿主机 build-tool/vcpkg（root 权限）。"
+  echo "当前 PRESET=$PRESET，请勿覆盖为非 -docker 预设，或直接使用默认（不设置 PRESET）。"
+  exit 1
+fi
 
 echo "使用: ${DOCKER_CMD}"
 echo "镜像名: ${IMAGE_NAME}"
