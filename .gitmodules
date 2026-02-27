@@ -1,3 +1,3 @@
 [submodule "build-tool"]
 	path = build-tool
-	url = git@github.com:JimmyTeng/build-tools.git
+	url = https://github.com/JimmyTeng/build-tool.git
