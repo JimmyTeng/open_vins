@@ -1,21 +1,21 @@
 # Ubuntu 18.04 构建环境（含 ARM64 交叉工具链，兼容 glibc 2.29）
 # 基础镜像 Ubuntu 18.04 = glibc 2.27，生成的二进制可在 glibc 2.29 上运行。
+# 使用国内源：apt 阿里云，CMake/Ninja 使用 GitHub 国内加速镜像。
 #
-# 验证/支持版本（GitHub Actions 或本地可通过 --build-arg 覆盖）：
-#   UBUNTU_IMAGE   - 基础镜像，默认 ubuntu:18.04，CI 可改为 ubuntu:18.04@sha256:...
+# 验证/支持版本（可通过 --build-arg 覆盖）：
+#   UBUNTU_IMAGE   - 基础镜像，默认 ubuntu:18.04
 #   CMAKE_VERSION  - CMake 版本，需满足 vcpkg 要求（≥3.31），默认 3.31.10
-#   NINJA_VERSION  - Ninja 版本，默认 1.13.2
-#
-# 示例（CI 中固定 digest 保证可复现）：
-#   docker build -f Dockerfile.ubuntu-18.04 \
-#     --build-arg UBUNTU_IMAGE=ubuntu:18.04@sha256:... \
-#     --build-arg CMAKE_VERSION=3.31.10 \
-#     -t open-vins-ubuntu18.04 .
+#   MIRROR_GH      - GitHub 加速镜像前缀，默认 https://ghproxy.com
 
 ARG UBUNTU_IMAGE=ubuntu:18.04
 FROM ${UBUNTU_IMAGE}
 
+ARG MIRROR_GH=https://ghproxy.com
 ENV DEBIAN_FRONTEND=noninteractive
+
+# 换 apt 为阿里云国内源
+RUN sed -i 's|http://archive.ubuntu.com|http://mirrors.aliyun.com|g' /etc/apt/sources.list && \
+    sed -i 's|http://security.ubuntu.com|http://mirrors.aliyun.com|g' /etc/apt/sources.list
 
 # 系统依赖与 install_sys_deps.sh 对齐（不含 apt cmake，使用下方 tarball 的 3.31.10）
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -55,22 +55,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     && rm -rf /var/lib/apt/lists/*
 
-# CMake 需满足 vcpkg 要求（≥3.31.10）；优先用 script/ 下本地包，否则从网络拉取
+# CMake 需满足 vcpkg 要求（≥3.31.10）；优先用 script/ 下本地包，否则从国内镜像拉取
+# Ninja 使用 apt 的 ninja-build，无需单独下载
 ARG CMAKE_VERSION=3.31.10
 COPY script/ /tmp/script/
-RUN _v="${CMAKE_VERSION}" && \
-    if [ -f /tmp/script/cmake-${_v}-linux-x86_64.tar.gz ]; then \
-      cp /tmp/script/cmake-${_v}-linux-x86_64.tar.gz /tmp/cmake.tar.gz; \
+RUN _v="${CMAKE_VERSION}" && _f="cmake-${_v}-linux-x86_64.tar.gz" && _gh="https://github.com/Kitware/CMake/releases/download/v${_v}/${_f}" && \
+    if [ -f /tmp/script/${_f} ]; then \
+      cp /tmp/script/${_f} /tmp/cmake.tar.gz; \
     else \
-      wget --timeout=120 "https://ghproxy.com/https://github.com/Kitware/CMake/releases/download/v${_v}/cmake-${_v}-linux-x86_64.tar.gz" -O /tmp/cmake.tar.gz; \
+      wget --timeout=120 "${MIRROR_GH}/${_gh}" -O /tmp/cmake.tar.gz; \
     fi && \
     tar xzf /tmp/cmake.tar.gz -C /usr/local --strip-components=1 && \
     rm -rf /tmp/cmake.tar.gz /tmp/script
-
-# Ninja 1.13.2 放到 PATH，避免 vcpkg detect_compiler 子 CMake 报 "CMAKE_MAKE_PROGRAM is not set"
-ARG NINJA_VERSION=1.13.2
-RUN wget --timeout=60 "https://github.com/ninja-build/ninja/releases/download/v${NINJA_VERSION}/ninja-linux.zip" -O /tmp/ninja.zip && \
-    unzip -o /tmp/ninja.zip -d /usr/local/bin && chmod +x /usr/local/bin/ninja && rm /tmp/ninja.zip
 
 ENV PATH="/usr/local/bin:${PATH}"
 

@@ -15,6 +15,10 @@ endif()
 # 通过编译器强制包含 <cassert>，解决部分 .cpp 使用 assert 但未包含头文件的问题（不修改源码）
 add_compile_options(-include cassert)
 option(ENABLE_ROS "Enable or disable building with ROS (if it is found)" OFF)
+
+# 将 RPATH 写入二进制，使 bin/ 与 lib/ 能从 ../lib 与 ../thirdparty/lib 加载依赖，无需 run.sh
+set(CMAKE_INSTALL_RPATH "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}:$ORIGIN:$ORIGIN/../thirdparty/lib")
+set(CMAKE_INSTALL_RPATH_USE_LINK_PATH FALSE)
 add_subdirectory(ov_core)
 add_subdirectory(ov_yuv_parser)
 if(ENABLE_ROS)

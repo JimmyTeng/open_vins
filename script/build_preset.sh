@@ -367,5 +367,11 @@ if [[ "${INSTALL}" == "true" ]]; then
   else
     cmake --install "${BUILD_DIR}"
   fi
+  # vcpkg 构建后同步 thirdparty（BLAS/LAPACK、OpenCV、Ceres 等）供 run.sh 加载
+  if [[ "${is_vcpkg_preset}" == "true" ]] && [[ -d "${BUILD_DIR}/vcpkg_installed" ]]; then
+    if "${SCRIPT_DIR}/sync_thirdparty_from_vcpkg.sh" "${PRESET}" 2>/dev/null; then
+      echo "已同步 thirdparty 到 install 目录"
+    fi
+  fi
 fi
 

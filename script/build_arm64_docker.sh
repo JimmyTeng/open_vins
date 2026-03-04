@@ -35,10 +35,9 @@ echo "安装目录: $(pwd)/install/aarch64/Release-docker"
 if [ ! -f script/cmake-3.31.10-linux-x86_64.tar.gz ]; then
   echo "提示: 无 script/cmake-3.31.10-linux-x86_64.tar.gz，可先运行 ./script/download_cmake_for_docker.sh"
 fi
-if [ -z "${HTTPS_PROXY}${HTTP_PROXY}" ] && { [ ! -d script/vcpkg-downloads ] || [ -z "$(ls -A script/vcpkg-downloads 2>/dev/null)" ]; }; then
-  echo "提示: 容器内连 GitHub 易超时，可先运行 ./script/download_vcpkg_deps_for_docker.sh 预下载依赖，或设置 HTTPS_PROXY 后重试"
+if [ ! -d script/vcpkg-downloads ] || [ -z "$(ls -A script/vcpkg-downloads 2>/dev/null)" ]; then
+  echo "提示: 容器内需从 GitHub 拉取 vcpkg 依赖，可先运行 ./script/download_vcpkg_deps_for_docker.sh 预下载（使用国内源）"
 fi
-[ -n "${PASS_PROXY_TO_DOCKER}" ] && [ -n "${HTTP_PROXY}${HTTPS_PROXY}" ] && echo "已传入代理到容器（USE_HOST_NETWORK=1 时 127.0.0.1 可用）"
 [ -n "${SKIP_CONFIGURE}" ] && echo "SKIP_CONFIGURE=1：不清空构建目录，不重新配置，只执行编译与安装"
 [ -z "${CLEAN_CONFIGURE}" ] && [ -d "build/aarch64/Release-docker/arm64-release-vcpkg-docker" ] && echo "复用已有构建目录与 .vcpkg-docker-cache（不重新下载/编译依赖）"
 echo ""
@@ -61,7 +60,7 @@ if ! $DOCKER_CMD image inspect "$IMAGE_NAME" &>/dev/null; then
     fi
     echo ""
   fi
-  echo "构建 Docker 镜像（基于 Ubuntu 18.04，glibc 2.27）..."
+  echo "构建 Docker 镜像（基于 Ubuntu 18.04，glibc 2.27，国内源）..."
   if ! $DOCKER_CMD build -f Dockerfile.ubuntu-18.04 -t "$IMAGE_NAME" .; then
     echo ""
     echo "构建失败。若卡在 CMake 下载：运行 ./script/download_cmake_for_docker.sh 或将 cmake-3.31.10-linux-x86_64.tar.gz 放到 script/ 后重试。"
@@ -95,30 +94,6 @@ RUN_ARGS=(
   -e PRESET="$PRESET"
   -e VCPKG_BINARY_SOURCES=clear
 )
-# 仅当显式启用时才把宿主机代理传入容器，避免环境里残留的 HTTP_PROXY 导致容器连 host.docker.internal 失败
-# 用法：PASS_PROXY_TO_DOCKER=1 HTTPS_PROXY=http://127.0.0.1:10808 ./script/build_arm64_docker.sh
-# 若代理只监听 127.0.0.1，再加 USE_HOST_NETWORK=1
-if [ -n "${PASS_PROXY_TO_DOCKER}" ] && [ -n "${HTTP_PROXY}${HTTPS_PROXY}" ]; then
-  if [ -n "${USE_HOST_NETWORK}" ]; then
-    RUN_ARGS+=( --network host )
-    for _e in HTTP_PROXY HTTPS_PROXY http_proxy https_proxy; do
-      [ -n "${!_e}" ] && RUN_ARGS+=( -e "$_e=${!_e}" )
-    done
-  else
-    _proxy_for_container() {
-      local v="$1"
-      if [[ "$v" =~ ^(https?://)(127\.0\.0\.1|localhost)(:[0-9]+) ]]; then
-        echo "${BASH_REMATCH[1]}host.docker.internal${BASH_REMATCH[3]}"
-      else
-        echo "$v"
-      fi
-    }
-    RUN_ARGS+=( --add-host=host.docker.internal:host-gateway )
-    for _e in HTTP_PROXY HTTPS_PROXY http_proxy https_proxy; do
-      [ -n "${!_e}" ] && RUN_ARGS+=( -e "$_e=$(_proxy_for_container "${!_e}")" )
-    done
-  fi
-fi
 
 # 默认复用已有构建目录和 .vcpkg-docker-cache，不重新下载/编译依赖。
 # CLEAN_CONFIGURE=1 时才清空并重新配置；SKIP_CONFIGURE=1 时只编译+安装。
@@ -151,6 +126,22 @@ $DOCKER_CMD run "${RUN_ARGS[@]}" "$IMAGE_NAME" bash -c "$RUN_BUILD"
 echo ""
 echo "[3/3] 安装..."
 $DOCKER_CMD run "${RUN_ARGS[@]}" "$IMAGE_NAME" bash -c "$RUN_INSTALL"
+
+echo ""
+echo "[4/4] 同步 thirdparty（vcpkg + 系统库如 libgfortran，FAT32 兼容）..."
+if [ -d "${BUILD_DIR}/vcpkg_installed/arm64-linux-custom/lib" ]; then
+  $DOCKER_CMD run "${RUN_ARGS[@]}" "$IMAGE_NAME" ./script/sync_thirdparty_from_vcpkg.sh arm64-release-vcpkg-docker
+else
+  echo "提示：vcpkg_installed 不在预期路径，跳过 thirdparty 同步。若需部署，请手动执行："
+  echo "  ./script/sync_thirdparty_from_vcpkg.sh arm64-release-vcpkg-docker"
+fi
+
+echo ""
+echo "[5/5] 归还文件权限给当前用户（解除 sudo 产生的 root 归属）..."
+HOST_UID="$(id -u)"
+HOST_GID="$(id -g)"
+$DOCKER_CMD run --rm -v "$(pwd):/work" -w /work -e HOST_UID="$HOST_UID" -e HOST_GID="$HOST_GID" \
+  "$IMAGE_NAME" bash -c 'chown -R "${HOST_UID}:${HOST_GID}" /work/build/aarch64 /work/install/aarch64 /work/.vcpkg-docker-cache 2>/dev/null || true'
 
 echo ""
 echo "完成。install/aarch64/Release-docker 已生成，可部署到 glibc 2.29 设备。"

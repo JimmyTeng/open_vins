@@ -26,6 +26,7 @@
     {
       "name": "ceres",
       "features": ["suitesparse", "lapack"]
-    }
+    },
+    "lapack-reference"
   ]
 }
