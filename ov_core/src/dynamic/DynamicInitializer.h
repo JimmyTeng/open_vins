@@ -22,6 +22,7 @@
 #ifndef OV_INIT_DYNAMICINITIALIZER_H
 #define OV_INIT_DYNAMICINITIALIZER_H
 
+#include <Eigen/Dense>
 #include "init/InertialInitializerOptions.h"
 
 namespace ov_core {
@@ -98,6 +99,14 @@ private:
   /// IMU消息历史记录（时间、角速度、线加速度）
   std::shared_ptr<std::vector<ov_core::ImuData>> imu_data;
 
+  /// 预分配缓冲区复用，避免每次 initialize 重新分配
+  mutable Eigen::MatrixXd buf_A;
+  mutable Eigen::VectorXd buf_b;
+  mutable Eigen::MatrixXd buf_AtA1;
+  mutable Eigen::MatrixXd buf_A1A1_inv;
+  mutable Eigen::MatrixXd buf_A1A1_inv_A1T;
+  mutable int buf_cap_meas = 0;
+  mutable int buf_cap_n1 = 0;
 };
 
 } // namespace ov_init

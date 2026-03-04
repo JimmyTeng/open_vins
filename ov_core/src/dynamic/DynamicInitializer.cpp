@@ -28,6 +28,7 @@
 #include "utils/helper.h"
 
 #include "cpi/CpiV1.h"
+#include "data_preprocessing/cpi_sequence.h"
 #include "feat/Feature.h"
 #include "feat/FeatureDatabase.h"
 #include "types/IMU.h"
@@ -308,54 +309,60 @@ bool DynamicInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarian
   int system_size = size_feature * num_features + 3 + 3;
 
   // 确保我们有足够的测量数据来完全约束系统
-  PRINT_INFO(CYAN "[DynamicInitializer] 系统大小检查 - 测量: %d, 系统大小: %d, 特征: %d\n" RESET, 
-             num_measurements, system_size, num_features);
+  PRINT_INFO(CYAN "[DynamicInitializer] 系统大小检查 - 测量: %d, 系统大小: %d, 特征: %d%s\n" RESET,
+             num_measurements, system_size, num_features,
+#ifdef EIGEN_USE_BLAS
+             " | Eigen+BLAS/LAPACK"
+#else
+             ""
+#endif
+  );
   if (num_measurements < system_size) {
     PRINT_INFO(YELLOW "[DynamicInitializer] 失败: 测量约束失败 - 需要 %d 测量 for %d 状态\n" RESET, 
                system_size, system_size);
     return false;
   }
 
-  // 现在让我们从第一个时间到最后一个时间进行预积分 TODO  用连续积分替代
+  // 现在让我们从第一个时间到最后一个时间进行预积分
+  // I0->Ii：CpiSequence 增量 AddImu，每帧只添加 [last, current] 段，消除重复积分
+  // Ii->Ii1：CpiV1 短段预积分（无重复）
   assert(oldest_camera_time < newest_cam_time);
   double last_camera_timestamp = 0.0;
-  std::map<double, std::shared_ptr<ov_core::CpiV1>> map_camera_cpi_I0toIi, map_camera_cpi_IitoIi1;
+  std::map<double, data_preprocessing::CpiResult> map_cpi_I0toIi;
+  std::map<double, std::shared_ptr<ov_core::CpiV1>> map_camera_cpi_IitoIi1;
+
+  data_preprocessing::CpiSequence seq_I0(params.sigma_w, params.sigma_wb, params.sigma_a, params.sigma_ab, true);
+  seq_I0.SetBias(gyroscope_bias, accelerometer_bias);
+
   for (auto const &timepair : map_camera_times) {
 
-    // 第一个时间戳处不进行预积分
     double current_time = timepair.first;
     if (current_time == oldest_camera_time) {
-      map_camera_cpi_I0toIi.insert({current_time, nullptr});
+      map_cpi_I0toIi.insert({current_time, data_preprocessing::CpiResult{}});  // 首帧无预积分
       map_camera_cpi_IitoIi1.insert({current_time, nullptr});
       last_camera_timestamp = current_time;
       continue;
     }
 
-    // 执行从I0到Ii的预积分（用于线性系统）
-    double cpiI0toIi1_time0_in_imu = oldest_camera_time + params.calib_camimu_dt;
-    double cpiI0toIi1_time1_in_imu = current_time + params.calib_camimu_dt;
-    auto cpiI0toIi1 = std::make_shared<ov_core::CpiV1>(params.sigma_w, params.sigma_wb, params.sigma_a, params.sigma_ab, true);
-    cpiI0toIi1->setLinearizationPoints(gyroscope_bias, accelerometer_bias);
-    std::vector<ov_core::ImuData> cpiI0toIi1_readings =
-        InitializerHelper::select_imu_readings(*imu_data, cpiI0toIi1_time0_in_imu, cpiI0toIi1_time1_in_imu);
-    if (cpiI0toIi1_readings.size() < 2) {
-      PRINT_DEBUG(YELLOW "[DynamicInitializer] 失败: 相机 %.2f 在有 %zu IMU 读数!\n" RESET, (cpiI0toIi1_time1_in_imu - cpiI0toIi1_time0_in_imu),
-                  cpiI0toIi1_readings.size());
+    // I0->Ii：增量 AddImu（仅 [last, current] 段），GetCachedResult O(1)
+    double seg_t0 = last_camera_timestamp + params.calib_camimu_dt;
+    double seg_t1 = current_time + params.calib_camimu_dt;
+    auto seg_readings = InitializerHelper::select_imu_readings(*imu_data, seg_t0, seg_t1);
+    if (seg_readings.size() < 2u) {
+      PRINT_DEBUG(YELLOW "[DynamicInitializer] 失败: I0->Ii 段 %.2f 仅有 %zu IMU\n" RESET, seg_t1 - seg_t0, seg_readings.size());
       return false;
     }
-    double cpiI0toIi1_dt_imu = cpiI0toIi1_readings.at(cpiI0toIi1_readings.size() - 1).timestamp - cpiI0toIi1_readings.at(0).timestamp;
-    if (std::abs(cpiI0toIi1_dt_imu - (cpiI0toIi1_time1_in_imu - cpiI0toIi1_time0_in_imu)) > 0.01) {
-      PRINT_DEBUG(YELLOW "[DynamicInitializer] 失败: 相机 IMU 只传播了 %.3f of %.3f\n" RESET, cpiI0toIi1_dt_imu,
-                  (cpiI0toIi1_time1_in_imu - cpiI0toIi1_time0_in_imu));
+    for (const auto& imu : seg_readings) {
+      seq_I0.AddImu(imu.timestamp, imu.wm, imu.am);
+    }
+    data_preprocessing::CpiResult res_I0;
+    if (!seq_I0.GetCachedResult(&res_I0)) {
+      PRINT_DEBUG(YELLOW "[DynamicInitializer] 失败: CpiSequence GetCachedResult\n" RESET);
       return false;
     }
-    for (size_t k = 0; k < cpiI0toIi1_readings.size() - 1; k++) {
-      auto imu0 = cpiI0toIi1_readings.at(k);
-      auto imu1 = cpiI0toIi1_readings.at(k + 1);
-      cpiI0toIi1->feed_IMU(imu0.timestamp, imu1.timestamp, imu0.wm, imu0.am, imu1.wm, imu1.am);
-    }
+    map_cpi_I0toIi.insert({current_time, res_I0});
 
-    // 执行从Ii到Ii1的预积分（用于MLE优化）
+    // Ii->Ii1：短段预积分（用于 MLE）
     double cpiIitoIi1_time0_in_imu = last_camera_timestamp + params.calib_camimu_dt;
     double cpiIitoIi1_time1_in_imu = current_time + params.calib_camimu_dt;
     auto cpiIitoIi1 = std::make_shared<ov_core::CpiV1>(params.sigma_w, params.sigma_wb, params.sigma_a, params.sigma_ab, true);
@@ -379,8 +386,6 @@ bool DynamicInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarian
       cpiIitoIi1->feed_IMU(imu0.timestamp, imu1.timestamp, imu0.wm, imu0.am, imu1.wm, imu1.am);
     }
 
-    // 最后将我们的积分结果推入！
-    map_camera_cpi_I0toIi.insert({current_time, cpiI0toIi1});
     map_camera_cpi_IitoIi1.insert({current_time, cpiIitoIi1});
     last_camera_timestamp = current_time;
   }
@@ -388,9 +393,32 @@ bool DynamicInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarian
 
   // 遍历每个特征点观测并添加它！
   // 状态顺序为：[特征点, 速度, 重力]
-  Eigen::MatrixXd A = Eigen::MatrixXd::Zero(num_measurements, system_size);
-  Eigen::VectorXd b = Eigen::VectorXd::Zero(num_measurements);
- 
+  const int n1 = system_size - 3;  // A1 列数 (特征+速度)
+
+  // 预分配与缓冲区复用：仅当容量不足时扩容
+  auto t_buf_start = boost::posix_time::microsec_clock::local_time();
+  bool buf_reused = (buf_cap_meas >= num_measurements && buf_cap_n1 >= n1);
+  if (!buf_reused) {
+    buf_cap_meas = std::max(buf_cap_meas, num_measurements);
+    buf_cap_n1 = std::max(buf_cap_n1, n1);
+    const int buf_sys = buf_cap_n1 + 3;
+    buf_A.resize(buf_cap_meas, buf_sys);
+    buf_b.resize(buf_cap_meas);
+    buf_AtA1.resize(buf_cap_n1, buf_cap_n1);
+    buf_A1A1_inv.resize(buf_cap_n1, buf_cap_n1);
+    buf_A1A1_inv_A1T.resize(buf_cap_n1, buf_cap_meas);
+  }
+  auto t_buf_end = boost::posix_time::microsec_clock::local_time();
+  double t_buf_ms = (t_buf_end - t_buf_start).total_microseconds() * 1e-3;
+  PRINT_INFO(CYAN "[DynamicInitializer] 缓冲区: %s (ensure %.4f ms)\n" RESET,
+             buf_reused ? "复用" : "扩容", t_buf_ms);
+  auto A = buf_A.block(0, 0, num_measurements, system_size);
+  auto b = buf_b.head(num_measurements);
+  auto AtA1_accum = buf_AtA1.block(0, 0, n1, n1);
+  A.setZero();
+  b.setZero();
+  AtA1_accum.setZero();
+
   if (print_debug) {
     PRINT_DEBUG("[DynamicInitializer] 系统创建 - 测量: %d x 状态: %d (%d 特征, %s)\n", num_measurements, system_size, num_features,
               (have_stereo) ? "stereo" : "mono");
@@ -400,7 +428,7 @@ bool DynamicInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarian
   std::map<size_t, int> A_index_features;
   for (auto const &feat : features) {
     // 跳过测量数据不足的特征点
-    if (map_features_num_meas[feat.first] < min_num_meas_to_optimize) 
+    if (map_features_num_meas[feat.first] < min_num_meas_to_optimize)
       continue;
     // 如果特征点不在A_index_features中，则添加到A_index_features中
     if (A_index_features.find(feat.first) == A_index_features.end()) {
@@ -430,10 +458,11 @@ bool DynamicInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarian
         double DT = 0.0;
         Eigen::MatrixXd R_I0toIk = Eigen::MatrixXd::Identity(3, 3);
         Eigen::MatrixXd alpha_I0toIk = Eigen::MatrixXd::Zero(3, 1);
-        if (map_camera_cpi_I0toIi.find(time) != map_camera_cpi_I0toIi.end() && map_camera_cpi_I0toIi.at(time) != nullptr) {
-          DT = map_camera_cpi_I0toIi.at(time)->DT;
-          R_I0toIk = map_camera_cpi_I0toIi.at(time)->R_k2tau;
-          alpha_I0toIk = map_camera_cpi_I0toIi.at(time)->alpha_tau;
+        if (map_cpi_I0toIi.find(time) != map_cpi_I0toIi.end() && map_cpi_I0toIi.at(time).DT > 0) {
+          const auto& cpi = map_cpi_I0toIi.at(time);
+          DT = cpi.DT;
+          R_I0toIk = cpi.R_k2tau;
+          alpha_I0toIk = cpi.alpha_tau;
         }
 
         // 基于特征点重投影创建线性系统
@@ -458,9 +487,13 @@ bool DynamicInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarian
         H_i.block(0, size_feature * num_features + 0, 2, 3) = -DT * Y;            // 速度
         H_i.block(0, size_feature * num_features + 3, 2, 3) = 0.5 * DT * DT * Y;  // 重力
 
-        // 否则让我们将其添加到我们的系统中！
+        // 添加到系统
         A.block(index_meas, 0, 2, A.cols()) = H_i;
         b.block(index_meas, 0, 2, 1) = b_i;
+
+        // 分块累加 A1^T*A1: AtA1 += H_i(0:2, 0:n1)^T * H_i(0:2, 0:n1)，rank-2 更新
+        AtA1_accum.selfadjointView<Eigen::Upper>().rankUpdate(H_i.block(0, 0, 2, n1).transpose(), 1.0);
+
         index_meas += 2;
       }
     }
@@ -470,19 +503,24 @@ bool DynamicInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarian
   // ======================================================
   // ======================================================
 
+  // 补齐对称性（rankUpdate 只更新上三角）
+  AtA1_accum.triangularView<Eigen::Lower>() = AtA1_accum.triangularView<Eigen::Upper>().transpose();
+
+  Eigen::MatrixXd A1 = A.block(0, 0, A.rows(), A.cols() - 3);
+
   // 无约束求解线性系统
   // Eigen::MatrixXd AtA = A.transpose() * A;
   // Eigen::MatrixXd Atb = A.transpose() * b;
   // Eigen::MatrixXd x_hat = AtA.colPivHouseholderQr().solve(Atb);
 
   // 带约束求解 |g| = 9.81 约束
-  Eigen::MatrixXd A1 = A.block(0, 0, A.rows(), A.cols() - 3);
-  // Eigen::MatrixXd A1A1_inv = (A1.transpose() * A1).inverse();
-  Eigen::MatrixXd A1A1_inv = (A1.transpose() * A1).llt().solve(Eigen::MatrixXd::Identity(A1.cols(), A1.cols()));
+  // 使用分块累加得到的 AtA1_accum，避免 A1.transpose()*A1 大矩阵乘法
   Eigen::MatrixXd A2 = A.block(0, A.cols() - 3, A.rows(), 3);
-  // 优化: Temp = A2^T*(I - A1*inv(A1^T*A1)*A1^T) = A2^T - (A2^T*A1)*A1A1_inv*A1^T
-  // 避免构造 1382×1382 的 (I - ...) 矩阵，节省内存与 ~5e8 次运算
-  Eigen::MatrixXd A1A1_inv_A1T = A1A1_inv * A1.transpose();  // 279×1382
+  // 显式求逆在 BLAS 下比 Cholesky solve 更快，结果写入预分配 buffer
+  auto A1A1_inv = buf_A1A1_inv.block(0, 0, n1, n1);
+  auto A1A1_inv_A1T = buf_A1A1_inv_A1T.block(0, 0, n1, num_measurements);
+  A1A1_inv = AtA1_accum.llt().solve(Eigen::MatrixXd::Identity(n1, n1));
+  A1A1_inv_A1T = A1A1_inv * A1.transpose();
   Eigen::MatrixXd Temp = A2.transpose() - (A2.transpose() * A1) * A1A1_inv_A1T;  // 3×1382
   Eigen::MatrixXd D = Temp * A2;
   Eigen::MatrixXd d = Temp * b;
@@ -590,12 +628,12 @@ bool DynamicInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarian
     Eigen::MatrixXd R_I0toIk = Eigen::MatrixXd::Identity(3, 3);
     Eigen::MatrixXd alpha_I0toIk = Eigen::MatrixXd::Zero(3, 1);
     Eigen::MatrixXd beta_I0toIk = Eigen::MatrixXd::Zero(3, 1);
-    if (map_camera_cpi_I0toIi.find(time) != map_camera_cpi_I0toIi.end() && map_camera_cpi_I0toIi.at(time) != nullptr) {
-      auto cpi = map_camera_cpi_I0toIi.at(time);
-      DT = cpi->DT;
-      R_I0toIk = cpi->R_k2tau;
-      alpha_I0toIk = cpi->alpha_tau;
-      beta_I0toIk = cpi->beta_tau;
+    if (map_cpi_I0toIi.find(time) != map_cpi_I0toIi.end() && map_cpi_I0toIi.at(time).DT > 0) {
+      const auto& cpi = map_cpi_I0toIi.at(time);
+      DT = cpi.DT;
+      R_I0toIk = cpi.R_k2tau;
+      alpha_I0toIk = cpi.alpha_tau;
+      beta_I0toIk = cpi.beta_tau;
     }
 
     // 积分以获得相对于当前时间戳的值
@@ -1261,7 +1299,7 @@ bool DynamicInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarian
   PRINT_INFO("  预检查与数据准备:   %.4f s\n", (rT2 - rT1).total_microseconds() * 1e-6);
   PRINT_INFO("  IMU预积分:         %.4f s\n", (rT2a - rT2).total_microseconds() * 1e-6);
   PRINT_INFO("  线性系统构建:      %.4f s\n", (rT3 - rT2a).total_microseconds() * 1e-6);
-  PRINT_INFO("  线性系统求解:      %.4f s\n", (rT4 - rT3).total_microseconds() * 1e-6);
+                                            PRINT_INFO("  线性系统求解:      %.4f s\n", (rT4 - rT3).total_microseconds() * 1e-6);
   PRINT_INFO("  特征恢复与坐标变换: %.4f s\n", (rT4a - rT4).total_microseconds() * 1e-6);
   PRINT_INFO("  Ceres问题构建:     %.4f s\n", (rT5 - rT4a).total_microseconds() * 1e-6);
   PRINT_INFO("  Ceres优化:         %.4f s\n", (rT6 - rT5).total_microseconds() * 1e-6);
