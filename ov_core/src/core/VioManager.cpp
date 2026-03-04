@@ -22,8 +22,11 @@
 #include "VioManager.h"
 
 #include <algorithm>
+#include <cmath>
 #include <fstream>
 #include <iomanip>
+#include <limits>
+#include <map>
 #include <sstream>
 #include <vector>
 
@@ -215,7 +218,8 @@ VioManager::~VioManager() {
   std::ifstream in(params.record_timing_filepath);
   if (!in.good()) return;
 
-  std::vector<double> total_times_ms;
+  // 按处理顺序读取每帧耗时（秒），保持顺序用于计算第i秒处理帧数
+  std::vector<double> total_times_sec;
   std::string line;
   while (std::getline(in, line)) {
     if (line.empty() || line[0] == '#') continue;
@@ -227,32 +231,66 @@ VioManager::~VioManager() {
     } catch (...) {
       continue;
     }
-    total_times_ms.push_back(total_sec * 1000.0);
+    total_times_sec.push_back(total_sec);
   }
 
-  if (total_times_ms.empty()) return;
+  if (total_times_sec.empty()) return;
 
-  std::sort(total_times_ms.begin(), total_times_ms.end());
-  size_t n = total_times_ms.size();
-  double sum = 0.0;
-  for (double t : total_times_ms) sum += t;
-  double mean_ms = sum / static_cast<double>(n);
-  double min_ms = total_times_ms.front();
-  double max_ms = total_times_ms.back();
-  double p50 = total_times_ms[n / 2];
-  double p95 = total_times_ms[static_cast<size_t>(n * 0.95)];
-  double p99 = total_times_ms[static_cast<size_t>(n * 0.99)];
-  double fps_mean = 1000.0 / mean_ms;
-  double fps_min = 1000.0 / max_ms;
+  size_t n = total_times_sec.size();
+
+  // 单帧耗时统计（用于百分位等，需要排序副本）
+  std::vector<double> total_times_ms_sorted(n);
+  for (size_t i = 0; i < n; i++) total_times_ms_sorted[i] = total_times_sec[i] * 1000.0;
+  std::sort(total_times_ms_sorted.begin(), total_times_ms_sorted.end());
+  double sum_ms = 0.0;
+  for (double t : total_times_ms_sorted) sum_ms += t;
+  double mean_ms = sum_ms / static_cast<double>(n);
+  double min_ms = total_times_ms_sorted.front();
+  double max_ms = total_times_ms_sorted.back();
+  double p50 = total_times_ms_sorted[n / 2];
+  double p95 = total_times_ms_sorted[static_cast<size_t>(n * 0.95)];
+  double p99 = total_times_ms_sorted[static_cast<size_t>(n * 0.99)];
+
+  // 第i秒处理了多少帧：累积完成时间，统计每秒内完成的帧数
+  double cum_sec = 0.0;
+  int max_sec_idx = 0;
+  std::map<int, int> frames_per_second;
+  for (double t : total_times_sec) {
+    cum_sec += t;
+    int sec_idx = static_cast<int>(std::floor(cum_sec));  // 第 sec_idx 秒内完成（[sec_idx, sec_idx+1)）
+    if (sec_idx >= 0) {
+      frames_per_second[sec_idx]++;
+      if (sec_idx > max_sec_idx) max_sec_idx = sec_idx;
+    }
+  }
+  double total_processing_sec = cum_sec;
+
+  // 计算帧率：总帧数/总耗时(秒) = 第i秒处理帧数的正确定义
+  double fps_overall = (total_processing_sec > 1e-9) ? (static_cast<double>(n) / total_processing_sec) : 0.0;
+  int fps_min_sec = std::numeric_limits<int>::max();
+  int fps_max_sec = 0;
+  for (const auto &kv : frames_per_second) {
+    if (kv.second < fps_min_sec) fps_min_sec = kv.second;
+    if (kv.second > fps_max_sec) fps_max_sec = kv.second;
+  }
+  if (frames_per_second.empty()) fps_min_sec = 0;
 
   std::ostringstream ss;
   ss << "\n========== 帧率分析 (数据集结束) ==========\n";
-  ss << "  总帧数: " << n << "\n";
-  ss << "  单帧耗时(ms): 平均=" << std::fixed << std::setprecision(2) << mean_ms
+  ss << "  总帧数: " << n << "  总耗时: " << std::fixed << std::setprecision(2) << total_processing_sec << " s\n";
+  ss << "  单帧耗时(ms): 平均=" << std::setprecision(2) << mean_ms
      << "  最小=" << min_ms << "  最大=" << max_ms
      << "  P50=" << p50 << "  P95=" << p95 << "  P99=" << p99 << "\n";
-  ss << "  帧率(FPS): 平均=" << std::setprecision(2) << fps_mean
-     << "  最小(最慢帧)=" << fps_min << "\n";
+  ss << "  帧率(FPS): 总帧数/总耗时=" << std::setprecision(2) << fps_overall
+     << "  每秒最少=" << fps_min_sec << "帧  每秒最多=" << fps_max_sec << "帧\n";
+  if (max_sec_idx >= 0 && max_sec_idx <= 20) {
+    ss << "  各秒帧数: ";
+    for (int i = 0; i <= max_sec_idx; i++) {
+      int cnt = (frames_per_second.count(i) ? frames_per_second.at(i) : 0);
+      ss << "[" << i << "s:" << cnt << "] ";
+    }
+    ss << "\n";
+  }
   ss << "========================================\n";
   PRINT_INFO("%s", ss.str().c_str());
 }
