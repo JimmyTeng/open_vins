@@ -20,10 +20,11 @@
  */
 
 #include <Eigen/Eigen>
-#include <boost/algorithm/string.hpp>
-#include <boost/filesystem.hpp>
+#include <filesystem>
 #include <iostream>
 #include <string>
+
+#include "utils/string_ops.h"
 
 #include "calc/ResultTrajectory.h"
 #include "utils/Loader.h"
@@ -54,8 +55,8 @@ int main(int argc, char **argv) {
 
   // List the groundtruth files in this folder
   std::string path_gts(argv[2]);
-  std::vector<boost::filesystem::path> path_groundtruths;
-  for (const auto &p : boost::filesystem::recursive_directory_iterator(path_gts)) {
+  std::vector<std::filesystem::path> path_groundtruths;
+  for (const auto &p : std::filesystem::recursive_directory_iterator(path_gts)) {
     if (p.path().extension() == ".txt") {
       path_groundtruths.push_back(p.path());
     }
@@ -71,15 +72,15 @@ int main(int argc, char **argv) {
     ov_eval::Loader::load_data(path_groundtruths.at(i).string(), times, poses, cov_ori, cov_pos);
     // Print its length and stats
     double length = ov_eval::Loader::get_total_length(poses);
-    PRINT_INFO("[COMP]: %d poses in %s => length of %.2f meters\n", (int)times.size(), path_groundtruths.at(i).filename().c_str(), length);
+    PRINT_INFO("[COMP]: %d poses in %s => length of %.2f meters\n", (int)times.size(), path_groundtruths.at(i).filename().string().c_str(), length);
   }
 
   // Get the algorithms we will process
   // Also create empty statistic objects for each of our datasets
   std::string path_algos(argv[3]);
-  std::vector<boost::filesystem::path> path_algorithms;
-  for (const auto &entry : boost::filesystem::directory_iterator(path_algos)) {
-    if (boost::filesystem::is_directory(entry)) {
+  std::vector<std::filesystem::path> path_algorithms;
+  for (const auto &entry : std::filesystem::directory_iterator(path_algos)) {
+    if (entry.is_directory()) {
       path_algorithms.push_back(entry.path());
     }
   }
@@ -127,12 +128,12 @@ int main(int argc, char **argv) {
 
     // Debug print
     PRINT_DEBUG("======================================\n");
-    PRINT_DEBUG("[COMP]: processing %s algorithm\n", path_algorithms.at(i).filename().c_str());
+    PRINT_DEBUG("[COMP]: processing %s algorithm\n", path_algorithms.at(i).filename().string().c_str());
 
     // Get the list of datasets this algorithm records
-    std::map<std::string, boost::filesystem::path> path_algo_datasets;
-    for (auto &entry : boost::filesystem::directory_iterator(path_algorithms.at(i))) {
-      if (boost::filesystem::is_directory(entry)) {
+    std::map<std::string, std::filesystem::path> path_algo_datasets;
+    for (auto &entry : std::filesystem::directory_iterator(path_algorithms.at(i))) {
+      if (entry.is_directory()) {
         path_algo_datasets.insert({entry.path().filename().string(), entry.path()});
       }
     }
@@ -142,14 +143,14 @@ int main(int argc, char **argv) {
 
       // Check if we have runs for this dataset
       if (path_algo_datasets.find(path_groundtruths.at(j).stem().string()) == path_algo_datasets.end()) {
-        PRINT_ERROR(RED "[COMP]: %s dataset does not have any runs for %s!!!!!\n" RESET, path_algorithms.at(i).filename().c_str(),
-                    path_groundtruths.at(j).stem().c_str());
+        PRINT_ERROR(RED "[COMP]: %s dataset does not have any runs for %s!!!!!\n" RESET, path_algorithms.at(i).filename().string().c_str(),
+                    path_groundtruths.at(j).stem().string().c_str());
         continue;
       }
 
       // Debug print
-      PRINT_DEBUG("[COMP]: processing %s algorithm => %s dataset\n", path_algorithms.at(i).filename().c_str(),
-                  path_groundtruths.at(j).stem().c_str());
+      PRINT_DEBUG("[COMP]: processing %s algorithm => %s dataset\n", path_algorithms.at(i).filename().string().c_str(),
+                  path_groundtruths.at(j).stem().string().c_str());
 
       // Errors for this specific dataset (i.e. our averages over the total runs)
       ov_eval::Statistics ate_dataset_ori, ate_dataset_pos;
@@ -161,7 +162,7 @@ int main(int argc, char **argv) {
 
       // Loop though the different runs for this dataset
       std::vector<std::string> file_paths;
-      for (auto &entry : boost::filesystem::directory_iterator(path_algo_datasets.at(path_groundtruths.at(j).stem().string()))) {
+      for (auto &entry : std::filesystem::directory_iterator(path_algo_datasets.at(path_groundtruths.at(j).stem().string()))) {
         if (entry.path().extension() != ".txt")
           continue;
         file_paths.push_back(entry.path().string());
@@ -260,13 +261,13 @@ int main(int argc, char **argv) {
   PRINT_INFO("============================================\n");
   for (size_t i = 0; i < path_groundtruths.size(); i++) {
     std::string gtname = path_groundtruths.at(i).stem().string();
-    boost::replace_all(gtname, "_", "\\_");
+    ov_eval::replace_all(gtname, "_", "\\_");
     PRINT_INFO(" & \\textbf{%s}", gtname.c_str());
   }
   PRINT_INFO(" & \\textbf{Average} \\\\\\hline\n");
   for (auto &algo : algo_ate) {
     std::string algoname = algo.first;
-    boost::replace_all(algoname, "_", "\\_");
+    ov_eval::replace_all(algoname, "_", "\\_");
     PRINT_INFO(algoname.c_str());
     double sum_ori = 0.0;
     double sum_pos = 0.0;
@@ -293,13 +294,13 @@ int main(int argc, char **argv) {
   PRINT_INFO("============================================\n");
   for (size_t i = 0; i < path_groundtruths.size(); i++) {
     std::string gtname = path_groundtruths.at(i).stem().string();
-    boost::replace_all(gtname, "_", "\\_");
+    ov_eval::replace_all(gtname, "_", "\\_");
     PRINT_INFO(" & \\textbf{%s}", gtname.c_str());
   }
   PRINT_INFO(" & \\textbf{Average} \\\\\\hline\n");
   for (auto &algo : algo_ate_2d) {
     std::string algoname = algo.first;
-    boost::replace_all(algoname, "_", "\\_");
+    ov_eval::replace_all(algoname, "_", "\\_");
     PRINT_INFO(algoname.c_str());
     double sum_ori = 0.0;
     double sum_pos = 0.0;
@@ -330,7 +331,7 @@ int main(int argc, char **argv) {
   PRINT_INFO(" \\\\\\hline\n");
   for (auto &algo : algo_rpe) {
     std::string algoname = algo.first;
-    boost::replace_all(algoname, "_", "\\_");
+    ov_eval::replace_all(algoname, "_", "\\_");
     PRINT_INFO(algoname.c_str());
     for (auto &seg : algo.second) {
       seg.second.first.calculate();

@@ -24,7 +24,7 @@
 
 #include <Eigen/Eigen>
 #include <fstream>
-#include <opencv2/core/core.hpp>
+#include <opencv2/core.hpp>
 #include <random>
 #include <sstream>
 #include <string>

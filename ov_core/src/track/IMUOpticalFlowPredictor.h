@@ -23,7 +23,7 @@
 #define OV_CORE_IMU_OPTICAL_FLOW_PREDICTOR_H
 
 #include <Eigen/Eigen>
-#include <opencv2/opencv.hpp>
+#include <opencv2/core.hpp>
 #include <mutex>
 #include <vector>
 #include <deque>

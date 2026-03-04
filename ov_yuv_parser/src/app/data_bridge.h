@@ -7,7 +7,8 @@
 
 #include "vio_interface.h"
 #include "utils/sensor_data.h"
-#include <opencv2/opencv.hpp>
+#include <opencv2/core.hpp>
+#include <opencv2/imgproc.hpp>
 
 namespace ov_yuv_parser {
 

@@ -9,7 +9,10 @@
 #include <map>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <opencv2/highgui/highgui.hpp>
+#include <opencv2/core.hpp>
+#include <opencv2/highgui.hpp>
+#include <opencv2/imgcodecs.hpp>
+#include <opencv2/imgproc.hpp>
 
 YUVParser::YUVParser(int width, int height) 
     : width_(width), height_(height) {

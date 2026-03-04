@@ -9,7 +9,6 @@ string(TIMESTAMP BUILD_TIMESTAMP "%b %d %Y %H:%M:%S" UTC)
 # =============================================================================
 find_package(OpenCV REQUIRED)
 find_package(Eigen3 REQUIRED)
-find_package(Boost REQUIRED COMPONENTS system filesystem thread date_time)
 find_package(Ceres REQUIRED)
 
 # =============================================================================
@@ -74,7 +73,7 @@ install(TARGETS vio_yuv_runner RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 # Executable: stress_test_stream_loader (流式加载器压力测试)
 # =============================================================================
 add_executable(stress_test_stream_loader src/app/stress_test_stream_loader.cpp)
-target_link_libraries(stress_test_stream_loader PRIVATE ov_yuv_parser_lib Boost::filesystem)
+target_link_libraries(stress_test_stream_loader PRIVATE ov_yuv_parser_lib)
 target_compile_options(stress_test_stream_loader PRIVATE -Wall -Wextra)
 set_target_properties(stress_test_stream_loader PROPERTIES INSTALL_RPATH "${OV_YUV_PARSER_INSTALL_RPATH}")
 install(TARGETS stress_test_stream_loader RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})

@@ -51,8 +51,8 @@
 #include <mutex>
 
 #include <Eigen/Eigen>
-#include <boost/date_time/posix_time/posix_time.hpp>
-#include <boost/filesystem.hpp>
+#include "utils/timing.h"
+#include <filesystem>
 #include <cv_bridge/cv_bridge.h>
 
 namespace ov_core {
@@ -176,7 +176,7 @@ protected:
 
   // Start and end timestamps
   bool start_time_set = false;
-  boost::posix_time::ptime rT1, rT2;
+  ov_core::rtime_t rT1, rT2;
 
   // Thread atomics
   std::atomic<bool> thread_update_running;

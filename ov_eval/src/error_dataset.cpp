@@ -20,9 +20,10 @@
  */
 
 #include <Eigen/Eigen>
-#include <boost/algorithm/string.hpp>
-#include <boost/filesystem.hpp>
+#include <filesystem>
 #include <string>
+
+#include "utils/string_ops.h"
 
 #include "calc/ResultTrajectory.h"
 #include "utils/Loader.h"
@@ -52,7 +53,7 @@ int main(int argc, char **argv) {
   }
 
   // Load it!
-  boost::filesystem::path path_gt(argv[2]);
+  std::filesystem::path path_gt(argv[2]);
   std::vector<double> times;
   std::vector<Eigen::Matrix<double, 7, 1>> poses;
   std::vector<Eigen::Matrix3d> cov_ori, cov_pos;
@@ -65,9 +66,9 @@ int main(int argc, char **argv) {
   // Get the algorithms we will process
   // Also create empty statistic objects for each of our datasets
   std::string path_algos(argv[3]);
-  std::vector<boost::filesystem::path> path_algorithms;
-  for (const auto &entry : boost::filesystem::directory_iterator(path_algos)) {
-    if (boost::filesystem::is_directory(entry)) {
+  std::vector<std::filesystem::path> path_algorithms;
+  for (const auto &entry : std::filesystem::directory_iterator(path_algos)) {
+    if (entry.is_directory()) {
       path_algorithms.push_back(entry.path());
     }
   }
@@ -111,20 +112,20 @@ int main(int argc, char **argv) {
 
     // Debug print
     PRINT_DEBUG("======================================\n");
-    PRINT_DEBUG("[COMP]: processing %s algorithm\n", path_algorithms.at(i).filename().c_str());
+    PRINT_DEBUG("[COMP]: processing %s algorithm\n", path_algorithms.at(i).filename().string().c_str());
 
     // Get the list of datasets this algorithm records
-    std::map<std::string, boost::filesystem::path> path_algo_datasets;
-    for (auto &entry : boost::filesystem::directory_iterator(path_algorithms.at(i))) {
-      if (boost::filesystem::is_directory(entry)) {
+    std::map<std::string, std::filesystem::path> path_algo_datasets;
+    for (auto &entry : std::filesystem::directory_iterator(path_algorithms.at(i))) {
+      if (entry.is_directory()) {
         path_algo_datasets.insert({entry.path().filename().string(), entry.path()});
       }
     }
 
     // Check if we have runs for our dataset
     if (path_algo_datasets.find(path_gt.stem().string()) == path_algo_datasets.end()) {
-      PRINT_DEBUG(RED "[COMP]: %s dataset does not have any runs for %s!!!!!\n" RESET, path_algorithms.at(i).filename().c_str(),
-                  path_gt.stem().c_str());
+      PRINT_DEBUG(RED "[COMP]: %s dataset does not have any runs for %s!!!!!\n" RESET, path_algorithms.at(i).filename().string().c_str(),
+                  path_gt.stem().string().c_str());
       continue;
     }
 
@@ -141,7 +142,7 @@ int main(int argc, char **argv) {
 
     // Loop though the different runs for this dataset
     std::vector<std::string> file_paths;
-    for (auto &entry : boost::filesystem::directory_iterator(path_algo_datasets.at(path_gt.stem().string()))) {
+    for (auto &entry : std::filesystem::directory_iterator(path_algo_datasets.at(path_gt.stem().string()))) {
       if (entry.path().extension() != ".txt")
         continue;
       file_paths.push_back(entry.path().string());
@@ -150,7 +151,7 @@ int main(int argc, char **argv) {
 
     // Check if we have runs
     if (file_paths.empty()) {
-      PRINT_DEBUG(RED "\tERROR: No runs found for %s, is the folder structure right??\n" RESET, path_algorithms.at(i).filename().c_str());
+      PRINT_DEBUG(RED "\tERROR: No runs found for %s, is the folder structure right??\n" RESET, path_algorithms.at(i).filename().string().c_str());
       continue;
     }
 
@@ -368,7 +369,7 @@ int main(int argc, char **argv) {
   PRINT_INFO(" & \\textbf{ATE (deg/m)} & \\textbf{NEES (deg/m)} \\\\\\hline\n");
   for (auto &algo : algo_ate) {
     std::string algoname = algo.first;
-    boost::replace_all(algoname, "_", "\\_");
+    ov_eval::replace_all(algoname, "_", "\\_");
     PRINT_INFO(algoname.c_str());
     // ate
     auto ate_oripos = algo.second;
@@ -402,7 +403,7 @@ int main(int argc, char **argv) {
   PRINT_INFO(" \\\\\\hline\n");
   for (auto &algo : algo_rpe) {
     std::string algoname = algo.first;
-    boost::replace_all(algoname, "_", "\\_");
+    ov_eval::replace_all(algoname, "_", "\\_");
     PRINT_INFO(algoname.c_str());
     for (auto &seg : algo.second) {
       seg.second.first.calculate();

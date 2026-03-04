@@ -65,8 +65,9 @@ case "${1:-}" in
     echo "自动推断：BUILD_DIR=$BUILD_DIR, INSTALL_PREFIX=$INSTALL_PREFIX"
     ;;
   -h|--help)
-    echo "用法: $0 [preset]"
+    echo "用法: $0 [preset] [--full]"
     echo "preset: arm64-release-vcpkg-docker | arm64-release-vcpkg | x64-release-vcpkg | x64-debug-vcpkg"
+    echo "--full: 拷贝 vcpkg 全部 .so（默认仅拷贝 bin/lib 的传递依赖闭包以精简 thirdparty）"
     exit 0
     ;;
   *)
@@ -100,12 +101,67 @@ if [[ "${TRIPLET}" == "arm64-linux-custom" ]]; then
   done
 fi
 
-# 1. 拷贝 vcpkg 依赖，-L 解引用
-rsync -a -L --include='*.so*' --exclude='*' "${VCPKG_LIB}/" "${THIRDPARTY}/" 2>/dev/null || {
-  while IFS= read -r -d '' f; do
-    cp -fL "$f" "${THIRDPARTY}/"
-  done < <(find "${VCPKG_LIB}" -maxdepth 1 -name "*.so*" -print0 2>/dev/null)
+# 1. 拷贝 vcpkg 依赖：仅拷贝 bin/* 与 lib/*.so 的传递依赖闭包，避免多余 OpenCV contrib 等
+# 使用 --full 可恢复旧行为（拷贝 vcpkg 全部 .so）
+COPY_MODE="minimal"
+[[ "${2:-}" == "--full" ]] && COPY_MODE="full"
+
+SKIP_SYSTEM_LIBS="ld-linux libc.so libm.so libpthread libdl.so librt.so"
+resolve_needed() {
+  local f="$1"
+  ${READELF} -d "$f" 2>/dev/null | sed -n 's/.*Shared library: \[\(.*\)\]/\1/p' || true
 }
+find_lib_file() {
+  local name="$1"
+  local search_dirs=("${THIRDPARTY}" "${VCPKG_LIB}" "${INSTALL_PREFIX}/lib" "${SYSROOT_LIBS[@]}")
+  for d in "${search_dirs[@]}"; do
+    [[ -d "$d" ]] || continue
+    for c in "$d/$name" "$d/${name}".*; do
+      [[ -f "$c" ]] && echo "$c" && return 0
+    done
+  done
+  return 1
+}
+
+if [[ "${COPY_MODE}" == "minimal" ]]; then
+  # 收集 bin/* 和 lib/*.so 的传递依赖闭包（仅 vcpkg 内的）
+  declare -A NEEDED_SET
+  QUEUE=()
+  for f in "${INSTALL_PREFIX}"/bin/* "${INSTALL_PREFIX}"/lib/*.so*; do
+    [[ -f "$f" ]] || continue
+    file -b "$f" 2>/dev/null | grep -q ELF || continue
+    while read -r n; do [[ -n "$n" ]] && NEEDED_SET["$n"]=1 && QUEUE+=("$n"); done < <(resolve_needed "$f")
+  done
+  while [[ ${#QUEUE[@]} -gt 0 ]]; do
+    name="${QUEUE[0]}"
+    QUEUE=("${QUEUE[@]:1}")
+    for p in $SKIP_SYSTEM_LIBS; do [[ "$name" == $p* ]] && continue 2; done
+    found=$(find_lib_file "$name")
+    if [[ -n "$found" && "$found" == *"${VCPKG_LIB}"* ]]; then
+      while read -r n; do
+        if [[ -n "$n" && -z "${NEEDED_SET[$n]:-}" ]]; then
+          NEEDED_SET["$n"]=1
+          QUEUE+=("$n")
+        fi
+      done < <(resolve_needed "$found")
+    fi
+  done
+  # 按 base 名拷贝：libopencv_core4.so.412 -> 拷贝 libopencv_core4.so* 整组
+  for name in "${!NEEDED_SET[@]}"; do
+    for p in $SKIP_SYSTEM_LIBS; do [[ "$name" == $p* ]] && continue 2; done
+    base="${name%%.so*}"
+    [[ -z "$base" ]] && continue
+    for f in "${VCPKG_LIB}"/${base}.so*; do
+      [[ -f "$f" ]] || continue
+      cp -fL "$f" "${THIRDPARTY}/$(basename "$f")" 2>/dev/null || true
+    done
+  done
+else
+  # 旧行为：拷贝 vcpkg 全部
+  rsync -a -L --include='*.so*' --exclude='*' "${VCPKG_LIB}/" "${THIRDPARTY}/" 2>/dev/null || {
+    while IFS= read -r -d '' f; do cp -fL "$f" "${THIRDPARTY}/"; done < <(find "${VCPKG_LIB}" -maxdepth 1 -name "*.so*" -print0 2>/dev/null)
+  }
+fi
 
 # 2. 补充系统库（libgfortran、libgcc_s 等），按 DT_NEEDED 递归收集
 # 排除 libc/ld-linux/libm 等核心库：必须使用设备系统自带的，打包构建机的会导致 Segfault
@@ -150,4 +206,4 @@ flatten_symlinks() {
 flatten_symlinks "${INSTALL_PREFIX}/lib"
 flatten_symlinks "${THIRDPARTY}"
 N=$(find "${THIRDPARTY}" -maxdepth 1 -name "*.so*" ! -type l 2>/dev/null | wc -l)
-echo "已同步 ${N} 个库到 ${THIRDPARTY}（vcpkg + 系统如 libgfortran），并去除所有符号链接（FAT32 兼容）"
+echo "已同步 ${N} 个库到 ${THIRDPARTY}（${COPY_MODE} 模式，vcpkg + 系统如 libgfortran），并去除所有符号链接（FAT32 兼容）"

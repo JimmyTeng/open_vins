@@ -24,10 +24,9 @@
 #include "state/State.h"
 
 #include "types/Landmark.h"
+#include "utils/chi_squared_quantile.h"
 #include "utils/colors.h"
 #include "utils/print.h"
-
-#include <boost/math/distributions/chi_squared.hpp>
 
 using namespace ov_core;
 using namespace ov_type;
@@ -463,8 +462,7 @@ bool StateHelper::initialize(std::shared_ptr<State> state, std::shared_ptr<Type>
   double chi2 = resup.dot(S.llt().solve(resup));
 
   // Get what our threshold should be
-  boost::math::chi_squared chi_squared_dist(res.rows());
-  double chi2_check = boost::math::quantile(chi_squared_dist, 0.95);
+  double chi2_check = ov_core::chi2_quantile_095(static_cast<int>(res.rows()));
   if (chi2 > chi_2_mult * chi2_check) {
     return false;
   }

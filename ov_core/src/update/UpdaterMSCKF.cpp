@@ -32,8 +32,8 @@
 #include "utils/print.h"
 #include "utils/quat_ops.h"
 
-#include <boost/date_time/posix_time/posix_time.hpp>
-#include <boost/math/distributions/chi_squared.hpp>
+#include "utils/chi_squared_quantile.h"
+#include "utils/timing.h"
 
 using namespace ov_core;
 using namespace ov_type;
@@ -46,13 +46,6 @@ UpdaterMSCKF::UpdaterMSCKF(UpdaterOptions &options, ov_core::FeatureInitializerO
 
   // 保存特征初始化器
   initializer_feat = std::shared_ptr<ov_core::FeatureInitializer>(new ov_core::FeatureInitializer(feat_init_options));
-
-  // 初始化置信度为0.95的卡方检验表
-  // https://github.com/KumarRobotics/msckf_vio/blob/050c50defa5a7fd9a04c1eed5687b405f02919b5/src/msckf_vio.cpp#L215-L221
-  for (int i = 1; i < 500; i++) {
-    boost::math::chi_squared chi_squared_dist(i);
-    chi_squared_table[i] = boost::math::quantile(chi_squared_dist, 0.95);
-  }
 }
 
 void UpdaterMSCKF::update(std::shared_ptr<State> state, std::vector<std::shared_ptr<Feature>> &feature_vec) {
@@ -62,8 +55,8 @@ void UpdaterMSCKF::update(std::shared_ptr<State> state, std::vector<std::shared_
     return;
 
   // 开始计时
-  boost::posix_time::ptime rT0, rT1, rT2, rT3, rT4, rT5;
-  rT0 = boost::posix_time::microsec_clock::local_time();
+  rtime_t rT0, rT1, rT2, rT3, rT4, rT5;
+  rT0 = rtime_now();
 
   // 0. 获取所有克隆所在的时间戳（即有效测量时间）
   std::vector<double> clonetimes;
@@ -92,7 +85,7 @@ void UpdaterMSCKF::update(std::shared_ptr<State> state, std::vector<std::shared_
       it0++;
     }
   }
-  rT1 = boost::posix_time::microsec_clock::local_time();
+  rT1 = rtime_now();
 
   // 2. 在每个克隆时间步创建克隆的*相机*姿态向量
   std::unordered_map<size_t, std::unordered_map<double, FeatureInitializer::ClonePose>> clones_cam;
@@ -140,7 +133,7 @@ void UpdaterMSCKF::update(std::shared_ptr<State> state, std::vector<std::shared_
     }
     it1++;
   }
-  rT2 = boost::posix_time::microsec_clock::local_time();
+  rT2 = rtime_now();
 
   // 计算最大可能的测量大小
   size_t max_meas_size = 0;
@@ -211,13 +204,9 @@ void UpdaterMSCKF::update(std::shared_ptr<State> state, std::vector<std::shared_
     S.diagonal() += _options.sigma_pix_sq * Eigen::VectorXd::Ones(S.rows());
     double chi2 = res.dot(S.llt().solve(res));
 
-    // 获取阈值（我们预计算到500，但处理超过的情况）
-    double chi2_check;
-    if (res.rows() < 500) {
-      chi2_check = chi_squared_table[res.rows()];
-    } else {
-      boost::math::chi_squared chi_squared_dist(res.rows());
-      chi2_check = boost::math::quantile(chi_squared_dist, 0.95);
+    // 获取阈值（查表或 Wilson-Hilferty 近似）
+    double chi2_check = ov_core::chi2_quantile_095(static_cast<int>(res.rows()));
+    if (res.rows() >= 500) {
       PRINT_WARNING(YELLOW "chi2_check over the residual limit - %d\n" RESET, (int)res.rows());
     }
 
@@ -254,7 +243,7 @@ void UpdaterMSCKF::update(std::shared_ptr<State> state, std::vector<std::shared_
     ct_meas += res.rows();
     it2++;
   }
-  rT3 = boost::posix_time::microsec_clock::local_time();
+  rT3 = rtime_now();
 
   // 我们已经将所有特征添加到Hx_big、res_big
   // 删除它们以便不重用信息
@@ -276,20 +265,20 @@ void UpdaterMSCKF::update(std::shared_ptr<State> state, std::vector<std::shared_
   if (Hx_big.rows() < 1) {
     return;
   }
-  rT4 = boost::posix_time::microsec_clock::local_time();
+  rT4 = rtime_now();
 
   // 噪声是各向同性的，因此在压缩后在此处创建
   Eigen::MatrixXd R_big = _options.sigma_pix_sq * Eigen::MatrixXd::Identity(res_big.rows(), res_big.rows());
 
   // 6. 使用所有良好特征更新状态
   StateHelper::EKFUpdate(state, Hx_order_big, Hx_big, res_big, R_big);
-  rT5 = boost::posix_time::microsec_clock::local_time();
+  rT5 = rtime_now();
 
   // Debug print timing information
-  PRINT_ALL("[MSCKF-UP]: %.4f seconds to clean\n", (rT1 - rT0).total_microseconds() * 1e-6);
-  PRINT_ALL("[MSCKF-UP]: %.4f seconds to triangulate\n", (rT2 - rT1).total_microseconds() * 1e-6);
-  PRINT_ALL("[MSCKF-UP]: %.4f seconds create system (%d features)\n", (rT3 - rT2).total_microseconds() * 1e-6, (int)feature_vec.size());
-  PRINT_ALL("[MSCKF-UP]: %.4f seconds compress system\n", (rT4 - rT3).total_microseconds() * 1e-6);
-  PRINT_ALL("[MSCKF-UP]: %.4f seconds update state (%d size)\n", (rT5 - rT4).total_microseconds() * 1e-6, (int)res_big.rows());
-  PRINT_ALL("[MSCKF-UP]: %.4f seconds total\n", (rT5 - rT1).total_microseconds() * 1e-6);
+  PRINT_ALL("[MSCKF-UP]: %.4f seconds to clean\n", rtime_sec(rT0, rT1));
+  PRINT_ALL("[MSCKF-UP]: %.4f seconds to triangulate\n", rtime_sec(rT1, rT2));
+  PRINT_ALL("[MSCKF-UP]: %.4f seconds create system (%d features)\n", rtime_sec(rT2, rT3), (int)feature_vec.size());
+  PRINT_ALL("[MSCKF-UP]: %.4f seconds compress system\n", rtime_sec(rT3, rT4));
+  PRINT_ALL("[MSCKF-UP]: %.4f seconds update state (%d size)\n", rtime_sec(rT4, rT5), (int)res_big.rows());
+  PRINT_ALL("[MSCKF-UP]: %.4f seconds total\n", rtime_sec(rT1, rT5));
 }

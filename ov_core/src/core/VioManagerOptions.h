@@ -23,6 +23,7 @@
 #define OV_MSCKF_VIOMANAGEROPTIONS_H
 
 #include <Eigen/Eigen>
+#include <filesystem>
 #include <iostream>
 #include <memory>
 #include <sstream>
@@ -350,7 +351,7 @@ struct VioManagerOptions {
           std::string mask_node = "mask" + std::to_string(i);
           parser->parse_config(mask_node, mask_path);
           std::string total_mask_path = parser->get_config_folder() + mask_path;
-          if (!boost::filesystem::exists(total_mask_path)) {
+          if (!std::filesystem::exists(total_mask_path)) {
             PRINT_ERROR(RED "VioManager(): 无效的掩码路径:\n" RESET);
             PRINT_ERROR(RED "\t- 掩码%d - %s\n" RESET, i, total_mask_path.c_str());
             std::exit(EXIT_FAILURE);

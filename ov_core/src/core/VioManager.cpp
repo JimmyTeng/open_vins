@@ -128,14 +128,14 @@ VioManager::VioManager(VioManagerOptions &params_) : thread_init_running(false),
   if (params.record_timing_information) {
     // 如果文件已存在，则删除它
     // If the file exists, then delete it
-    if (boost::filesystem::exists(params.record_timing_filepath)) {
-      boost::filesystem::remove(params.record_timing_filepath);
+    if (std::filesystem::exists(params.record_timing_filepath)) {
+      std::filesystem::remove(params.record_timing_filepath);
       PRINT_INFO(YELLOW "[统计]: 发现旧文件，已删除...\n" RESET);
     }
     // 创建文件所在目录
     // Create the directory that we will open the file in
-    boost::filesystem::path p(params.record_timing_filepath);
-    boost::filesystem::create_directories(p.parent_path());
+    std::filesystem::path p(params.record_timing_filepath);
+    std::filesystem::create_directories(p.parent_path());
     // 打开统计文件
     // Open our statistics file!
     of_statistics.open(params.record_timing_filepath, std::ofstream::out | std::ofstream::app);
@@ -248,7 +248,7 @@ void VioManager::feed_measurement_simulation(double timestamp, const std::vector
 
   // 开始计时
   // Start timing
-  rT1 = boost::posix_time::microsec_clock::local_time();
+  rT1 = rtime_now();
 
   // 检查我们是否真的有仿真跟踪器
   // 如果没有，重新创建并将跟踪器转换为仿真跟踪器
@@ -274,7 +274,7 @@ void VioManager::feed_measurement_simulation(double timestamp, const std::vector
   // 将仿真数据传递给仿真跟踪器
   // Feed our simulation tracker
   trackSIM->feed_measurement_simulation(timestamp, camids, feats);
-  rT2 = boost::posix_time::microsec_clock::local_time();
+  rT2 = rtime_now();
 
   // 检查是否应该进行零速度更新，如果是则更新状态
   // 注意：如果只在初始化阶段使用，且已经移动过，则不应该尝试零速度更新
@@ -328,7 +328,7 @@ void VioManager::track_image_and_update(const ov_core::CameraData &message_const
 
   // 开始计时
   // Start timing
-  rT1 = boost::posix_time::microsec_clock::local_time();
+  rT1 = rtime_now();
 
   // 时间间隔用于下方合并打印（时间戳/间隔/Hz/Init + 跟踪统计）
   // Time interval for combined print below (timestamp/interval/Hz/Init + tracking stats)
@@ -440,7 +440,7 @@ void VioManager::track_image_and_update(const ov_core::CameraData &message_const
   if (is_initialized_vio && trackARUCO != nullptr) {
     trackARUCO->feed_new_camera(message);
   }
-  rT2 = boost::posix_time::microsec_clock::local_time();
+  rT2 = rtime_now();
 
   // 检查是否应该进行零速度更新，如果是则更新状态
   // 注意：如果只在初始化阶段使用，且已经移动过，则不应该尝试零速度更新
@@ -469,7 +469,7 @@ void VioManager::track_image_and_update(const ov_core::CameraData &message_const
   if (!is_initialized_vio) {
     is_initialized_vio = try_to_initialize(message);
     if (!is_initialized_vio) {
-      double time_track = (rT2 - rT1).total_microseconds() * 1e-6;
+      double time_track = rtime_sec(rT1, rT2);
       PRINT_DEBUG(BLUE "[VM]: 跟踪耗时 %.4f 秒\n" RESET, time_track);
       return;
     }
@@ -509,7 +509,7 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
   if (state->_timestamp != message.timestamp) {
     propagator->propagate_and_clone(state, message.timestamp);
   }
-  rT3 = boost::posix_time::microsec_clock::local_time();
+  rT3 = rtime_now();
 
   // 如果还没有达到最大克隆数，我们应该返回...
   // 这不是很理想，但这使得后续逻辑更容易...
@@ -773,7 +773,7 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
     featsup_MSCKF.erase(featsup_MSCKF.begin(), featsup_MSCKF.end() - state->_options.max_msckf_in_update);
   updaterMSCKF->update(state, featsup_MSCKF);
   propagator->invalidate_cache();
-  rT4 = boost::posix_time::microsec_clock::local_time();
+  rT4 = rtime_now();
 
   // 执行SLAM延迟初始化和更新
   // 注意：我们在这里提供执行*顺序*更新的选项
@@ -797,10 +797,10 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
     propagator->invalidate_cache();
   }
   feats_slam_UPDATE = feats_slam_UPDATE_TEMP;
-  rT5 = boost::posix_time::microsec_clock::local_time();
+  rT5 = rtime_now();
   // 执行延迟初始化（对于新的SLAM特征）
   updaterSLAM->delayed_init(state, feats_slam_DELAYED);
-  rT6 = boost::posix_time::microsec_clock::local_time();
+  rT6 = rtime_now();
 
   //===================================================================================
   // 更新可视化特征集，并清理旧特征
@@ -888,7 +888,7 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
   // 最后，如果需要，边缘化最旧的克隆状态
   // Finally marginalize the oldest clone if needed
   StateHelper::marginalize_old_clone(state);
-  rT7 = boost::posix_time::microsec_clock::local_time();
+  rT7 = rtime_now();
 
   //===================================================================================
   // 调试信息和统计跟踪
@@ -897,13 +897,13 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
 
   // 获取时间统计信息
   // Get timing statitics information
-  double time_track = (rT2 - rT1).total_microseconds() * 1e-6;      // 特征跟踪时间
-  double time_prop = (rT3 - rT2).total_microseconds() * 1e-6;        // 状态传播时间
-  double time_msckf = (rT4 - rT3).total_microseconds() * 1e-6;       // MSCKF更新时间
-  double time_slam_update = (rT5 - rT4).total_microseconds() * 1e-6;  // SLAM更新时间
-  double time_slam_delay = (rT6 - rT5).total_microseconds() * 1e-6; // SLAM延迟初始化时间
-  double time_marg = (rT7 - rT6).total_microseconds() * 1e-6;       // 重新三角化和边缘化时间
-  double time_total = (rT7 - rT1).total_microseconds() * 1e-6;     // 总时间
+  double time_track = rtime_sec(rT1, rT2);      // 特征跟踪时间
+  double time_prop = rtime_sec(rT2, rT3);        // 状态传播时间
+  double time_msckf = rtime_sec(rT3, rT4);       // MSCKF更新时间
+  double time_slam_update = rtime_sec(rT4, rT5);  // SLAM更新时间
+  double time_slam_delay = rtime_sec(rT5, rT6); // SLAM延迟初始化时间
+  double time_marg = rtime_sec(rT6, rT7);       // 重新三角化和边缘化时间
+  double time_total = rtime_sec(rT1, rT7);     // 总时间
 
   // 打印时间信息（由配置 print_timing 控制）
   // Timing information (controlled by config print_timing)

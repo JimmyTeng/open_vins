@@ -30,10 +30,8 @@
 #include "state/StateHelper.h"
 #include "utils/colors.h"
 #include "utils/print.h"
+#include "utils/chi_squared_quantile.h"
 #include "utils/quat_ops.h"
-
-#include <boost/date_time/posix_time/posix_time.hpp>
-#include <boost/math/distributions/chi_squared.hpp>
 
 using namespace ov_core;
 using namespace ov_type;
@@ -53,13 +51,6 @@ UpdaterZeroVelocity::UpdaterZeroVelocity(UpdaterOptions &options, NoiseManager &
   _noises.sigma_a_2 = std::pow(_noises.sigma_a, 2);
   _noises.sigma_wb_2 = std::pow(_noises.sigma_wb, 2);
   _noises.sigma_ab_2 = std::pow(_noises.sigma_ab, 2);
-
-  // 初始化置信度为0.95的卡方检验表
-  // https://github.com/KumarRobotics/msckf_vio/blob/050c50defa5a7fd9a04c1eed5687b405f02919b5/src/msckf_vio.cpp#L215-L221
-  for (int i = 1; i < 1000; i++) {
-    boost::math::chi_squared chi_squared_dist(i);
-    chi_squared_table[i] = boost::math::quantile(chi_squared_dist, 0.95);
-  }
 }
 
 void UpdaterZeroVelocity::feed_imu(const ov_core::ImuData &message, double oldest_time) {
@@ -233,13 +224,9 @@ bool UpdaterZeroVelocity::try_update(std::shared_ptr<State> state, double timest
   Eigen::MatrixXd S = H * P_marg * H.transpose() + R;
   double chi2 = res.dot(S.llt().solve(res));
 
-  // 获取阈值（我们预计算到1000，但处理超过的情况）
-  double chi2_check;
-  if (res.rows() < 1000) {
-    chi2_check = chi_squared_table[res.rows()];
-  } else {
-    boost::math::chi_squared chi_squared_dist(res.rows());
-    chi2_check = boost::math::quantile(chi_squared_dist, 0.95);
+  // 获取阈值（查表或 Wilson-Hilferty 近似）
+  double chi2_check = ov_core::chi2_quantile_095(static_cast<int>(res.rows()));
+  if (res.rows() >= 1000) {
     PRINT_WARNING(YELLOW "[ZUPT]: chi2_check over the residual limit - %d\n" RESET, (int)res.rows());
   }
 

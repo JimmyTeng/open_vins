@@ -28,10 +28,10 @@
 #include <thread>
 #include <unordered_map>
 
-#include <boost/date_time/posix_time/posix_time.hpp>
-#include <opencv2/core/core.hpp>
-#include <opencv2/highgui/highgui.hpp>
-#include <opencv2/opencv.hpp>
+#include "utils/timing.h"
+#include <opencv2/core.hpp>
+#include <opencv2/highgui.hpp>
+#include <opencv2/imgproc.hpp>
 
 #include "utils/colors.h"
 #include "utils/print.h"
@@ -192,7 +192,7 @@ protected:
   std::atomic<size_t> currid;
 
   // Timing variables (most children use these...)
-  boost::posix_time::ptime rT1, rT2, rT3, rT4, rT5, rT6, rT7;
+  rtime_t rT1, rT2, rT3, rT4, rT5, rT6, rT7;
 };
 
 } // namespace ov_core

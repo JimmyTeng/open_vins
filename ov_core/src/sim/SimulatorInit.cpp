@@ -21,6 +21,9 @@
 
 #include "SimulatorInit.h"
 
+#include <chrono>
+#include <thread>
+
 #include "cam/CamBase.h"
 #include "cam/CamEqui.h"
 #include "cam/CamRadtan.h"
@@ -197,7 +200,7 @@ SimulatorInit::SimulatorInit(InertialInitializerOptions &params_) {
   }
 
   // Nice sleep so the user can look at the printout
-  sleep(1);
+  std::this_thread::sleep_for(std::chrono::seconds(1));
 }
 
 void SimulatorInit::perturb_parameters(InertialInitializerOptions &params_) {

@@ -119,7 +119,7 @@ bool VioManager::try_to_initialize(const ov_core::CameraData &message) {
     double timestamp;
     Eigen::MatrixXd covariance;
     std::vector<std::shared_ptr<ov_type::Type>> order;
-    auto init_rT1 = boost::posix_time::microsec_clock::local_time();
+    auto init_rT1 = rtime_now();
 
     // 尝试初始化系统
     // 如果没有启用零速度更新，我们将等待一个急动（jerk）
@@ -164,10 +164,10 @@ bool VioManager::try_to_initialize(const ov_core::CameraData &message) {
       }
 
       // Else we are good to go, print out our stats
-      auto init_rT2 = boost::posix_time::microsec_clock::local_time();
+      auto init_rT2 = rtime_now();
       PRINT_INFO(BLUE "========================================\n" RESET);
 
-      PRINT_INFO(GREEN "[VMH]: 成功初始化，耗时 %.4f 秒\n" RESET, (init_rT2 - init_rT1).total_microseconds() * 1e-6);
+      PRINT_INFO(GREEN "[VMH]: 成功初始化，耗时 %.4f 秒\n" RESET, rtime_sec(init_rT1, init_rT2));
       PRINT_INFO(GREEN "[VMH]: 姿态 = %.4f, %.4f, %.4f, %.4f\n" RESET, state->_imu->quat()(0), state->_imu->quat()(1),
                  state->_imu->quat()(2), state->_imu->quat()(3));
       PRINT_INFO(GREEN "[VMH]: GYO偏差 = %.4f, %.4f, %.4f\n" RESET, state->_imu->bias_g()(0), state->_imu->bias_g()(1),
@@ -206,7 +206,6 @@ bool VioManager::try_to_initialize(const ov_core::CameraData &message) {
       camera_queue_init.clear();
 
     } else {
-      auto init_rT2 = boost::posix_time::microsec_clock::local_time();
       thread_init_success = false;
       std::lock_guard<std::mutex> lck(camera_queue_init_mtx);
       camera_queue_init.clear();
@@ -234,8 +233,8 @@ void VioManager::retriangulate_active_tracks(const ov_core::CameraData &message)
 
   // 开始计时
   // Start timing
-  boost::posix_time::ptime retri_rT1, retri_rT2, retri_rT3;
-  retri_rT1 = boost::posix_time::microsec_clock::local_time();
+  rtime_t retri_rT1, retri_rT2, retri_rT3;
+  retri_rT1 = rtime_now();
 
   // 清除旧的活动跟踪数据
   // Clear old active track data
@@ -354,7 +353,7 @@ void VioManager::retriangulate_active_tracks(const ov_core::CameraData &message)
   active_feat_linsys_b = active_feat_linsys_b_new;
   active_feat_linsys_count = active_feat_linsys_count_new;
   active_tracks_posinG = active_tracks_posinG_new;
-  retri_rT2 = boost::posix_time::microsec_clock::local_time();
+  retri_rT2 = rtime_now();
 
   // 如果没有特征点则返回
   // Return if no features
@@ -443,13 +442,13 @@ void VioManager::retriangulate_active_tracks(const ov_core::CameraData &message)
     uvd << uv_dist, depth;
     active_tracks_uvd.insert({feat.first, uvd});
   }
-  retri_rT3 = boost::posix_time::microsec_clock::local_time();
+  retri_rT3 = rtime_now();
 
   // Timing information
   PRINT_ALL(CYAN "[VMH]: 三角化耗时 %.4f 秒 (%zu 个已三角化，共 %zu 个活动特征)\n" RESET,
-            (retri_rT2 - retri_rT1).total_microseconds() * 1e-6, total_triangulated, active_feat_linsys_A.size());
-  PRINT_ALL(CYAN "[VMH]: 重投影到当前帧耗时 %.4f 秒\n" RESET, (retri_rT3 - retri_rT2).total_microseconds() * 1e-6);
-  PRINT_ALL(CYAN "[VMH]: 总耗时 %.4f 秒\n" RESET, (retri_rT3 - retri_rT1).total_microseconds() * 1e-6);
+            rtime_sec(retri_rT1, retri_rT2), total_triangulated, active_feat_linsys_A.size());
+  PRINT_ALL(CYAN "[VMH]: 重投影到当前帧耗时 %.4f 秒\n" RESET, rtime_sec(retri_rT2, retri_rT3));
+  PRINT_ALL(CYAN "[VMH]: 总耗时 %.4f 秒\n" RESET, rtime_sec(retri_rT1, retri_rT3));
 }
 
 /**

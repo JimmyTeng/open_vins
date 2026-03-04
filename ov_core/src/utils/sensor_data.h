@@ -23,7 +23,7 @@
 #define OV_CORE_SENSOR_DATA_H
 
 #include <Eigen/Eigen>
-#include <opencv2/opencv.hpp>
+#include <opencv2/core.hpp>
 #include <vector>
 
 namespace ov_core {

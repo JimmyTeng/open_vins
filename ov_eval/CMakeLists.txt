@@ -3,7 +3,7 @@ project(ov_eval)
 
 # Include libraries
 find_package(Eigen3 REQUIRED)
-find_package(Boost REQUIRED COMPONENTS system filesystem thread date_time)
+find_package(Boost REQUIRED COMPONENTS math)
 
 # By default we build with ROS, but you can disable this and just build as a library
 option(ENABLE_ROS "Enable or disable building with ROS (if it is found)" ON)
@@ -22,9 +22,8 @@ if (PYTHONLIBS_FOUND AND NOT DISABLE_MATPLOTLIB)
     list(APPEND thirdparty_libraries ${PYTHON_LIBRARIES})
 endif ()
 
-# We need c++14 for ROS2, thus just require it for everybody
-# NOTE: To future self, hope this isn't an issue...
-set(CMAKE_CXX_STANDARD 14)
+# C++17 for std::filesystem
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 

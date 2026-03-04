@@ -21,6 +21,9 @@
 
 #include "Simulator.h"
 
+#include <chrono>
+#include <thread>
+
 #include "cam/CamBase.h"
 #include "cam/CamEqui.h"
 #include "cam/CamRadtan.h"
@@ -203,7 +206,7 @@ Simulator::Simulator(VioManagerOptions &params_) {
   }
 
   // Nice sleep so the user can look at the printout
-  sleep(1);
+  std::this_thread::sleep_for(std::chrono::seconds(1));
 }
 
 void Simulator::perturb_parameters(std::mt19937 gen_state, VioManagerOptions &params_) {

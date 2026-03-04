@@ -105,9 +105,6 @@ protected:
 
   /// 特征初始化器类对象
   std::shared_ptr<ov_core::FeatureInitializer> initializer_feat;
-
-  /// 卡方分布95百分位表（查找键为残差的大小）
-  std::map<int, double> chi_squared_table;
 };
 
 } // namespace ov_msckf

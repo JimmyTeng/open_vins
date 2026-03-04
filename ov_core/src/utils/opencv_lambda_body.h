@@ -23,7 +23,7 @@
 #define OV_CORE_OPENCV_LAMBDA_BODY_H
 
 #include <functional>
-#include <opencv2/opencv.hpp>
+#include <opencv2/core.hpp>
 
 namespace ov_core {
 

@@ -25,7 +25,7 @@
 #include <Eigen/Eigen>
 #include <unordered_map>
 
-#include <opencv2/opencv.hpp>
+#include <opencv2/core.hpp>
 
 namespace ov_core {
 

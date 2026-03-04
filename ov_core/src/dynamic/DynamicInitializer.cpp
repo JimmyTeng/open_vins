@@ -35,6 +35,7 @@
 #include "types/Landmark.h"
 #include "utils/colors.h"
 #include "utils/print.h"
+#include "utils/timing.h"
 #include "utils/quat_ops.h"
 #include "utils/sensor_data.h"
 
@@ -47,7 +48,7 @@ bool DynamicInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarian
                                     std::unordered_map<size_t, std::shared_ptr<ov_type::Landmark>> &_features_SLAM) {
 
   // 获取我们将尝试进行初始化的最新和最旧时间戳！
-  auto rT1 = boost::posix_time::microsec_clock::local_time();
+  auto rT1 = rtime_now();
   double newest_cam_time = -1;
   for (auto const &feat : _db->get_internal_data()) {
     for (auto const &camtimepair : feat.second->timestamps) {
@@ -293,7 +294,7 @@ bool DynamicInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarian
   //    features_bearings.insert({feat->featid, bearing});
   //    features_index.insert({feat->featid, (int)features_index.size()});
   //  }
-  auto rT2 = boost::posix_time::microsec_clock::local_time();
+  auto rT2 = rtime_now();
 
   // ======================================================
   // ======================================================
@@ -389,14 +390,14 @@ bool DynamicInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarian
     map_camera_cpi_IitoIi1.insert({current_time, cpiIitoIi1});
     last_camera_timestamp = current_time;
   }
-  auto rT2a = boost::posix_time::microsec_clock::local_time();
+  auto rT2a = rtime_now();
 
   // 遍历每个特征点观测并添加它！
   // 状态顺序为：[特征点, 速度, 重力]
   const int n1 = system_size - 3;  // A1 列数 (特征+速度)
 
   // 预分配与缓冲区复用：仅当容量不足时扩容
-  auto t_buf_start = boost::posix_time::microsec_clock::local_time();
+  auto t_buf_start = rtime_now();
   bool buf_reused = (buf_cap_meas >= num_measurements && buf_cap_n1 >= n1);
   if (!buf_reused) {
     buf_cap_meas = std::max(buf_cap_meas, num_measurements);
@@ -408,8 +409,8 @@ bool DynamicInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarian
     buf_A1A1_inv.resize(buf_cap_n1, buf_cap_n1);
     buf_A1A1_inv_A1T.resize(buf_cap_n1, buf_cap_meas);
   }
-  auto t_buf_end = boost::posix_time::microsec_clock::local_time();
-  double t_buf_ms = (t_buf_end - t_buf_start).total_microseconds() * 1e-3;
+  auto t_buf_end = rtime_now();
+  double t_buf_ms = rtime_ms(t_buf_start, t_buf_end);
   PRINT_INFO(CYAN "[DynamicInitializer] 缓冲区: %s (ensure %.4f ms)\n" RESET,
              buf_reused ? "复用" : "扩容", t_buf_ms);
   auto A = buf_A.block(0, 0, num_measurements, system_size);
@@ -498,7 +499,7 @@ bool DynamicInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarian
       }
     }
   }
-  auto rT3 = boost::posix_time::microsec_clock::local_time();
+  auto rT3 = rtime_now();
 
   // ======================================================
   // ======================================================
@@ -611,7 +612,7 @@ bool DynamicInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarian
              gravity_inI0.norm());
   PRINT_INFO(CYAN "[DynamicInitializer] MLE 优化完成 - 速度: |v|=%.4f, 重力: |g|=%.4f\n" RESET,
              v_I0inI0.norm(), gravity_inI0.norm());
-  auto rT4 = boost::posix_time::microsec_clock::local_time();
+  auto rT4 = rtime_now();
 
   // ======================================================
   // ======================================================
@@ -740,7 +741,7 @@ bool DynamicInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarian
   for (auto const &feat : features_inI0) {
     features_inG[feat.first] = R_GtoI0.transpose() * feat.second;
   }
-  auto rT4a = boost::posix_time::microsec_clock::local_time();
+  auto rT4a = rtime_now();
 
   // ======================================================
   // ======================================================
@@ -1063,7 +1064,7 @@ bool DynamicInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarian
   assert(ceres_vars_ori.size() == ceres_vars_vel.size());
   assert(ceres_vars_ori.size() == ceres_vars_bias_a.size());
   assert(ceres_vars_ori.size() == ceres_vars_pos.size());
-  auto rT5 = boost::posix_time::microsec_clock::local_time();
+  auto rT5 = rtime_now();
 
   // 优化ceres图
   ceres::Solver::Summary summary;
@@ -1071,23 +1072,23 @@ bool DynamicInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarian
   PRINT_INFO("[DynamicInitializer] %d 迭代 | %zu 状态, %zu 特征 (%zu 有效) | %d 参数和 %d 残差 | cost %.4e => %.4e\n",
              (int)summary.iterations.size(), map_states.size(), map_features.size(), count_valid_features, summary.num_parameters,
              summary.num_residuals, summary.initial_cost, summary.final_cost);
-  auto rT6 = boost::posix_time::microsec_clock::local_time();
+  auto rT6 = rtime_now();
 
   // 如果失败则返回！
   timestamp = newest_cam_time;
   if (params.init_dyn_mle_max_iter != 0 && summary.termination_type != ceres::CONVERGENCE) {
     PRINT_WARNING(YELLOW "[DynamicInitializer] 动态初始化失败: %s!\n" RESET, summary.message.c_str());
-    auto rT7_fail = boost::posix_time::microsec_clock::local_time();
+    auto rT7_fail = rtime_now();
     PRINT_INFO(CYAN "[DynamicInitializer] 各模块耗时 (初始化失败):\n" RESET);
-    PRINT_INFO("  预检查与数据准备:   %.4f s\n", (rT2 - rT1).total_microseconds() * 1e-6);
-    PRINT_INFO("  IMU预积分:         %.4f s\n", (rT2a - rT2).total_microseconds() * 1e-6);
-    PRINT_INFO("  线性系统构建:      %.4f s\n", (rT3 - rT2a).total_microseconds() * 1e-6);
-    PRINT_INFO("  线性系统求解:      %.4f s\n", (rT4 - rT3).total_microseconds() * 1e-6);
-    PRINT_INFO("  特征恢复与坐标变换: %.4f s\n", (rT4a - rT4).total_microseconds() * 1e-6);
-    PRINT_INFO("  Ceres问题构建:     %.4f s\n", (rT5 - rT4a).total_microseconds() * 1e-6);
-    PRINT_INFO("  Ceres优化:         %.4f s\n", (rT6 - rT5).total_microseconds() * 1e-6);
-    PRINT_INFO("  协方差恢复:        %.4f s\n", (rT7_fail - rT6).total_microseconds() * 1e-6);
-    PRINT_INFO("  总耗时:            %.4f s\n", (rT7_fail - rT1).total_microseconds() * 1e-6);
+    PRINT_INFO("  预检查与数据准备:   %.4f s\n", rtime_sec(rT1, rT2));
+    PRINT_INFO("  IMU预积分:         %.4f s\n", rtime_sec(rT2, rT2a));
+    PRINT_INFO("  线性系统构建:      %.4f s\n", rtime_sec(rT2a, rT3));
+    PRINT_INFO("  线性系统求解:      %.4f s\n", rtime_sec(rT3, rT4));
+    PRINT_INFO("  特征恢复与坐标变换: %.4f s\n", rtime_sec(rT4, rT4a));
+    PRINT_INFO("  Ceres问题构建:     %.4f s\n", rtime_sec(rT4a, rT5));
+    PRINT_INFO("  Ceres优化:         %.4f s\n", rtime_sec(rT5, rT6));
+    PRINT_INFO("  协方差恢复:        %.4f s\n", rtime_sec(rT6, rT7_fail));
+    PRINT_INFO("  总耗时:            %.4f s\n", rtime_sec(rT1, rT7_fail));
     free_state_memory();
     return false;
   }
@@ -1199,17 +1200,17 @@ bool DynamicInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarian
   bool success = problem_cov.Compute(covariance_blocks, &problem);
   if (!success) {
     PRINT_WARNING(YELLOW "[DynamicInitializer] 动态初始化失败: 协方差恢复失败...\n" RESET);
-    auto rT7_fail = boost::posix_time::microsec_clock::local_time();
+    auto rT7_fail = rtime_now();
     PRINT_INFO(CYAN "[DynamicInitializer] 各模块耗时 (初始化失败):\n" RESET);
-    PRINT_INFO("  预检查与数据准备:   %.4f s\n", (rT2 - rT1).total_microseconds() * 1e-6);
-    PRINT_INFO("  IMU预积分:         %.4f s\n", (rT2a - rT2).total_microseconds() * 1e-6);
-    PRINT_INFO("  线性系统构建:      %.4f s\n", (rT3 - rT2a).total_microseconds() * 1e-6);
-    PRINT_INFO("  线性系统求解:      %.4f s\n", (rT4 - rT3).total_microseconds() * 1e-6);
-    PRINT_INFO("  特征恢复与坐标变换: %.4f s\n", (rT4a - rT4).total_microseconds() * 1e-6);
-    PRINT_INFO("  Ceres问题构建:     %.4f s\n", (rT5 - rT4a).total_microseconds() * 1e-6);
-    PRINT_INFO("  Ceres优化:         %.4f s\n", (rT6 - rT5).total_microseconds() * 1e-6);
-    PRINT_INFO("  协方差恢复:        %.4f s\n", (rT7_fail - rT6).total_microseconds() * 1e-6);
-    PRINT_INFO("  总耗时:            %.4f s\n", (rT7_fail - rT1).total_microseconds() * 1e-6);
+    PRINT_INFO("  预检查与数据准备:   %.4f s\n", rtime_sec(rT1, rT2));
+    PRINT_INFO("  IMU预积分:         %.4f s\n", rtime_sec(rT2, rT2a));
+    PRINT_INFO("  线性系统构建:      %.4f s\n", rtime_sec(rT2a, rT3));
+    PRINT_INFO("  线性系统求解:      %.4f s\n", rtime_sec(rT3, rT4));
+    PRINT_INFO("  特征恢复与坐标变换: %.4f s\n", rtime_sec(rT4, rT4a));
+    PRINT_INFO("  Ceres问题构建:     %.4f s\n", rtime_sec(rT4a, rT5));
+    PRINT_INFO("  Ceres优化:         %.4f s\n", rtime_sec(rT5, rT6));
+    PRINT_INFO("  协方差恢复:        %.4f s\n", rtime_sec(rT6, rT7_fail));
+    PRINT_INFO("  总耗时:            %.4f s\n", rtime_sec(rT1, rT7_fail));
     free_state_memory();
     return false;
   }
@@ -1286,7 +1287,7 @@ bool DynamicInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarian
     PRINT_INFO("[DynamicInitializer] 重力先验 = %.3f, %.3f, %.3f\n", sigmas_bg(0), sigmas_bg(1), sigmas_bg(2));
     PRINT_INFO("[DynamicInitializer] 加速度先验 = %.3f, %.3f, %.3f\n", sigmas_ba(0), sigmas_ba(1), sigmas_ba(2));
   }
-  auto rT7 = boost::posix_time::microsec_clock::local_time();
+  auto rT7 = rtime_now();
 
   // 将我们的位置设置为零
   Eigen::MatrixXd x = _imu->value();
@@ -1296,15 +1297,15 @@ bool DynamicInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarian
 
   // 动态初始化各模块耗时（始终打印）
   PRINT_INFO(CYAN "[DynamicInitializer] 各模块耗时:\n" RESET);
-  PRINT_INFO("  预检查与数据准备:   %.4f s\n", (rT2 - rT1).total_microseconds() * 1e-6);
-  PRINT_INFO("  IMU预积分:         %.4f s\n", (rT2a - rT2).total_microseconds() * 1e-6);
-  PRINT_INFO("  线性系统构建:      %.4f s\n", (rT3 - rT2a).total_microseconds() * 1e-6);
-                                            PRINT_INFO("  线性系统求解:      %.4f s\n", (rT4 - rT3).total_microseconds() * 1e-6);
-  PRINT_INFO("  特征恢复与坐标变换: %.4f s\n", (rT4a - rT4).total_microseconds() * 1e-6);
-  PRINT_INFO("  Ceres问题构建:     %.4f s\n", (rT5 - rT4a).total_microseconds() * 1e-6);
-  PRINT_INFO("  Ceres优化:         %.4f s\n", (rT6 - rT5).total_microseconds() * 1e-6);
-  PRINT_INFO("  协方差恢复:        %.4f s\n", (rT7 - rT6).total_microseconds() * 1e-6);
-  PRINT_INFO("  总耗时:            %.4f s\n", (rT7 - rT1).total_microseconds() * 1e-6);
+  PRINT_INFO("  预检查与数据准备:   %.4f s\n", rtime_sec(rT1, rT2));
+  PRINT_INFO("  IMU预积分:         %.4f s\n", rtime_sec(rT2, rT2a));
+  PRINT_INFO("  线性系统构建:      %.4f s\n", rtime_sec(rT2a, rT3));
+  PRINT_INFO("  线性系统求解:      %.4f s\n", rtime_sec(rT3, rT4));
+  PRINT_INFO("  特征恢复与坐标变换: %.4f s\n", rtime_sec(rT4, rT4a));
+  PRINT_INFO("  Ceres问题构建:     %.4f s\n", rtime_sec(rT4a, rT5));
+  PRINT_INFO("  Ceres优化:         %.4f s\n", rtime_sec(rT5, rT6));
+  PRINT_INFO("  协方差恢复:        %.4f s\n", rtime_sec(rT6, rT7));
+  PRINT_INFO("  总耗时:            %.4f s\n", rtime_sec(rT1, rT7));
 
   free_state_memory();
   

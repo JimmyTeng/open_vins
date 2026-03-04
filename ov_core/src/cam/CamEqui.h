@@ -24,6 +24,8 @@
 
 #include "CamBase.h"
 
+#include <opencv2/calib3d.hpp>
+
 namespace ov_core {
 
 /**

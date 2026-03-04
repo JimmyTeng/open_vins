@@ -117,9 +117,6 @@ protected:
   /// 进行零速度更新时应考虑的最大视差（像素）
   double _zupt_max_disparity = 1.0;
 
-  /// 卡方分布95百分位表（查找键为残差的大小）
-  std::map<int, double> chi_squared_table;
-
   /// IMU消息历史记录（时间、角速度、线加速度）
   std::vector<ov_core::ImuData> imu_data;
 

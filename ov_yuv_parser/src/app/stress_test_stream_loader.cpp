@@ -17,8 +17,8 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include <boost/filesystem.hpp>
-namespace fs = boost::filesystem;
+#include <filesystem>
+namespace fs = std::filesystem;
 
 // Linux: 读取当前进程 RSS (KB)
 static long getRssKb() {
@@ -220,7 +220,7 @@ int main(int argc, char* argv[]) {
 
     // 清理
     try {
-        fs::remove_all(tmp_base);
+        std::filesystem::remove_all(tmp_base);
     } catch (...) {}
 
     std::cout << (all_ok ? "=== 压力测试通过 ===" : "=== 压力测试失败 ===") << std::endl;

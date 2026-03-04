@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.16)
 project(open_vins)
 
-# 统一 C++14，避免与 Eigen 固定大小类型在 C++17 下的 ABI 说明（GCC -Wpsabi）触发
-set(CMAKE_CXX_STANDARD 14)
+# C++17 for std::filesystem (replacing Boost.Filesystem)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # 抑制 GCC 与 Eigen 头文件相关的已知误报

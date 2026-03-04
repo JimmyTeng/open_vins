@@ -47,8 +47,8 @@
 #include <mutex>
 
 #include <Eigen/Eigen>
-#include <boost/date_time/posix_time/posix_time.hpp>
-#include <boost/filesystem.hpp>
+#include "utils/timing.h"
+#include <filesystem>
 #include <cv_bridge/cv_bridge.h>
 
 namespace ov_core {
@@ -201,7 +201,7 @@ protected:
   // Start and end timestamps
   // 开始和结束时间戳
   bool start_time_set = false; // 开始时间是否已设置
-  boost::posix_time::ptime rT1, rT2; // 开始和结束时间点
+  ov_core::rtime_t rT1, rT2; // 开始和结束时间点
 
   // Thread atomics
   // 线程原子变量

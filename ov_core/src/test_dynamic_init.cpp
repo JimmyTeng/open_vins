@@ -27,8 +27,7 @@
 #include <unistd.h>
 #include <vector>
 
-#include <boost/date_time/posix_time/posix_time.hpp>
-#include <boost/filesystem.hpp>
+#include "utils/timing.h"
 
 #if ROS_AVAILABLE == 1
 #include <nav_msgs/Path.h>
@@ -176,10 +175,10 @@ int main(int argc, char **argv) {
       std::unordered_map<size_t, std::shared_ptr<ov_type::Landmark>> _features_SLAM;
 
       // First we will try to make sure we have all the data required for our initialization
-      boost::posix_time::ptime rT1 = boost::posix_time::microsec_clock::local_time();
+      auto rT1 = ov_core::rtime_now();
       bool success = initializer->initialize(timestamp, covariance, order, _imu, _clones_IMU, _features_SLAM);
-      boost::posix_time::ptime rT2 = boost::posix_time::microsec_clock::local_time();
-      double time = (rT2 - rT1).total_microseconds() * 1e-6;
+      auto rT2 = ov_core::rtime_now();
+      double time = ov_core::rtime_sec(rT1, rT2);
       if (success) {
 
         // Debug that we finished!

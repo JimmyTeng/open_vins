@@ -17,16 +17,9 @@
       "default-features": false,
       "features": ["contrib", "intrinsics", "ipp", "calib3d", "fs", "highgui", "thread", "jpeg", "png"]
     },
-    "boost-system",
-    "boost-filesystem",
-    "boost-date-time",
-    "boost-math",
-    "boost-algorithm",
-    "boost-bind","boost-thread",
     {
       "name": "ceres",
       "features": ["suitesparse", "lapack"]
-    },
-    "lapack-reference"
+    }
   ]
 }

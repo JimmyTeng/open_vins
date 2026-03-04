@@ -25,12 +25,13 @@
 #include <Eigen/StdVector>
 #include <algorithm>
 #include <atomic>
-#include <boost/filesystem.hpp>
+#include <filesystem>
 #include <fstream>
 #include <memory>
 #include <mutex>
 #include <string>
 
+#include "utils/timing.h"
 #include "VioManagerOptions.h"
 
 namespace ov_core {
@@ -293,7 +294,7 @@ protected:
   // 时间统计文件和变量
   // Timing statistic file and variables
   std::ofstream of_statistics;
-  boost::posix_time::ptime rT1, rT2, rT3, rT4, rT5, rT6, rT7;
+  ov_core::rtime_t rT1, rT2, rT3, rT4, rT5, rT6, rT7;
 
   // 跟踪已行驶的距离
   // Track how much distance we have traveled
