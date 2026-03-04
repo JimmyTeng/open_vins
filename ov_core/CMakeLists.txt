@@ -80,6 +80,20 @@ list(APPEND thirdparty_libraries
         ${CERES_LIBRARIES}
 )
 
+# BLAS/LAPACK 加速 Eigen 稠密运算（矩阵乘、Cholesky 等）
+option(USE_BLAS_LAPACK "Use BLAS/LAPACK to accelerate Eigen dense operations" ON)
+set(OV_USE_BLAS_LAPACK OFF)
+if(USE_BLAS_LAPACK)
+  find_package(BLAS QUIET)
+  find_package(LAPACK QUIET)
+  if(BLAS_FOUND AND LAPACK_FOUND)
+    set(OV_USE_BLAS_LAPACK ON)
+    message(STATUS "Eigen: Using BLAS/LAPACK for acceleration")
+  else()
+    message(STATUS "Eigen: BLAS/LAPACK not found, using built-in")
+  endif()
+endif()
+
 ##################################################
 # Make the core library
 ##################################################
@@ -135,6 +149,12 @@ target_include_directories(${PROJECT_NAME}_lib
 
 
 target_link_libraries(${PROJECT_NAME}_lib PUBLIC ${thirdparty_libraries})
+
+if(OV_USE_BLAS_LAPACK)
+  target_compile_definitions(${PROJECT_NAME}_lib PRIVATE EIGEN_USE_BLAS EIGEN_USE_LAPACK)
+  target_link_libraries(${PROJECT_NAME}_lib PRIVATE ${BLAS_LIBRARIES} ${LAPACK_LIBRARIES})
+endif()
+
 target_include_directories(${PROJECT_NAME}_lib PUBLIC src/)
 install(TARGETS ${PROJECT_NAME}_lib
         ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
@@ -158,6 +178,14 @@ install(TARGETS test_webcam
 add_executable(test_profile src/test_profile.cpp)
 target_link_libraries(test_profile ${PROJECT_NAME}_lib ${thirdparty_libraries})
 install(TARGETS test_profile
+        ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+        LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+        RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+)
+
+add_executable(test_cpi_consistency src/test_cpi_consistency.cpp)
+target_link_libraries(test_cpi_consistency ${PROJECT_NAME}_lib ${thirdparty_libraries})
+install(TARGETS test_cpi_consistency
         ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
         LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
         RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
