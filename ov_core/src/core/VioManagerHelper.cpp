@@ -167,7 +167,7 @@ bool VioManager::try_to_initialize(const ov_core::CameraData &message) {
       auto init_rT2 = rtime_now();
       PRINT_INFO(BLUE "========================================\n" RESET);
 
-      PRINT_INFO(GREEN "[VMH]: 成功初始化，耗时 %.4f 秒\n" RESET, rtime_sec(init_rT1, init_rT2));
+      PRINT_INFO(GREEN "[VMH]: 成功初始化，耗时 %.2f ms\n" RESET, rtime_ms(init_rT1, init_rT2));
       PRINT_INFO(GREEN "[VMH]: 姿态 = %.4f, %.4f, %.4f, %.4f\n" RESET, state->_imu->quat()(0), state->_imu->quat()(1),
                  state->_imu->quat()(2), state->_imu->quat()(3));
       PRINT_INFO(GREEN "[VMH]: GYO偏差 = %.4f, %.4f, %.4f\n" RESET, state->_imu->bias_g()(0), state->_imu->bias_g()(1),
@@ -445,10 +445,10 @@ void VioManager::retriangulate_active_tracks(const ov_core::CameraData &message)
   retri_rT3 = rtime_now();
 
   // Timing information
-  PRINT_ALL(CYAN "[VMH]: 三角化耗时 %.4f 秒 (%zu 个已三角化，共 %zu 个活动特征)\n" RESET,
-            rtime_sec(retri_rT1, retri_rT2), total_triangulated, active_feat_linsys_A.size());
-  PRINT_ALL(CYAN "[VMH]: 重投影到当前帧耗时 %.4f 秒\n" RESET, rtime_sec(retri_rT2, retri_rT3));
-  PRINT_ALL(CYAN "[VMH]: 总耗时 %.4f 秒\n" RESET, rtime_sec(retri_rT1, retri_rT3));
+  PRINT_ALL(CYAN "[VMH]: 三角化耗时 %.2f ms (%zu 个已三角化，共 %zu 个活动特征)\n" RESET,
+            rtime_ms(retri_rT1, retri_rT2), total_triangulated, active_feat_linsys_A.size());
+  PRINT_ALL(CYAN "[VMH]: 重投影到当前帧耗时 %.2f ms\n" RESET, rtime_ms(retri_rT2, retri_rT3));
+  PRINT_ALL(CYAN "[VMH]: 总耗时 %.2f ms\n" RESET, rtime_ms(retri_rT1, retri_rT3));
 }
 
 /**

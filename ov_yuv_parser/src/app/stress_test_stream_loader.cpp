@@ -17,7 +17,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include <filesystem>
+#include "utils/fs_compat.h"
 namespace fs = std::filesystem;
 
 // Linux: 读取当前进程 RSS (KB)

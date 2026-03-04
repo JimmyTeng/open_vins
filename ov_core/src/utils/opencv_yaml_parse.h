@@ -23,7 +23,7 @@
 #define OPENCV_YAML_PARSER_H
 
 #include <Eigen/Eigen>
-#include <filesystem>
+#include "utils/fs_compat.h"
 #include <memory>
 #include <opencv2/core.hpp>
 

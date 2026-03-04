@@ -394,17 +394,17 @@ void TrackKLT::feed_stereo(const CameraData &message, size_t msg_id_left, size_t
   rT6 = rtime_now();
 
   // Timing information (稳定跟踪：图像特征检测 + 光流跟踪)
-  PRINT_INFO("[TIME-KLT] 图像特征检测: %.4f s (%d 新点)\n", rtime_sec(rT2, rT3),
+  PRINT_INFO("[TIME-KLT] 图像特征检测: %.2f ms (%d 新点)\n", rtime_ms(rT2, rT3),
              (int)pts_last[cam_id_left].size() - pts_before_detect);
-  PRINT_INFO("[TIME-KLT] 光流跟踪: %.4f s\n", rtime_sec(rT3, rT4));
-  PRINT_ALL("[TIME-KLT]: %.4f seconds for pyramid\n", rtime_sec(rT1, rT2));
-  PRINT_ALL("[TIME-KLT]: %.4f seconds for detection (%d detected)\n", rtime_sec(rT2, rT3),
+  PRINT_INFO("[TIME-KLT] 光流跟踪: %.2f ms\n", rtime_ms(rT3, rT4));
+  PRINT_ALL("[TIME-KLT]: %.2f ms for pyramid\n", rtime_ms(rT1, rT2));
+  PRINT_ALL("[TIME-KLT]: %.2f ms for detection (%d detected)\n", rtime_ms(rT2, rT3),
             (int)pts_last[cam_id_left].size() - pts_before_detect);
-  PRINT_ALL("[TIME-KLT]: %.4f seconds for temporal klt\n", rtime_sec(rT3, rT4));
-  PRINT_ALL("[TIME-KLT]: %.4f seconds for stereo klt\n", rtime_sec(rT4, rT5));
-  PRINT_ALL("[TIME-KLT]: %.4f seconds for feature DB update (%d features)\n", rtime_sec(rT5, rT6),
+  PRINT_ALL("[TIME-KLT]: %.2f ms for temporal klt\n", rtime_ms(rT3, rT4));
+  PRINT_ALL("[TIME-KLT]: %.2f ms for stereo klt\n", rtime_ms(rT4, rT5));
+  PRINT_ALL("[TIME-KLT]: %.2f ms for feature DB update (%d features)\n", rtime_ms(rT5, rT6),
             (int)good_left.size());
-  PRINT_ALL("[TIME-KLT]: %.4f seconds for total\n", rtime_sec(rT1, rT6));
+  PRINT_ALL("[TIME-KLT]: %.2f ms for total\n", rtime_ms(rT1, rT6));
 }
 
 void TrackKLT::perform_detection_monocular(const std::vector<cv::Mat> &img0pyr, const cv::Mat &mask0, std::vector<cv::KeyPoint> &pts0,

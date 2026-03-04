@@ -482,7 +482,7 @@ void ROS1Visualizer::visualize_final() {
   // Print the total time
   // 打印总时间
   rT2 = ov_core::rtime_now();
-  PRINT_INFO(REDPURPLE "[ROS1Visualizer] TIME: %.3f seconds\n\n" RESET, ov_core::rtime_sec(rT1, rT2));
+  PRINT_INFO(REDPURPLE "[ROS1Visualizer] TIME: %.2f ms\n\n" RESET, ov_core::rtime_ms(rT1, rT2));
 }
 
 void ROS1Visualizer::callback_inertial(const sensor_msgs::Imu::ConstPtr &msg) {

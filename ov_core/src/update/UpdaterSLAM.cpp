@@ -235,10 +235,10 @@ void UpdaterSLAM::delayed_init(std::shared_ptr<State> state, std::vector<std::sh
 
   // Debug print timing information
   if (!feature_vec.empty()) {
-    PRINT_ALL("[SLAM-DELAY]: %.4f seconds to clean\n", rtime_sec(rT0, rT1));
-    PRINT_ALL("[SLAM-DELAY]: %.4f seconds to triangulate\n", rtime_sec(rT1, rT2));
-    PRINT_ALL("[SLAM-DELAY]: %.4f seconds initialize (%d features)\n", rtime_sec(rT2, rT3), (int)feature_vec.size());
-    PRINT_ALL("[SLAM-DELAY]: %.4f seconds total\n", rtime_sec(rT1, rT3));
+    PRINT_ALL("[SLAM-DELAY]: %.2f ms to clean\n", rtime_ms(rT0, rT1));
+    PRINT_ALL("[SLAM-DELAY]: %.2f ms to triangulate\n", rtime_ms(rT1, rT2));
+    PRINT_ALL("[SLAM-DELAY]: %.2f ms initialize (%d features)\n", rtime_ms(rT2, rT3), (int)feature_vec.size());
+    PRINT_ALL("[SLAM-DELAY]: %.2f ms total\n", rtime_ms(rT1, rT3));
   }
 }
 
@@ -459,11 +459,11 @@ void UpdaterSLAM::update(std::shared_ptr<State> state, std::vector<std::shared_p
   rT3 = rtime_now();
 
   // Debug print timing information
-  PRINT_ALL("[SLAM-UP]: %.4f seconds to clean\n", rtime_sec(rT0, rT1));
-  PRINT_ALL("[SLAM-UP]: %.4f seconds creating linear system\n", rtime_sec(rT1, rT2));
-  PRINT_ALL("[SLAM-UP]: %.4f seconds to update (%d feats of %d size)\n", rtime_sec(rT2, rT3), (int)feature_vec.size(),
+  PRINT_ALL("[SLAM-UP]: %.2f ms to clean\n", rtime_ms(rT0, rT1));
+  PRINT_ALL("[SLAM-UP]: %.2f ms creating linear system\n", rtime_ms(rT1, rT2));
+  PRINT_ALL("[SLAM-UP]: %.2f ms to update (%d feats of %d size)\n", rtime_ms(rT2, rT3), (int)feature_vec.size(),
             (int)Hx_big.rows());
-  PRINT_ALL("[SLAM-UP]: %.4f seconds total\n", rtime_sec(rT1, rT3));
+  PRINT_ALL("[SLAM-UP]: %.2f ms total\n", rtime_ms(rT1, rT3));
 }
 
 void UpdaterSLAM::change_anchors(std::shared_ptr<State> state) {

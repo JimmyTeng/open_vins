@@ -21,8 +21,11 @@
 
 #include "VioManager.h"
 
+#include <algorithm>
+#include <fstream>
 #include <iomanip>
 #include <sstream>
+#include <vector>
 
 #include "feat/Feature.h"
 #include "feat/FeatureDatabase.h"
@@ -196,9 +199,62 @@ VioManager::VioManager(VioManagerOptions &params_) : thread_init_running(false),
   // If we are using zero velocity updates, then create the updater
   if (params.try_zupt) {
     updaterZUPT = std::make_shared<UpdaterZeroVelocity>(params.zupt_options, params.imu_noises, trackFEATS->get_feature_database(),
-                                                        propagator, params.gravity_mag, params.zupt_max_velocity,
+                                                        propagator,                                                         params.gravity_mag, params.zupt_max_velocity,
                                                         params.zupt_noise_multiplier, params.zupt_max_disparity);
   }
+}
+
+VioManager::~VioManager() {
+  if (!params.record_timing_information) return;
+  if (!of_statistics.is_open()) return;
+
+  of_statistics.close();
+
+  if (!std::filesystem::exists(params.record_timing_filepath)) return;
+
+  std::ifstream in(params.record_timing_filepath);
+  if (!in.good()) return;
+
+  std::vector<double> total_times_ms;
+  std::string line;
+  while (std::getline(in, line)) {
+    if (line.empty() || line[0] == '#') continue;
+    size_t last_comma = line.rfind(',');
+    if (last_comma == std::string::npos) continue;
+    double total_sec = 0.0;
+    try {
+      total_sec = std::stod(line.substr(last_comma + 1));
+    } catch (...) {
+      continue;
+    }
+    total_times_ms.push_back(total_sec * 1000.0);
+  }
+
+  if (total_times_ms.empty()) return;
+
+  std::sort(total_times_ms.begin(), total_times_ms.end());
+  size_t n = total_times_ms.size();
+  double sum = 0.0;
+  for (double t : total_times_ms) sum += t;
+  double mean_ms = sum / static_cast<double>(n);
+  double min_ms = total_times_ms.front();
+  double max_ms = total_times_ms.back();
+  double p50 = total_times_ms[n / 2];
+  double p95 = total_times_ms[static_cast<size_t>(n * 0.95)];
+  double p99 = total_times_ms[static_cast<size_t>(n * 0.99)];
+  double fps_mean = 1000.0 / mean_ms;
+  double fps_min = 1000.0 / max_ms;
+
+  std::ostringstream ss;
+  ss << "\n========== 帧率分析 (数据集结束) ==========\n";
+  ss << "  总帧数: " << n << "\n";
+  ss << "  单帧耗时(ms): 平均=" << std::fixed << std::setprecision(2) << mean_ms
+     << "  最小=" << min_ms << "  最大=" << max_ms
+     << "  P50=" << p50 << "  P95=" << p95 << "  P99=" << p99 << "\n";
+  ss << "  帧率(FPS): 平均=" << std::setprecision(2) << fps_mean
+     << "  最小(最慢帧)=" << fps_min << "\n";
+  ss << "========================================\n";
+  PRINT_INFO("%s", ss.str().c_str());
 }
 
 /**
@@ -469,8 +525,8 @@ void VioManager::track_image_and_update(const ov_core::CameraData &message_const
   if (!is_initialized_vio) {
     is_initialized_vio = try_to_initialize(message);
     if (!is_initialized_vio) {
-      double time_track = rtime_sec(rT1, rT2);
-      PRINT_DEBUG(BLUE "[VM]: 跟踪耗时 %.4f 秒\n" RESET, time_track);
+      double time_track = rtime_ms(rT1, rT2);
+      PRINT_DEBUG(BLUE "[VM]: 跟踪耗时 %.2f ms\n" RESET, time_track);
       return;
     }
   }
@@ -897,33 +953,33 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
 
   // 获取时间统计信息
   // Get timing statitics information
-  double time_track = rtime_sec(rT1, rT2);      // 特征跟踪时间
-  double time_prop = rtime_sec(rT2, rT3);        // 状态传播时间
-  double time_msckf = rtime_sec(rT3, rT4);       // MSCKF更新时间
-  double time_slam_update = rtime_sec(rT4, rT5);  // SLAM更新时间
-  double time_slam_delay = rtime_sec(rT5, rT6); // SLAM延迟初始化时间
-  double time_marg = rtime_sec(rT6, rT7);       // 重新三角化和边缘化时间
-  double time_total = rtime_sec(rT1, rT7);     // 总时间
+  double time_track = rtime_ms(rT1, rT2);      // 特征跟踪时间
+  double time_prop = rtime_ms(rT2, rT3);        // 状态传播时间
+  double time_msckf = rtime_ms(rT3, rT4);       // MSCKF更新时间
+  double time_slam_update = rtime_ms(rT4, rT5);  // SLAM更新时间
+  double time_slam_delay = rtime_ms(rT5, rT6); // SLAM延迟初始化时间
+  double time_marg = rtime_ms(rT6, rT7);       // 重新三角化和边缘化时间
+  double time_total = rtime_ms(rT1, rT7);     // 总时间
 
   // 打印时间信息（由配置 print_timing 控制）
   // Timing information (controlled by config print_timing)
   if (params.print_timing) {
-    PRINT_DEBUG(BLUE "[VM]: 跟踪耗时 %.4f 秒\n" RESET, time_track);
-    PRINT_DEBUG(BLUE "[VM]: 传播耗时 %.4f 秒\n" RESET, time_prop);
-    PRINT_DEBUG(BLUE "[VM]: MSCKF更新耗时 %.4f 秒 (%d 个特征)\n" RESET, time_msckf, (int)featsup_MSCKF.size());
+    PRINT_INFO(BLUE "[VM]: 跟踪耗时 %.2f ms\n" RESET, time_track);
+    PRINT_INFO(BLUE "[VM]: 传播耗时 %.2f ms\n" RESET, time_prop);
+    PRINT_INFO(BLUE "[VM]: MSCKF更新耗时 %.2f ms (%d 个特征)\n" RESET, time_msckf, (int)featsup_MSCKF.size());
     if (state->_options.max_slam_features > 0) {
-      PRINT_DEBUG(BLUE "[VM]: SLAM更新耗时 %.4f 秒 (%d 个特征)\n" RESET, time_slam_update, (int)state->_features_SLAM.size());
-      PRINT_DEBUG(BLUE "[VM]: SLAM延迟初始化耗时 %.4f 秒 (%d 个特征)\n" RESET, time_slam_delay, (int)feats_slam_DELAYED.size());
+      PRINT_INFO(BLUE "[VM]: SLAM更新耗时 %.2f ms (%d 个特征)\n" RESET, time_slam_update, (int)state->_features_SLAM.size());
+      PRINT_INFO(BLUE "[VM]: SLAM延迟初始化耗时 %.2f ms (%d 个特征)\n" RESET, time_slam_delay, (int)feats_slam_DELAYED.size());
     }
-    PRINT_DEBUG(BLUE "[VM]: 重新三角化和边缘化耗时 %.4f 秒 (状态中有 %d 个克隆)\n" RESET, time_marg, (int)state->_clones_IMU.size());
+    PRINT_INFO(BLUE "[VM]: 重新三角化和边缘化耗时 %.2f ms (状态中有 %d 个克隆)\n" RESET, time_marg, (int)state->_clones_IMU.size());
 
     std::stringstream ss;
-    ss << "[VM]: 总耗时 " << std::setprecision(4) << time_total << " 秒 (相机";
+    ss << "[VM]: 总耗时 " << std::setprecision(2) << time_total << " ms (相机";
     for (const auto &id : message.sensor_ids) {
       ss << " " << id;
     }
     ss << ")" << std::endl;
-    PRINT_DEBUG(BLUE "%s" RESET, ss.str().c_str());
+    PRINT_INFO(BLUE "%s" RESET, ss.str().c_str());
   }
   // 最后，如果正在保存统计信息到文件，将其保存到文件
   // Finally if we are saving stats to file, lets save it to file
@@ -936,12 +992,12 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
     double timestamp_inI = state->_timestamp + t_ItoC;
     // 追加到文件
     // Append to the file
-    of_statistics << std::fixed << std::setprecision(15) << timestamp_inI << "," << std::fixed << std::setprecision(5) << time_track << ","
-                  << time_prop << "," << time_msckf << ",";
+    of_statistics << std::fixed << std::setprecision(15) << timestamp_inI << "," << std::fixed << std::setprecision(5)
+                  << (time_track / 1000.0) << "," << (time_prop / 1000.0) << "," << (time_msckf / 1000.0) << ",";
     if (state->_options.max_slam_features > 0) {
-      of_statistics << time_slam_update << "," << time_slam_delay << ",";
+      of_statistics << (time_slam_update / 1000.0) << "," << (time_slam_delay / 1000.0) << ",";
     }
-    of_statistics << time_marg << "," << time_total << std::endl;
+    of_statistics << (time_marg / 1000.0) << "," << (time_total / 1000.0) << std::endl;
     of_statistics.flush();
   }
 

@@ -431,7 +431,7 @@ void ROS2Visualizer::visualize_final() {
 
   // Print the total time
   rT2 = ov_core::rtime_now();
-  PRINT_INFO(REDPURPLE "TIME: %.3f seconds\n\n" RESET, ov_core::rtime_sec(rT1, rT2));
+  PRINT_INFO(REDPURPLE "TIME: %.2f ms\n\n" RESET, ov_core::rtime_ms(rT1, rT2));
 }
 
 void ROS2Visualizer::callback_inertial(const sensor_msgs::msg::Imu::SharedPtr msg) {

@@ -23,7 +23,7 @@
 #define OV_MSCKF_VIOMANAGEROPTIONS_H
 
 #include <Eigen/Eigen>
-#include <filesystem>
+#include "utils/fs_compat.h"
 #include <iostream>
 #include <memory>
 #include <sstream>

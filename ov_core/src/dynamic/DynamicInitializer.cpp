@@ -1080,15 +1080,15 @@ bool DynamicInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarian
     PRINT_WARNING(YELLOW "[DynamicInitializer] 动态初始化失败: %s!\n" RESET, summary.message.c_str());
     auto rT7_fail = rtime_now();
     PRINT_INFO(CYAN "[DynamicInitializer] 各模块耗时 (初始化失败):\n" RESET);
-    PRINT_INFO("  预检查与数据准备:   %.4f s\n", rtime_sec(rT1, rT2));
-    PRINT_INFO("  IMU预积分:         %.4f s\n", rtime_sec(rT2, rT2a));
-    PRINT_INFO("  线性系统构建:      %.4f s\n", rtime_sec(rT2a, rT3));
-    PRINT_INFO("  线性系统求解:      %.4f s\n", rtime_sec(rT3, rT4));
-    PRINT_INFO("  特征恢复与坐标变换: %.4f s\n", rtime_sec(rT4, rT4a));
-    PRINT_INFO("  Ceres问题构建:     %.4f s\n", rtime_sec(rT4a, rT5));
-    PRINT_INFO("  Ceres优化:         %.4f s\n", rtime_sec(rT5, rT6));
-    PRINT_INFO("  协方差恢复:        %.4f s\n", rtime_sec(rT6, rT7_fail));
-    PRINT_INFO("  总耗时:            %.4f s\n", rtime_sec(rT1, rT7_fail));
+    PRINT_INFO("  预检查与数据准备:   %.2f ms\n", rtime_ms(rT1, rT2));
+    PRINT_INFO("  IMU预积分:         %.2f ms\n", rtime_ms(rT2, rT2a));
+    PRINT_INFO("  线性系统构建:      %.2f ms\n", rtime_ms(rT2a, rT3));
+    PRINT_INFO("  线性系统求解:      %.2f ms\n", rtime_ms(rT3, rT4));
+    PRINT_INFO("  特征恢复与坐标变换: %.2f ms\n", rtime_ms(rT4, rT4a));
+    PRINT_INFO("  Ceres问题构建:     %.2f ms\n", rtime_ms(rT4a, rT5));
+    PRINT_INFO("  Ceres优化:         %.2f ms\n", rtime_ms(rT5, rT6));
+    PRINT_INFO("  协方差恢复:        %.2f ms\n", rtime_ms(rT6, rT7_fail));
+    PRINT_INFO("  总耗时:            %.2f ms\n", rtime_ms(rT1, rT7_fail));
     free_state_memory();
     return false;
   }
@@ -1202,15 +1202,15 @@ bool DynamicInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarian
     PRINT_WARNING(YELLOW "[DynamicInitializer] 动态初始化失败: 协方差恢复失败...\n" RESET);
     auto rT7_fail = rtime_now();
     PRINT_INFO(CYAN "[DynamicInitializer] 各模块耗时 (初始化失败):\n" RESET);
-    PRINT_INFO("  预检查与数据准备:   %.4f s\n", rtime_sec(rT1, rT2));
-    PRINT_INFO("  IMU预积分:         %.4f s\n", rtime_sec(rT2, rT2a));
-    PRINT_INFO("  线性系统构建:      %.4f s\n", rtime_sec(rT2a, rT3));
-    PRINT_INFO("  线性系统求解:      %.4f s\n", rtime_sec(rT3, rT4));
-    PRINT_INFO("  特征恢复与坐标变换: %.4f s\n", rtime_sec(rT4, rT4a));
-    PRINT_INFO("  Ceres问题构建:     %.4f s\n", rtime_sec(rT4a, rT5));
-    PRINT_INFO("  Ceres优化:         %.4f s\n", rtime_sec(rT5, rT6));
-    PRINT_INFO("  协方差恢复:        %.4f s\n", rtime_sec(rT6, rT7_fail));
-    PRINT_INFO("  总耗时:            %.4f s\n", rtime_sec(rT1, rT7_fail));
+    PRINT_INFO("  预检查与数据准备:   %.2f ms\n", rtime_ms(rT1, rT2));
+    PRINT_INFO("  IMU预积分:         %.2f ms\n", rtime_ms(rT2, rT2a));
+    PRINT_INFO("  线性系统构建:      %.2f ms\n", rtime_ms(rT2a, rT3));
+    PRINT_INFO("  线性系统求解:      %.2f ms\n", rtime_ms(rT3, rT4));
+    PRINT_INFO("  特征恢复与坐标变换: %.2f ms\n", rtime_ms(rT4, rT4a));
+    PRINT_INFO("  Ceres问题构建:     %.2f ms\n", rtime_ms(rT4a, rT5));
+    PRINT_INFO("  Ceres优化:         %.2f ms\n", rtime_ms(rT5, rT6));
+    PRINT_INFO("  协方差恢复:        %.2f ms\n", rtime_ms(rT6, rT7_fail));
+    PRINT_INFO("  总耗时:            %.2f ms\n", rtime_ms(rT1, rT7_fail));
     free_state_memory();
     return false;
   }
@@ -1297,15 +1297,15 @@ bool DynamicInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarian
 
   // 动态初始化各模块耗时（始终打印）
   PRINT_INFO(CYAN "[DynamicInitializer] 各模块耗时:\n" RESET);
-  PRINT_INFO("  预检查与数据准备:   %.4f s\n", rtime_sec(rT1, rT2));
-  PRINT_INFO("  IMU预积分:         %.4f s\n", rtime_sec(rT2, rT2a));
-  PRINT_INFO("  线性系统构建:      %.4f s\n", rtime_sec(rT2a, rT3));
-  PRINT_INFO("  线性系统求解:      %.4f s\n", rtime_sec(rT3, rT4));
-  PRINT_INFO("  特征恢复与坐标变换: %.4f s\n", rtime_sec(rT4, rT4a));
-  PRINT_INFO("  Ceres问题构建:     %.4f s\n", rtime_sec(rT4a, rT5));
-  PRINT_INFO("  Ceres优化:         %.4f s\n", rtime_sec(rT5, rT6));
-  PRINT_INFO("  协方差恢复:        %.4f s\n", rtime_sec(rT6, rT7));
-  PRINT_INFO("  总耗时:            %.4f s\n", rtime_sec(rT1, rT7));
+  PRINT_INFO("  预检查与数据准备:   %.2f ms\n", rtime_ms(rT1, rT2));
+  PRINT_INFO("  IMU预积分:         %.2f ms\n", rtime_ms(rT2, rT2a));
+  PRINT_INFO("  线性系统构建:      %.2f ms\n", rtime_ms(rT2a, rT3));
+  PRINT_INFO("  线性系统求解:      %.2f ms\n", rtime_ms(rT3, rT4));
+  PRINT_INFO("  特征恢复与坐标变换: %.2f ms\n", rtime_ms(rT4, rT4a));
+  PRINT_INFO("  Ceres问题构建:     %.2f ms\n", rtime_ms(rT4a, rT5));
+  PRINT_INFO("  Ceres优化:         %.2f ms\n", rtime_ms(rT5, rT6));
+  PRINT_INFO("  协方差恢复:        %.2f ms\n", rtime_ms(rT6, rT7));
+  PRINT_INFO("  总耗时:            %.2f ms\n", rtime_ms(rT1, rT7));
 
   free_state_memory();
   

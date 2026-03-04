@@ -25,7 +25,7 @@
 #include <Eigen/StdVector>
 #include <algorithm>
 #include <atomic>
-#include <filesystem>
+#include "utils/fs_compat.h"
 #include <fstream>
 #include <memory>
 #include <mutex>
@@ -77,6 +77,7 @@ public:
    * @param params_ Parameters loaded from either ROS or CMDLINE
    */
   VioManager(VioManagerOptions &params_);
+  ~VioManager();
 
   /**
    * @brief 输入IMU惯性测量数据

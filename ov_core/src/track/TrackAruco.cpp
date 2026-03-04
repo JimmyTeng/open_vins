@@ -165,10 +165,10 @@ void TrackAruco::perform_tracking(double timestamp, const cv::Mat &imgin, size_t
   rT3 = rtime_now();
 
   // Timing information
-  PRINT_ALL("[TIME-ARUCO]: %.4f seconds for detection\n", rtime_sec(rT1, rT2));
-  PRINT_ALL("[TIME-ARUCO]: %.4f seconds for feature DB update (%d features)\n", rtime_sec(rT2, rT3),
+  PRINT_ALL("[TIME-ARUCO]: %.2f ms for detection\n", rtime_ms(rT1, rT2));
+  PRINT_ALL("[TIME-ARUCO]: %.2f ms for feature DB update (%d features)\n", rtime_ms(rT2, rT3),
             (int)ids_new.size());
-  PRINT_ALL("[TIME-ARUCO]: %.4f seconds for total\n", rtime_sec(rT1, rT3));
+  PRINT_ALL("[TIME-ARUCO]: %.2f ms for total\n", rtime_ms(rT1, rT3));
 }
 
 void TrackAruco::display_active(cv::Mat &img_out, int r1, int g1, int b1, int r2, int g2, int b2, std::string overlay) {

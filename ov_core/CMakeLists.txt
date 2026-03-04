@@ -146,6 +146,11 @@ target_include_directories(${PROJECT_NAME}_lib
 
 target_link_libraries(${PROJECT_NAME}_lib PUBLIC ${thirdparty_libraries})
 
+# GCC 7 用 experimental/filesystem 需链接 libstdc++fs
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS "8")
+  target_link_libraries(${PROJECT_NAME}_lib PRIVATE stdc++fs)
+endif()
+
 if(OV_USE_BLAS_LAPACK)
   target_compile_definitions(${PROJECT_NAME}_lib PRIVATE EIGEN_USE_BLAS EIGEN_USE_LAPACK)
   target_link_libraries(${PROJECT_NAME}_lib PRIVATE ${BLAS_LIBRARIES} ${LAPACK_LIBRARIES})

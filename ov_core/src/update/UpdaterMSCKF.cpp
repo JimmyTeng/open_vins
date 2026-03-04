@@ -275,10 +275,10 @@ void UpdaterMSCKF::update(std::shared_ptr<State> state, std::vector<std::shared_
   rT5 = rtime_now();
 
   // Debug print timing information
-  PRINT_ALL("[MSCKF-UP]: %.4f seconds to clean\n", rtime_sec(rT0, rT1));
-  PRINT_ALL("[MSCKF-UP]: %.4f seconds to triangulate\n", rtime_sec(rT1, rT2));
-  PRINT_ALL("[MSCKF-UP]: %.4f seconds create system (%d features)\n", rtime_sec(rT2, rT3), (int)feature_vec.size());
-  PRINT_ALL("[MSCKF-UP]: %.4f seconds compress system\n", rtime_sec(rT3, rT4));
-  PRINT_ALL("[MSCKF-UP]: %.4f seconds update state (%d size)\n", rtime_sec(rT4, rT5), (int)res_big.rows());
-  PRINT_ALL("[MSCKF-UP]: %.4f seconds total\n", rtime_sec(rT1, rT5));
+  PRINT_ALL("[MSCKF-UP]: %.2f ms to clean\n", rtime_ms(rT0, rT1));
+  PRINT_ALL("[MSCKF-UP]: %.2f ms to triangulate\n", rtime_ms(rT1, rT2));
+  PRINT_ALL("[MSCKF-UP]: %.2f ms create system (%d features)\n", rtime_ms(rT2, rT3), (int)feature_vec.size());
+  PRINT_ALL("[MSCKF-UP]: %.2f ms compress system\n", rtime_ms(rT3, rT4));
+  PRINT_ALL("[MSCKF-UP]: %.2f ms update state (%d size)\n", rtime_ms(rT4, rT5), (int)res_big.rows());
+  PRINT_ALL("[MSCKF-UP]: %.2f ms total\n", rtime_ms(rT1, rT5));
 }

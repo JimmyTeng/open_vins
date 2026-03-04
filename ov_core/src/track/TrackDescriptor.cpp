@@ -170,12 +170,12 @@ void TrackDescriptor::feed_monocular(const CameraData &message, size_t msg_id) {
   rT5 = rtime_now();
 
   // Our timing information
-  PRINT_ALL("[TIME-DESC]: %.4f seconds for detection\n", rtime_sec(rT1, rT2));
-  PRINT_ALL("[TIME-DESC]: %.4f seconds for matching\n", rtime_sec(rT2, rT3));
-  PRINT_ALL("[TIME-DESC]: %.4f seconds for merging\n", rtime_sec(rT3, rT4));
-  PRINT_ALL("[TIME-DESC]: %.4f seconds for feature DB update (%d features)\n", rtime_sec(rT4, rT5),
+  PRINT_ALL("[TIME-DESC]: %.2f ms for detection\n", rtime_ms(rT1, rT2));
+  PRINT_ALL("[TIME-DESC]: %.2f ms for matching\n", rtime_ms(rT2, rT3));
+  PRINT_ALL("[TIME-DESC]: %.2f ms for merging\n", rtime_ms(rT3, rT4));
+  PRINT_ALL("[TIME-DESC]: %.2f ms for feature DB update (%d features)\n", rtime_ms(rT4, rT5),
             (int)good_left.size());
-  PRINT_ALL("[TIME-DESC]: %.4f seconds for total\n", rtime_sec(rT1, rT5));
+  PRINT_ALL("[TIME-DESC]: %.2f ms for total\n", rtime_ms(rT1, rT5));
 }
 
 void TrackDescriptor::feed_stereo(const CameraData &message, size_t msg_id_left, size_t msg_id_right) {
@@ -345,12 +345,12 @@ void TrackDescriptor::feed_stereo(const CameraData &message, size_t msg_id_left,
   rT5 = rtime_now();
 
   // Our timing information
-  PRINT_ALL("[TIME-DESC]: %.4f seconds for detection\n", rtime_sec(rT1, rT2));
-  PRINT_ALL("[TIME-DESC]: %.4f seconds for matching\n", rtime_sec(rT2, rT3));
-  PRINT_ALL("[TIME-DESC]: %.4f seconds for merging\n", rtime_sec(rT3, rT4));
-  PRINT_ALL("[TIME-DESC]: %.4f seconds for feature DB update (%d features)\n", rtime_sec(rT4, rT5),
+  PRINT_ALL("[TIME-DESC]: %.2f ms for detection\n", rtime_ms(rT1, rT2));
+  PRINT_ALL("[TIME-DESC]: %.2f ms for matching\n", rtime_ms(rT2, rT3));
+  PRINT_ALL("[TIME-DESC]: %.2f ms for merging\n", rtime_ms(rT3, rT4));
+  PRINT_ALL("[TIME-DESC]: %.2f ms for feature DB update (%d features)\n", rtime_ms(rT4, rT5),
             (int)good_left.size());
-  PRINT_ALL("[TIME-DESC]: %.4f seconds for total\n", rtime_sec(rT1, rT5));
+  PRINT_ALL("[TIME-DESC]: %.2f ms for total\n", rtime_ms(rT1, rT5));
 }
 
 void TrackDescriptor::perform_detection_monocular(const cv::Mat &img0, const cv::Mat &mask0, std::vector<cv::KeyPoint> &pts0,

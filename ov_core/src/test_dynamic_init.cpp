@@ -182,7 +182,7 @@ int main(int argc, char **argv) {
       if (success) {
 
         // Debug that we finished!
-        PRINT_INFO(GREEN "success! got initialized state information (%.4f seconds)\n" RESET, time);
+        PRINT_INFO(GREEN "success! got initialized state information (%.2f ms)\n" RESET, time * 1000.0);
 
         // First lets align the groundtruth state with the IMU state
         // NOTE: imu biases do not have to be corrected with the pos yaw alignment here...
@@ -347,7 +347,7 @@ int main(int argc, char **argv) {
         tracker = std::make_shared<ov_core::TrackSIM>(params.camera_intrinsics, 0);
         initializer = std::make_shared<DynamicInitializer>(params, tracker->get_feature_database(), imu_readings);
       } else if (timestamp != -1) {
-        PRINT_INFO(RED "failed (%.4f seconds)\n\n" RESET, time);
+        PRINT_INFO(RED "failed (%.2f ms)\n\n" RESET, time * 1000.0);
       }
     }
   }
