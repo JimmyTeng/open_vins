@@ -21,6 +21,9 @@
 
 #include "VioManager.h"
 
+#include <iomanip>
+#include <sstream>
+
 #include "feat/Feature.h"
 #include "feat/FeatureDatabase.h"
 #include "feat/FeatureInitializer.h"
@@ -327,25 +330,14 @@ void VioManager::track_image_and_update(const ov_core::CameraData &message_const
   // Start timing
   rT1 = boost::posix_time::microsec_clock::local_time();
 
-  // 打印时间戳信息用于调试（特别是在初始化期间）
-  // Print timestamp information for debugging (especially during initialization)
-  static int processed_image_count = 0;
+  // 时间间隔用于下方合并打印（时间戳/间隔/Hz/Init + 跟踪统计）
+  // Time interval for combined print below (timestamp/interval/Hz/Init + tracking stats)
   static double last_processed_timestamp = 0.0;
-  processed_image_count++;
   double time_interval = 0.0;
   if (last_processed_timestamp > 0.0) {
     time_interval = message_const.timestamp - last_processed_timestamp;
   }
   last_processed_timestamp = message_const.timestamp;
-  
-  // 在初始化阶段或每20帧打印一次
-  // Print during initialization phase or every 20th image
-  bool should_print = (!is_initialized_vio) || (processed_image_count % 20 == 0);
-  if (should_print) {
-    PRINT_INFO(CYAN "[VM] 帧 #%d : %.6f s, 间隔: %.3f ms (%.2f Hz), Init: %d\n" RESET,
-               processed_image_count, message_const.timestamp, time_interval * 1000.0,
-               (time_interval > 0 ? 1.0/time_interval : 0.0), (int)is_initialized_vio);
-  }
 
   // 断言我们有有效的测量数据和ID
   // Assert we have valid measurement data and ids
@@ -429,13 +421,14 @@ void VioManager::track_image_and_update(const ov_core::CameraData &message_const
   long num_features_new = (long)num_features_after_tracking - (long)num_features_before_tracking;
   long net_change = (long)num_features_after_tracking - (long)num_features_before_tracking;
   
-  // 在初始化阶段或每20帧打印一次
-  // Print during initialization phase or every 20th frame
-  bool should_print_tracking = (!is_initialized_vio) || (tracking_frame_count % 20 == 0);
+  // 在初始化阶段或每200帧打印一次：时间戳/间隔/Hz/Init + 跟踪统计
+  // Print during initialization phase or every 200th frame: timestamp/interval/Hz/Init + tracking stats
+  bool should_print_tracking = (!is_initialized_vio) || (tracking_frame_count % 200 == 0);
   if (should_print_tracking) {
-    PRINT_INFO(CYAN "[VM] 帧 #%d - 总数: %zu, 丢失: %zu, 新增: %ld, 净变化: %ld\n" RESET,
-               tracking_frame_count, num_features_after_tracking, num_features_lost_this_frame, 
-               num_features_new, net_change);
+    PRINT_INFO(CYAN "[VM] 帧 #%d : %.6f s, 间隔: %.3f ms (%.2f Hz), Init: %d | 总数: %zu, 丢失: %zu, 新增: %ld, 净变化: %ld\n" RESET,
+               tracking_frame_count, message.timestamp, time_interval * 1000.0,
+               (time_interval > 0 ? 1.0 / time_interval : 0.0), (int)is_initialized_vio,
+               num_features_after_tracking, num_features_lost_this_frame, num_features_new, net_change);
   }
 
   // 如果ArUco跟踪器可用，也将数据传递给它
@@ -567,7 +560,7 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
   
   // 在初始化阶段或每20帧打印一次
   // Print during initialization phase or every 20th frame
-  bool should_print_tracking = (!is_initialized_vio) || (tracking_update_count % 20 == 0);
+  bool should_print_tracking = (!is_initialized_vio) || (tracking_update_count % 200 == 0);
   if (should_print_tracking) {
     PRINT_INFO(CYAN "[跟踪] 更新 #%d - 总特征数: %zu, 丢失: %zu, 新增: %ld, 净变化: %ld\n" RESET,
                tracking_update_count, num_features_current, num_features_lost, num_features_new, net_change);
@@ -912,9 +905,9 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
   double time_marg = (rT7 - rT6).total_microseconds() * 1e-6;       // 重新三角化和边缘化时间
   double time_total = (rT7 - rT1).total_microseconds() * 1e-6;     // 总时间
 
-  // 打印时间信息
-  // Timing information
-  if (print_debug) {
+  // 打印时间信息（由配置 print_timing 控制）
+  // Timing information (controlled by config print_timing)
+  if (params.print_timing) {
     PRINT_DEBUG(BLUE "[VM]: 跟踪耗时 %.4f 秒\n" RESET, time_track);
     PRINT_DEBUG(BLUE "[VM]: 传播耗时 %.4f 秒\n" RESET, time_prop);
     PRINT_DEBUG(BLUE "[VM]: MSCKF更新耗时 %.4f 秒 (%d 个特征)\n" RESET, time_msckf, (int)featsup_MSCKF.size());
@@ -960,79 +953,69 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
   }
   timelastupdate = message.timestamp;  // 更新最后更新时间戳
 
-  // 调试：打印当前状态
-  // Debug, print our current state
-  // q_GtoI: 全局到IMU的旋转四元数, p_IinG: IMU在全局坐标系中的位置, dist: 累计距离
-  PRINT_INFO("[VM]: q_GtoI = %.3f,%.3f,%.3f,%.3f | p_IinG = %.3f,%.3f,%.3f | Dist = %.2f s, \n", state->_imu->quat()(0),
-             state->_imu->quat()(1), state->_imu->quat()(2), state->_imu->quat()(3), state->_imu->pos()(0), state->_imu->pos()(1),
-             state->_imu->pos()(2), distance);
-  // bg: 陀螺仪偏差, ba: 加速度计偏差
-  PRINT_INFO("[VM]: bg = %.4f,%.4f,%.4f | ba = %.4f,%.4f,%.4f\n", state->_imu->bias_g()(0), state->_imu->bias_g()(1), state->_imu->bias_g()(2),
-             state->_imu->bias_a()(0), state->_imu->bias_a()(1), state->_imu->bias_a()(2));
+  // 调试：根据配置拼接状态与标定信息，最后一行打印（由 print_state_calib 控制）
+  if (params.print_state_calib) {
+  std::ostringstream ss;
+  ss << std::fixed << std::setprecision(3)
+     << "[VM]: q_GtoI = " << state->_imu->quat()(0) << "," << state->_imu->quat()(1) << "," << state->_imu->quat()(2) << ","
+     << state->_imu->quat()(3) << " | p_IinG = " << state->_imu->pos()(0) << "," << state->_imu->pos()(1) << ","
+     << state->_imu->pos()(2) << " | Dist = " << std::setprecision(2) << distance << " s | bg = " << std::setprecision(4)
+     << state->_imu->bias_g()(0) << "," << state->_imu->bias_g()(1) << "," << state->_imu->bias_g()(2) << " | ba = "
+     << state->_imu->bias_a()(0) << "," << state->_imu->bias_a()(1) << "," << state->_imu->bias_a()(2);
 
-  // 调试：相机-IMU时间偏移
-  // Debug for camera imu offset
   if (state->_options.do_calib_camera_timeoffset) {
-    PRINT_INFO("[VM]: 相机-IMU时间偏移 = %.5f\n", state->_calib_dt_CAMtoIMU->value()(0));
+    ss << " | 相机-IMU时间偏移 = " << std::setprecision(5) << state->_calib_dt_CAMtoIMU->value()(0);
   }
-
-  // 调试：相机内参
-  // Debug for camera intrinsics
   if (state->_options.do_calib_camera_intrinsics) {
     for (int i = 0; i < state->_options.num_cameras; i++) {
       std::shared_ptr<Vec> calib = state->_cam_intrinsics.at(i);
-      PRINT_INFO("[VM]: 相机%d 内参 = %.3f,%.3f,%.3f,%.3f | %.3f,%.3f,%.3f,%.3f\n", (int)i, calib->value()(0), calib->value()(1),
-                 calib->value()(2), calib->value()(3), calib->value()(4), calib->value()(5), calib->value()(6), calib->value()(7));
+      ss << " | 相机" << i << "内参 = " << std::setprecision(3) << calib->value()(0) << "," << calib->value()(1) << ","
+         << calib->value()(2) << "," << calib->value()(3) << " | " << calib->value()(4) << "," << calib->value()(5) << ","
+         << calib->value()(6) << "," << calib->value()(7);
     }
   }
-
-  // 调试：相机外参（IMU到相机的变换）
-  // Debug for camera extrinsics
   if (state->_options.do_calib_camera_pose) {
     for (int i = 0; i < state->_options.num_cameras; i++) {
       std::shared_ptr<PoseJPL> calib = state->_calib_IMUtoCAM.at(i);
-      PRINT_INFO("[VM]: 相机%d 外参 = %.3f,%.3f,%.3f,%.3f | %.3f,%.3f,%.3f\n", (int)i, calib->quat()(0), calib->quat()(1), calib->quat()(2),
-                 calib->quat()(3), calib->pos()(0), calib->pos()(1), calib->pos()(2));
+      ss << " | 相机" << i << "外参 = " << std::setprecision(3) << calib->quat()(0) << "," << calib->quat()(1) << ","
+         << calib->quat()(2) << "," << calib->quat()(3) << " | " << calib->pos()(0) << "," << calib->pos()(1) << ","
+         << calib->pos()(2);
     }
   }
-
-  // 调试：IMU内参
-  // Debug for imu intrinsics
   if (state->_options.do_calib_imu_intrinsics && state->_options.imu_model == StateOptions::ImuModel::KALIBR) {
-    // 陀螺仪到IMU的旋转四元数
-    PRINT_INFO("q_GYROtoI = %.3f,%.3f,%.3f,%.3f\n", state->_calib_imu_GYROtoIMU->value()(0), state->_calib_imu_GYROtoIMU->value()(1),
-               state->_calib_imu_GYROtoIMU->value()(2), state->_calib_imu_GYROtoIMU->value()(3));
+    ss << " | q_GYROtoI = " << std::setprecision(3) << state->_calib_imu_GYROtoIMU->value()(0) << ","
+       << state->_calib_imu_GYROtoIMU->value()(1) << "," << state->_calib_imu_GYROtoIMU->value()(2) << ","
+       << state->_calib_imu_GYROtoIMU->value()(3);
   }
   if (state->_options.do_calib_imu_intrinsics && state->_options.imu_model == StateOptions::ImuModel::RPNG) {
-    // 加速度计到IMU的旋转四元数
-    PRINT_INFO("q_ACCtoI = %.3f,%.3f,%.3f,%.3f\n", state->_calib_imu_ACCtoIMU->value()(0), state->_calib_imu_ACCtoIMU->value()(1),
-               state->_calib_imu_ACCtoIMU->value()(2), state->_calib_imu_ACCtoIMU->value()(3));
+    ss << " | q_ACCtoI = " << std::setprecision(3) << state->_calib_imu_ACCtoIMU->value()(0) << ","
+       << state->_calib_imu_ACCtoIMU->value()(1) << "," << state->_calib_imu_ACCtoIMU->value()(2) << ","
+       << state->_calib_imu_ACCtoIMU->value()(3);
   }
   if (state->_options.do_calib_imu_intrinsics && state->_options.imu_model == StateOptions::ImuModel::KALIBR) {
-    // 陀螺仪偏差和标度因子矩阵 Dw
-    PRINT_INFO("Dw = | %.4f,%.4f,%.4f | %.4f,%.4f | %.4f |\n", state->_calib_imu_dw->value()(0), state->_calib_imu_dw->value()(1),
-               state->_calib_imu_dw->value()(2), state->_calib_imu_dw->value()(3), state->_calib_imu_dw->value()(4),
-               state->_calib_imu_dw->value()(5));
-    // 加速度计偏差和标度因子矩阵 Da
-    PRINT_INFO("Da = | %.4f,%.4f,%.4f | %.4f,%.4f | %.4f |\n", state->_calib_imu_da->value()(0), state->_calib_imu_da->value()(1),
-               state->_calib_imu_da->value()(2), state->_calib_imu_da->value()(3), state->_calib_imu_da->value()(4),
-               state->_calib_imu_da->value()(5));
+    ss << " | Dw = " << std::setprecision(4) << state->_calib_imu_dw->value()(0) << "," << state->_calib_imu_dw->value()(1)
+       << "," << state->_calib_imu_dw->value()(2) << "," << state->_calib_imu_dw->value()(3)
+       << "," << state->_calib_imu_dw->value()(4) << "," << state->_calib_imu_dw->value()(5)
+       << " | Da = " << state->_calib_imu_da->value()(0) << "," << state->_calib_imu_da->value()(1) << ","
+       << state->_calib_imu_da->value()(2) << "," << state->_calib_imu_da->value()(3) << ","
+       << state->_calib_imu_da->value()(4) << "," << state->_calib_imu_da->value()(5);
   }
   if (state->_options.do_calib_imu_intrinsics && state->_options.imu_model == StateOptions::ImuModel::RPNG) {
-    // RPNG模型的陀螺仪参数
-    PRINT_INFO("Dw = | %.4f | %.4f,%.4f | %.4f,%.4f,%.4f |\n", state->_calib_imu_dw->value()(0), state->_calib_imu_dw->value()(1),
-               state->_calib_imu_dw->value()(2), state->_calib_imu_dw->value()(3), state->_calib_imu_dw->value()(4),
-               state->_calib_imu_dw->value()(5));
-    // RPNG模型的加速度计参数
-    PRINT_INFO("Da = | %.4f | %.4f,%.4f | %.4f,%.4f,%.4f |\n", state->_calib_imu_da->value()(0), state->_calib_imu_da->value()(1),
-               state->_calib_imu_da->value()(2), state->_calib_imu_da->value()(3), state->_calib_imu_da->value()(4),
-               state->_calib_imu_da->value()(5));
+    ss << " | Dw = " << std::setprecision(4) << state->_calib_imu_dw->value()(0) << "," << state->_calib_imu_dw->value()(1)
+       << "," << state->_calib_imu_dw->value()(2) << "," << state->_calib_imu_dw->value()(3) << ","
+       << state->_calib_imu_dw->value()(4) << "," << state->_calib_imu_dw->value()(5)
+       << " | Da = " << state->_calib_imu_da->value()(0) << "," << state->_calib_imu_da->value()(1) << ","
+       << state->_calib_imu_da->value()(2) << "," << state->_calib_imu_da->value()(3) << ","
+       << state->_calib_imu_da->value()(4) << "," << state->_calib_imu_da->value()(5);
   }
   if (state->_options.do_calib_imu_intrinsics && state->_options.do_calib_imu_g_sensitivity) {
-    // 陀螺仪g敏感度矩阵 Tg
-    PRINT_INFO("Tg = | %.4f,%.4f,%.4f |  %.4f,%.4f,%.4f | %.4f,%.4f,%.4f |\n", state->_calib_imu_tg->value()(0),
-               state->_calib_imu_tg->value()(1), state->_calib_imu_tg->value()(2), state->_calib_imu_tg->value()(3),
-               state->_calib_imu_tg->value()(4), state->_calib_imu_tg->value()(5), state->_calib_imu_tg->value()(6),
-               state->_calib_imu_tg->value()(7), state->_calib_imu_tg->value()(8));
+    ss << " | Tg = " << std::setprecision(4) << state->_calib_imu_tg->value()(0) << "," << state->_calib_imu_tg->value()(1)
+       << "," << state->_calib_imu_tg->value()(2) << "," << state->_calib_imu_tg->value()(3) << ","
+       << state->_calib_imu_tg->value()(4) << "," << state->_calib_imu_tg->value()(5) << ","
+       << state->_calib_imu_tg->value()(6) << "," << state->_calib_imu_tg->value()(7) << ","
+       << state->_calib_imu_tg->value()(8);
+  }
+  ss << "\n";
+  PRINT_INFO("%s", ss.str().c_str());
   }
 }

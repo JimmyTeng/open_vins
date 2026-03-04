@@ -45,9 +45,6 @@ bool DynamicInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarian
                                     std::shared_ptr<ov_type::IMU> &_imu, std::map<double, std::shared_ptr<ov_type::PoseJPL>> &_clones_IMU,
                                     std::unordered_map<size_t, std::shared_ptr<ov_type::Landmark>> &_features_SLAM) {
 
-
-  PRINT_INFO(CYAN "[DynamicInitializer] 动态初始化开始\n" RESET);
-
   // 获取我们将尝试进行初始化的最新和最旧时间戳！
   auto rT1 = boost::posix_time::microsec_clock::local_time();
   double newest_cam_time = -1;
@@ -78,8 +75,13 @@ bool DynamicInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarian
                _db->get_internal_data().size(), 0.75 * params.init_max_features);
     return false;
   }
+  // IMU 数据检查：需同时满足两点
+  // 1) imu_data->size() >= 2：擦除“早于初始化窗口起点”的旧样本后，窗口内至少要有 2 个 IMU 样本才能做积分（相邻两帧间积分）
+  // 2) have_old_imu_readings：必须曾存在过早于 (oldest_time + calib_camimu_dt) 的 IMU 数据并被擦除，说明缓冲曾覆盖到窗口起点，才能从窗口起点做前向传播
   if (imu_data->size() < 2 || !have_old_imu_readings) {
-    PRINT_INFO(YELLOW "[DynamicInitializer] 动态初始化失败: IMU数据检查失败 - imu_data->size()=%zu, have_old_imu_readings=%d\n" RESET, 
+    PRINT_INFO(YELLOW "[DynamicInitializer] 动态初始化失败: IMU数据检查失败 - "
+               "窗口内剩余样本数=%zu (需>=2), 是否曾有过窗口前旧数据=%d (需=1)。"
+               "若剩余<2 请检查 IMU 频率或 init_window_time；若旧数据=0 请确认 IMU 在窗口开始前已启动。\n" RESET,
                imu_data->size(), have_old_imu_readings);
     return false;
   }
@@ -478,7 +480,10 @@ bool DynamicInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarian
   // Eigen::MatrixXd A1A1_inv = (A1.transpose() * A1).inverse();
   Eigen::MatrixXd A1A1_inv = (A1.transpose() * A1).llt().solve(Eigen::MatrixXd::Identity(A1.cols(), A1.cols()));
   Eigen::MatrixXd A2 = A.block(0, A.cols() - 3, A.rows(), 3);
-  Eigen::MatrixXd Temp = A2.transpose() * (Eigen::MatrixXd::Identity(A1.rows(), A1.rows()) - A1 * A1A1_inv * A1.transpose());
+  // 优化: Temp = A2^T*(I - A1*inv(A1^T*A1)*A1^T) = A2^T - (A2^T*A1)*A1A1_inv*A1^T
+  // 避免构造 1382×1382 的 (I - ...) 矩阵，节省内存与 ~5e8 次运算
+  Eigen::MatrixXd A1A1_inv_A1T = A1A1_inv * A1.transpose();  // 279×1382
+  Eigen::MatrixXd Temp = A2.transpose() - (A2.transpose() * A1) * A1A1_inv_A1T;  // 3×1382
   Eigen::MatrixXd D = Temp * A2;
   Eigen::MatrixXd d = Temp * b;
   Eigen::Matrix<double, 7, 1> coeff = InitializerHelper::compute_dongsi_coeff(D, d, params.gravity_mag);
@@ -653,11 +658,11 @@ bool DynamicInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarian
     } else {
       features_inI0.insert({feat.first, p_FinI0});
       count_valid_features++;
-      if (count_valid_features <= 3) {  // 打印前3个有效特征点
-        PRINT_INFO(GREEN "[init-d-debug]: Valid feature %zu - p_FinI0=(%.3f,%.3f,%.3f), p_FinC0=(%.3f,%.3f,%.3f)\n" RESET,
-                   feat.first, p_FinI0(0), p_FinI0(1), p_FinI0(2),
-                   p_FinC0_last(0), p_FinC0_last(1), p_FinC0_last(2));
-      }
+      // if (count_valid_features <= 3) {  // 打印前3个有效特征点
+      //   PRINT_INFO(GREEN "[init-d-debug]: Valid feature %zu - p_FinI0=(%.3f,%.3f,%.3f), p_FinC0=(%.3f,%.3f,%.3f)\n" RESET,
+      //              feat.first, p_FinI0(0), p_FinI0(1), p_FinI0(2),
+      //              p_FinC0_last(0), p_FinC0_last(1), p_FinC0_last(2));
+      // }
     }
   }
   
@@ -1034,6 +1039,17 @@ bool DynamicInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarian
   timestamp = newest_cam_time;
   if (params.init_dyn_mle_max_iter != 0 && summary.termination_type != ceres::CONVERGENCE) {
     PRINT_WARNING(YELLOW "[DynamicInitializer] 动态初始化失败: %s!\n" RESET, summary.message.c_str());
+    auto rT7_fail = boost::posix_time::microsec_clock::local_time();
+    PRINT_INFO(CYAN "[DynamicInitializer] 各模块耗时 (初始化失败):\n" RESET);
+    PRINT_INFO("  预检查与数据准备:   %.4f s\n", (rT2 - rT1).total_microseconds() * 1e-6);
+    PRINT_INFO("  IMU预积分:         %.4f s\n", (rT2a - rT2).total_microseconds() * 1e-6);
+    PRINT_INFO("  线性系统构建:      %.4f s\n", (rT3 - rT2a).total_microseconds() * 1e-6);
+    PRINT_INFO("  线性系统求解:      %.4f s\n", (rT4 - rT3).total_microseconds() * 1e-6);
+    PRINT_INFO("  特征恢复与坐标变换: %.4f s\n", (rT4a - rT4).total_microseconds() * 1e-6);
+    PRINT_INFO("  Ceres问题构建:     %.4f s\n", (rT5 - rT4a).total_microseconds() * 1e-6);
+    PRINT_INFO("  Ceres优化:         %.4f s\n", (rT6 - rT5).total_microseconds() * 1e-6);
+    PRINT_INFO("  协方差恢复:        %.4f s\n", (rT7_fail - rT6).total_microseconds() * 1e-6);
+    PRINT_INFO("  总耗时:            %.4f s\n", (rT7_fail - rT1).total_microseconds() * 1e-6);
     free_state_memory();
     return false;
   }
@@ -1145,6 +1161,17 @@ bool DynamicInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarian
   bool success = problem_cov.Compute(covariance_blocks, &problem);
   if (!success) {
     PRINT_WARNING(YELLOW "[DynamicInitializer] 动态初始化失败: 协方差恢复失败...\n" RESET);
+    auto rT7_fail = boost::posix_time::microsec_clock::local_time();
+    PRINT_INFO(CYAN "[DynamicInitializer] 各模块耗时 (初始化失败):\n" RESET);
+    PRINT_INFO("  预检查与数据准备:   %.4f s\n", (rT2 - rT1).total_microseconds() * 1e-6);
+    PRINT_INFO("  IMU预积分:         %.4f s\n", (rT2a - rT2).total_microseconds() * 1e-6);
+    PRINT_INFO("  线性系统构建:      %.4f s\n", (rT3 - rT2a).total_microseconds() * 1e-6);
+    PRINT_INFO("  线性系统求解:      %.4f s\n", (rT4 - rT3).total_microseconds() * 1e-6);
+    PRINT_INFO("  特征恢复与坐标变换: %.4f s\n", (rT4a - rT4).total_microseconds() * 1e-6);
+    PRINT_INFO("  Ceres问题构建:     %.4f s\n", (rT5 - rT4a).total_microseconds() * 1e-6);
+    PRINT_INFO("  Ceres优化:         %.4f s\n", (rT6 - rT5).total_microseconds() * 1e-6);
+    PRINT_INFO("  协方差恢复:        %.4f s\n", (rT7_fail - rT6).total_microseconds() * 1e-6);
+    PRINT_INFO("  总耗时:            %.4f s\n", (rT7_fail - rT1).total_microseconds() * 1e-6);
     free_state_memory();
     return false;
   }

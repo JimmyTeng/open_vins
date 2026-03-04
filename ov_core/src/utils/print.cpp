@@ -112,17 +112,15 @@ void Printer::debugPrint(PrintLevel level, const char location[], const char lin
     break;
   }
 
-  // Build the message with location info if DEBUG level
+  // Build the message with location info (file:line) for all levels
   char location_str[256] = {0};
-  if (static_cast<int>(Printer::current_print_level) <= static_cast<int>(Printer::PrintLevel::DEBUG)) {
-    std::string path(location);
-    std::string base_filename = path.substr(path.find_last_of("/\\") + 1);
-    if (base_filename.size() > MAX_FILE_PATH_LEGTH) {
-      snprintf(location_str, sizeof(location_str), "%s:%s ",
-               base_filename.substr(base_filename.size() - MAX_FILE_PATH_LEGTH, base_filename.size()).c_str(), line);
-    } else {
-      snprintf(location_str, sizeof(location_str), "%s:%s ", base_filename.c_str(), line);
-    }
+  std::string path(location);
+  std::string base_filename = path.substr(path.find_last_of("/\\") + 1);
+  if (base_filename.size() > MAX_FILE_PATH_LEGTH) {
+    snprintf(location_str, sizeof(location_str), "%s:%s ",
+             base_filename.substr(base_filename.size() - MAX_FILE_PATH_LEGTH, base_filename.size()).c_str(), line);
+  } else {
+    snprintf(location_str, sizeof(location_str), "%s:%s ", base_filename.c_str(), line);
   }
 
   // Format the message
@@ -136,18 +134,15 @@ void Printer::debugPrint(PrintLevel level, const char location[], const char lin
   __android_log_print(log_priority, LOG_TAG, "%s%s", location_str, formatted_msg);
 #else
   // Use standard printf on non-Android platforms
-  // Print the location info first for our debug output
-  // Truncate the filename to the max size for the filepath
-  if (static_cast<int>(Printer::current_print_level) <= static_cast<int>(Printer::PrintLevel::DEBUG)) {
-    std::string path(location);
-    std::string base_filename = path.substr(path.find_last_of("/\\") + 1);
-    if (base_filename.size() > MAX_FILE_PATH_LEGTH) {
-      printf("%s", base_filename.substr(base_filename.size() - MAX_FILE_PATH_LEGTH, base_filename.size()).c_str());
-    } else {
-      printf("%s", base_filename.c_str());
-    }
-    printf(":%s ", line);
+  // Print the location info (file:line) for all levels so logs are traceable
+  std::string path(location);
+  std::string base_filename = path.substr(path.find_last_of("/\\") + 1);
+  if (base_filename.size() > MAX_FILE_PATH_LEGTH) {
+    printf("%s", base_filename.substr(base_filename.size() - MAX_FILE_PATH_LEGTH, base_filename.size()).c_str());
+  } else {
+    printf("%s", base_filename.c_str());
   }
+  printf(":%s ", line);
 
   // Print the rest of the args
   va_list args;

@@ -191,17 +191,17 @@ void TrackKLT::feed_monocular(const CameraData &message, size_t msg_id) {
   }
   rT5 = boost::posix_time::microsec_clock::local_time();
 
-  // Timing information (稳定跟踪：图像特征检测 + 光流跟踪)
-  PRINT_INFO("[TIME-KLT] 图像特征检测: %.4f s (%d 新点)\n", (rT3 - rT2).total_microseconds() * 1e-6,
-             (int)pts_last[cam_id].size() - pts_before_detect);
-  PRINT_INFO("[TIME-KLT] 光流跟踪: %.4f s\n", (rT4 - rT3).total_microseconds() * 1e-6);
-  PRINT_ALL("[TIME-KLT]: %.4f seconds for pyramid\n", (rT2 - rT1).total_microseconds() * 1e-6);
-  PRINT_ALL("[TIME-KLT]: %.4f seconds for detection (%zu detected)\n", (rT3 - rT2).total_microseconds() * 1e-6,
-            (int)pts_last[cam_id].size() - pts_before_detect);
-  PRINT_ALL("[TIME-KLT]: %.4f seconds for temporal klt\n", (rT4 - rT3).total_microseconds() * 1e-6);
-  PRINT_ALL("[TIME-KLT]: %.4f seconds for feature DB update (%d features)\n", (rT5 - rT4).total_microseconds() * 1e-6,
-            (int)good_left.size());
-  PRINT_ALL("[TIME-KLT]: %.4f seconds for total\n", (rT5 - rT1).total_microseconds() * 1e-6);
+  // // Timing information (稳定跟踪：图像特征检测 + 光流跟踪)
+  // PRINT_INFO("[TIME-KLT] 图像特征检测: %.4f s (%d 新点)\n", (rT3 - rT2).total_microseconds() * 1e-6,
+  //            (int)pts_last[cam_id].size() - pts_before_detect);
+  // PRINT_INFO("[TIME-KLT] 光流跟踪: %.4f s\n", (rT4 - rT3).total_microseconds() * 1e-6);
+  // PRINT_INFO("[TIME-KLT]: %.4f seconds for pyramid\n", (rT2 - rT1).total_microseconds() * 1e-6);
+  // PRINT_INFO("[TIME-KLT]: %.4f seconds for detection (%zu detected)\n", (rT3 - rT2).total_microseconds() * 1e-6,
+  //           (int)pts_last[cam_id].size() - pts_before_detect);
+  // PRINT_INFO("[TIME-KLT]: %.4f seconds for temporal klt\n", (rT4 - rT3).total_microseconds() * 1e-6);
+  // PRINT_INFO("[TIME-KLT]: %.4f seconds for feature DB update (%d features)\n", (rT5 - rT4).total_microseconds() * 1e-6,
+  //           (int)good_left.size());
+  // PRINT_INFO("[TIME-KLT]: %.4f seconds for total\n", (rT5 - rT1).total_microseconds() * 1e-6);
 }
 
 void TrackKLT::feed_stereo(const CameraData &message, size_t msg_id_left, size_t msg_id_right) {

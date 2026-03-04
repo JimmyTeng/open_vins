@@ -120,6 +120,14 @@ struct VioManagerOptions {
   /// The path to the file we will record the timing information into
   std::string record_timing_filepath = "ov_msckf_timing.txt";
 
+  /// 是否在每次更新后打印状态与标定信息（调试用）
+  /// If we should print state and calibration info after each update (for debugging)
+  bool print_state_calib = false;
+
+  /// 是否打印各阶段耗时（跟踪、传播、MSCKF/SLAM 更新、边缘化等）
+  /// If we should print per-stage timing (track, prop, msckf/slam update, marg, etc.)
+  bool print_timing = false;
+
   /**
    * @brief 加载并打印所有估计器设置
    * 这允许直观检查是否从ROS/CMD解析器正确加载了所有内容。
@@ -144,6 +152,8 @@ struct VioManagerOptions {
       parser->parse_config("zupt_only_at_beginning", zupt_only_at_beginning);
       parser->parse_config("record_timing_information", record_timing_information);
       parser->parse_config("record_timing_filepath", record_timing_filepath);
+      parser->parse_config("print_state_calib", print_state_calib);
+      parser->parse_config("print_timing", print_timing);
     }
     PRINT_DEBUG("  - SLAM延迟时间: %.1f\n", dt_slam_delay);
     PRINT_DEBUG("  - 零速度更新: %d\n", try_zupt);
@@ -153,6 +163,8 @@ struct VioManagerOptions {
     PRINT_DEBUG("  - 仅在开始时使用零速度更新?: %d\n", zupt_only_at_beginning);
     PRINT_DEBUG("  - 记录时间信息?: %d\n", (int)record_timing_information);
     PRINT_DEBUG("  - 记录时间信息文件路径: %s\n", record_timing_filepath.c_str());
+    PRINT_DEBUG("  - 打印状态与标定?: %d\n", (int)print_state_calib);
+    PRINT_DEBUG("  - 打印各阶段耗时?: %d\n", (int)print_timing);
   }
 
   // NOISE / CHI2 ============================

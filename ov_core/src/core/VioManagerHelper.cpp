@@ -207,7 +207,6 @@ bool VioManager::try_to_initialize(const ov_core::CameraData &message) {
 
     } else {
       auto init_rT2 = boost::posix_time::microsec_clock::local_time();
-      PRINT_INFO(BLUE "[VMH]: 初始化失败，耗时 %.4f 秒\n" RESET, (init_rT2 - init_rT1).total_microseconds() * 1e-6);
       thread_init_success = false;
       std::lock_guard<std::mutex> lck(camera_queue_init_mtx);
       camera_queue_init.clear();

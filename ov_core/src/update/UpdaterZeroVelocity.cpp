@@ -245,23 +245,18 @@ bool UpdaterZeroVelocity::try_update(std::shared_ptr<State> state, double timest
 
   // 检查图像视差
   bool disparity_passed = false;
+  double disp_avg = 0.0;
+  int num_features = 0;
   if (override_with_disparity_check) {
 
     // 获取从当前图像到前一图像的视差统计信息
     double time0_cam = state->_timestamp;
     double time1_cam = timestamp;
-    int num_features = 0;
-    double disp_avg = 0.0;
     double disp_var = 0.0;
     FeatureHelper::compute_disparity(_db, time0_cam, time1_cam, disp_avg, disp_var, num_features);
 
     // 检查此视差是否足以被分类为运动
     disparity_passed = (disp_avg < _zupt_max_disparity && num_features > 20);
-    if (disparity_passed) {
-      PRINT_DEBUG(CYAN "[ZUPT]: disparity passed(%.3f < %.3f, %d features)\n" RESET, disp_avg, _zupt_max_disparity, (int)num_features);
-    } else {
-      PRINT_INFO(YELLOW "[ZUPT]: disparity failed (%.3f > %.3f, %d features)\n" RESET, disp_avg, _zupt_max_disparity, (int)num_features);
-    }
   }
 
   // 检查我们当前是否为零速度
@@ -269,12 +264,17 @@ bool UpdaterZeroVelocity::try_update(std::shared_ptr<State> state, double timest
   if (!disparity_passed && (chi2 > _options.chi2_multipler * chi2_check || state->_imu->vel().norm() > _zupt_max_velocity)) {
     last_zupt_state_timestamp = 0.0;
     last_zupt_count = 0;
-    PRINT_INFO(YELLOW "[ZUPT]: rejected |v_IinG| = %.3f (chi2 %.3f > %.3f)\n" RESET, state->_imu->vel().norm(), chi2,
-                _options.chi2_multipler * chi2_check);
     return false;
   }
 
-  // 执行更新，只有在之前检测到的情况下才执行此更新
+  // 成功进入 ZUPT，执行更新
+  if (override_with_disparity_check) {
+    PRINT_INFO(CYAN "[ZUPT]: applied (disparity %.3f < %.3f, %d features) |v_IinG| = %.3f chi2 = %.3f\n" RESET,
+               disp_avg, _zupt_max_disparity, num_features, state->_imu->vel().norm(), chi2);
+  } else {
+    PRINT_INFO(CYAN "[ZUPT]: applied |v_IinG| = %.3f chi2 = %.3f\n" RESET, state->_imu->vel().norm(), chi2);
+  }
+  // 只有在之前检测到的情况下才执行此更新
   // 如果成功，我们应该移除当前时间戳的特征轨迹
   // 这是因为我们不会在此时间步进行克隆，而是执行零速度更新
   // 注意: 我们希望保留第二次调用zv-upt时的轨迹，因为这次不会有克隆
