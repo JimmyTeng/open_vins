@@ -84,6 +84,19 @@ bool YUVParser::readFrame(std::ifstream& file, std::vector<unsigned char>& frame
     return true;
 }
 
+bool YUVParser::readFrameAt(const std::string& yuv_file_path, int frame_index, std::vector<unsigned char>& frame_data) {
+    std::ifstream file(yuv_file_path, std::ios::binary);
+    if (!file.is_open()) {
+        std::cerr << "Error: Cannot open YUV file " << yuv_file_path << std::endl;
+        return false;
+    }
+    std::streampos seek_pos = static_cast<std::streampos>(frame_index) * frame_size_;
+    file.seekg(seek_pos, std::ios::beg);
+    bool ok = readFrame(file, frame_data);
+    file.close();
+    return ok;
+}
+
 std::vector<std::vector<unsigned char>> YUVParser::parseYUVFile(
     const std::string& yuv_file, 
     int num_frames) {

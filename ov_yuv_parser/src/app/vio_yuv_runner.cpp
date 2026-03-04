@@ -1,10 +1,11 @@
 /*
  * VIO YUV Runner - 使用 vio_interface API 处理 YUV 数据
- * 读取 YUV 图像和 IMU 数据，按时间戳顺序推送到 VIO 系统
+ * 流式读取：单独线程预读帧数据到有界缓存，控制最大内存用量
  */
 
 #include "yuv_parser.h"
 #include "imu_parser.h"
+#include "stream_data_loader.h"
 #include "vio_interface.h"
 #include <opencv2/opencv.hpp>
 #include <iostream>
@@ -13,28 +14,7 @@
 #include <fstream>
 #include <chrono>
 #include <cstring>
-
-// 统一的数据结构，用于按时间戳排序
-struct TimestampedData {
-    enum DataType {
-        FRAME,
-        IMU
-    };
-    
-    DataType type;
-    long long timestamp;
-    
-    // Frame data (if type == FRAME)
-    FrameData frame_data;
-    
-    // IMU data (if type == IMU)
-    IMUData imu_data;
-    
-    // 用于时间戳比较
-    bool operator<(const TimestampedData& other) const {
-        return timestamp < other.timestamp;
-    }
-};
+#include <cstdlib>
 
 // 回调函数用户数据结构
 struct CallbackUserData {
@@ -73,41 +53,41 @@ void state_callback(const vio_state_t* state, void* user_data) {
         cb_data->is_initializing = (state->status == VIO_STATUS_INITIALIZING);
     }
     
-    // 输出状态信息（单行格式）
-    std::cout << std::fixed << std::setprecision(6);
-    std::cout << "=== VIO State === ";
-    std::cout << "Timestamp: " << state->timestamp << " ns, ";
-    std::cout << "Status: " << status_str[state->status] << ", ";
-    std::cout << "Processing Time: " << std::setprecision(3) << processing_time_ms << " ms";
+    // // 输出状态信息（单行格式）
+    // std::cout << std::fixed << std::setprecision(6);
+    // std::cout << "=== VIO State === ";
+    // std::cout << "Timestamp: " << state->timestamp << " ns, ";
+    // std::cout << "Status: " << status_str[state->status] << ", ";
+    // std::cout << "Processing Time: " << std::setprecision(3) << processing_time_ms << " ms";
     
-    if (state->status == VIO_STATUS_TRACKING) {
-        std::cout << ", Position: [" 
-                  << std::setprecision(3) << state->position.data[0] << ", "
-                  << state->position.data[1] << ", "
-                  << state->position.data[2] << "], ";
+    // if (state->status == VIO_STATUS_TRACKING) {
+    //     std::cout << ", Position: [" 
+    //               << std::setprecision(3) << state->position.data[0] << ", "
+    //               << state->position.data[1] << ", "
+    //               << state->position.data[2] << "], ";
         
-        std::cout << "Orientation: [" 
-                  << state->orientation.data[0] << ", "
-                  << state->orientation.data[1] << ", "
-                  << state->orientation.data[2] << ", "
-                  << state->orientation.data[3] << "], ";
+    //     std::cout << "Orientation: [" 
+    //               << state->orientation.data[0] << ", "
+    //               << state->orientation.data[1] << ", "
+    //               << state->orientation.data[2] << ", "
+    //               << state->orientation.data[3] << "], ";
         
-        std::cout << "Velocity: [" 
-                  << state->velocity.data[0] << ", "
-                  << state->velocity.data[1] << ", "
-                  << state->velocity.data[2] << "], ";
+    //     std::cout << "Velocity: [" 
+    //               << state->velocity.data[0] << ", "
+    //               << state->velocity.data[1] << ", "
+    //               << state->velocity.data[2] << "], ";
         
-        std::cout << "Gyro Bias: [" 
-                  << std::setprecision(4) << state->gyro_bias.data[0] << ", "
-                  << state->gyro_bias.data[1] << ", "
-                  << state->gyro_bias.data[2] << "], ";
+    //     std::cout << "Gyro Bias: [" 
+    //               << std::setprecision(4) << state->gyro_bias.data[0] << ", "
+    //               << state->gyro_bias.data[1] << ", "
+    //               << state->gyro_bias.data[2] << "], ";
         
-        std::cout << "Acc Bias: [" 
-                  << state->acc_bias.data[0] << ", "
-                  << state->acc_bias.data[1] << ", "
-                  << state->acc_bias.data[2] << "]";
-    }
-    std::cout << std::endl;
+    //     std::cout << "Acc Bias: [" 
+    //               << state->acc_bias.data[0] << ", "
+    //               << state->acc_bias.data[1] << ", "
+    //               << state->acc_bias.data[2] << "]";
+    // }
+    // std::cout << std::endl;
 }
 
 // 转换时间戳（假设输入是微秒，转换为纳秒）
@@ -120,11 +100,16 @@ vio_timestamp_t convert_timestamp(long long ts_us) {
 
 int main(int argc, char* argv[]) {
     // 默认路径
-    std::cout << cv::getBuildInformation() << std::endl;
-    std::cout << "Build Time: " <<__DATE__ <<" " << __TIME__ << std::endl;
+    // std::cout << cv::getBuildInformation() << std::endl;
+#ifdef BUILD_TIMESTAMP
+    std::cout << "Build Time: " << BUILD_TIMESTAMP << std::endl;
+#else
+    std::cout << "Build Time: " << __DATE__ << " " << __TIME__ << std::endl;
+#endif
     std::string input_dir = "./data/move";
     std::string config_file = "";
     bool show_image = true;
+    size_t max_frame_cache = 4;
     
     std::vector<std::string> positional_args;
     
@@ -132,10 +117,13 @@ int main(int argc, char* argv[]) {
         std::string arg = argv[i];
         if (arg == "--no-display" || arg == "--no-imshow" || arg == "-n") {
             show_image = false;
+        } else if (arg == "--cache-size" && i + 1 < argc) {
+            max_frame_cache = static_cast<size_t>(std::max(1, std::atoi(argv[++i])));
         } else if (arg == "--help" || arg == "-h") {
-            std::cout << "VIO YUV Runner - 使用 vio_interface API 处理 YUV 数据" << std::endl;
+            std::cout << "VIO YUV Runner - 使用 vio_interface API 处理 YUV 数据（流式加载）" << std::endl;
             std::cout << "用法: " << argv[0] << " [选项] [数据目录] [配置文件路径]" << std::endl;
             std::cout << "  --no-display, -n    不显示图像窗口" << std::endl;
+            std::cout << "  --cache-size N      帧缓存大小，控制最大内存（默认 4）" << std::endl;
             return 0;
         } else {
             positional_args.push_back(arg);
@@ -181,36 +169,17 @@ int main(int argc, char* argv[]) {
     std::cout << std::endl;
     
     YUVParser yuv_parser(640, 480);
-    IMUParser imu_parser;
+    // 流式加载：有界缓存 + 单独线程预读，控制内存（640x480 约 300KB/帧）
+    StreamDataLoader loader(&yuv_parser, dump_yuv_dir, imu_file, max_frame_cache);
+    std::cout << "Found " << loader.scheduleSize() << " scheduled items (streaming mode, cache max " 
+              << max_frame_cache << " frames)" << std::endl;
     
-    std::vector<FrameData> frame_data = yuv_parser.parseAllFrames(dump_yuv_dir);
-    std::vector<IMUData> imu_data = imu_parser.parseIMUFile(imu_file);
-    std::cout << "Found " << frame_data.size() << " frames, " << imu_data.size() << " IMU entries" << std::endl;
-    
-    if (frame_data.empty() && imu_data.empty()) {
+    if (loader.empty()) {
         std::cerr << "Error: No data found" << std::endl;
         return 1;
     }
     
-    std::vector<TimestampedData> merged_data;
-    for (const auto& frame : frame_data) {
-        TimestampedData data;
-        data.type = TimestampedData::FRAME;
-        data.timestamp = frame.timestamp;
-        data.frame_data = frame;
-        merged_data.push_back(data);
-    }
-    for (const auto& imu : imu_data) {
-        TimestampedData data;
-        data.type = TimestampedData::IMU;
-        data.timestamp = imu.timeStamp;
-        data.imu_data = imu;
-        merged_data.push_back(data);
-    }
-    std::sort(merged_data.begin(), merged_data.end(),
-              [](const TimestampedData& a, const TimestampedData& b) {
-                  return a.timestamp < b.timestamp;
-              });
+    loader.start();
     
     const char* yaml_path = config_file.empty() ? nullptr : config_file.c_str();
     vio_handle_t vio_handle = vio_create(yaml_path);
@@ -236,7 +205,8 @@ int main(int argc, char* argv[]) {
     int frame_count = 0;
     int imu_count = 0;
     
-    for (const auto& data : merged_data) {
+    TimestampedData data;
+    while (loader.getNext(data)) {
         if (data.type == TimestampedData::FRAME) {
             const FrameData& frame = data.frame_data;
             cv::Mat gray_image = yuv_parser.frameToMat(frame.frame_data);
@@ -270,6 +240,7 @@ int main(int argc, char* argv[]) {
         }
     }
     
+    loader.stop();
     std::cout << "Complete: " << frame_count << " frames, " << imu_count << " IMU" << std::endl;
     vio_destroy(vio_handle);
     return 0;

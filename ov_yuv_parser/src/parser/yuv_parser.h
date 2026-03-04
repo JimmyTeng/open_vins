@@ -55,6 +55,15 @@ public:
     bool readFrame(std::ifstream& file, std::vector<unsigned char>& frame_data);
     
     /**
+     * @brief Read a single frame from YUV file by index (for streaming)
+     * @param yuv_file_path Full path to YUV file
+     * @param frame_index Zero-based frame index in file
+     * @param frame_data Output buffer for frame data
+     * @return true if successful, false otherwise
+     */
+    bool readFrameAt(const std::string& yuv_file_path, int frame_index, std::vector<unsigned char>& frame_data);
+    
+    /**
      * @brief Parse all frames from a YUV file
      * @param yuv_file Path to YUV file
      * @param num_frames Number of frames to read (default: 100)
