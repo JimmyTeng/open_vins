@@ -39,8 +39,8 @@ install(TARGETS ov_yuv_parser_lib
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
 
-# 安装后从 bin/ 运行时在 ../lib 查找 libov_yuv_parser_lib.so，无需 LD_LIBRARY_PATH
-set(OV_YUV_PARSER_INSTALL_RPATH "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}")
+# 安装后从 bin/ 运行时在 ../lib 与 ../thirdparty/lib 查找依赖，无需 run.sh 或 LD_LIBRARY_PATH
+set(OV_YUV_PARSER_INSTALL_RPATH "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}:$ORIGIN:$ORIGIN/../thirdparty/lib")
 
 # =============================================================================
 # Executable: yuv_to_png
@@ -78,3 +78,11 @@ target_link_libraries(stress_test_stream_loader PRIVATE ov_yuv_parser_lib Boost:
 target_compile_options(stress_test_stream_loader PRIVATE -Wall -Wextra)
 set_target_properties(stress_test_stream_loader PROPERTIES INSTALL_RPATH "${OV_YUV_PARSER_INSTALL_RPATH}")
 install(TARGETS stress_test_stream_loader RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+
+# =============================================================================
+# Config: OpenVINS estimator / kalibr 配置（供 vio_yuv_runner 默认加载）
+# =============================================================================
+install(DIRECTORY config/openvins/
+  DESTINATION config/openvins
+  FILES_MATCHING PATTERN "*.yaml"
+)

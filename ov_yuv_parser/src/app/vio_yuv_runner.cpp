@@ -26,28 +26,9 @@ struct CallbackUserData {
 // 状态回调函数
 void state_callback(const vio_state_t* state, void* user_data) {
     if (!state) return;
-    
-    // 获取用户数据
+
     CallbackUserData* cb_data = static_cast<CallbackUserData*>(user_data);
-    bool show_image = cb_data ? cb_data->show_image : true;  // 默认为 true
-    
-    // 计算处理时间
-    double processing_time_ms = 0.0;
-    if (cb_data) {
-        auto frame_end_time = std::chrono::high_resolution_clock::now();
-        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
-            frame_end_time - cb_data->frame_start_time);
-        processing_time_ms = duration.count() / 1000.0;  // 转换为毫秒
-    }
-    
-    // 状态字符串
-    const char* status_str[] = {
-        "NOT_READY",
-        "INITIALIZING",
-        "TRACKING",
-        "LOST"
-    };
-    
+
     // 更新初始化状态
     if (cb_data) {
         cb_data->is_initializing = (state->status == VIO_STATUS_INITIALIZING);

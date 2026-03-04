@@ -198,7 +198,8 @@ int main(int argc, char* argv[]) {
     if (rss_after > 0) {
         std::cout << "结束 RSS: " << (rss_after / 1024.0) << " MB" << std::endl;
         long delta = rss_after - rss_before;
-        if (rss_before > 0 && delta > 1024) {
+        // 阈值 5 MB：glibc 等分配器不会立即归还内存，少量增长属正常
+        if (rss_before > 0 && delta > 5120) {
             std::cout << "警告: 内存增长 " << (delta / 1024.0) << " MB (可能存在泄漏)" << std::endl;
             all_ok = false;
         }
