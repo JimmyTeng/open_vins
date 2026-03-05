@@ -10,6 +10,12 @@ doc
 .vscode
 script/vcpkg-downloads/
 .vcpkg-docker-cache/
+.vcpkg-docker-cache-x64/
+.vcpkg-docker-cache-arm64/
+.vcpkg-docker-buildtrees/
+.vcpkg-docker-buildtrees-x64/
+.vcpkg-docker-buildtrees-arm64/
+.vcpkg-docker-tool/
 /.cache/*
 /compile_commands.json
 /data/

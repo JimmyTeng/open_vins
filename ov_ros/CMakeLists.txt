@@ -1,13 +1,9 @@
 cmake_minimum_required(VERSION 3.3)
 project(ov_ros)
 
-# Include libraries (if we don't have opencv 4, then fallback to opencv 3)
 # The OpenCV version needs to match the one used by cv_bridge otherwise you will get a segmentation fault!
 find_package(Eigen3 REQUIRED)
-find_package(OpenCV 3 QUIET)
-if (NOT OpenCV_FOUND)
-    find_package(OpenCV 4 REQUIRED)
-endif ()
+find_package(OpenCV 4 QUIET)
 find_package(Ceres REQUIRED)
 message(STATUS "OPENCV: " ${OpenCV_VERSION} " | CERES: " ${Ceres_VERSION})
 
@@ -46,7 +42,13 @@ elseif (ament_cmake_FOUND AND ENABLE_ROS)
     message(STATUS "ROS *2* version found, building ROS2.cmake")
     include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ROS2.cmake)
 else ()
-    message(STATUS "No ROS versions found or building with ROS disabled, building ROS1.cmake without ROS")
-    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/ROS1.cmake)
+    if (ENABLE_ROS)
+        message(FATAL_ERROR
+            "ENABLE_ROS=ON but neither catkin (ROS1) nor ament_cmake (ROS2) was found.\n"
+            "Please source your ROS setup before configuring, e.g.:\n"
+            "  source /opt/ros/noetic/setup.bash")
+    else ()
+        message(STATUS "ROS disabled, skipping ov_ros build")
+    endif ()
 endif ()
 

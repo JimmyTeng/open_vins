@@ -26,6 +26,11 @@ case "${1:-}" in
     INSTALL_PREFIX="${ROOT}/install/aarch64/Release"
     TRIPLET="arm64-linux-custom"
     ;;
+  x64-release-vcpkg-docker)
+    BUILD_DIR="${ROOT}/build/x86_64/Release-docker/x64-release-vcpkg-docker"
+    INSTALL_PREFIX="${ROOT}/install/x86_64/Release-docker"
+    TRIPLET="x64-linux-custom-release"
+    ;;
   x64-release-vcpkg)
     BUILD_DIR="${ROOT}/build/x86_64/Release/x64-release-vcpkg"
     INSTALL_PREFIX="${ROOT}/install/x86_64/Release"
@@ -41,6 +46,7 @@ case "${1:-}" in
     for cand in \
       "${ROOT}/build/aarch64/Release-docker/arm64-release-vcpkg-docker" \
       "${ROOT}/build/aarch64/Release/arm64-release-vcpkg" \
+      "${ROOT}/build/x86_64/Release-docker/x64-release-vcpkg-docker" \
       "${ROOT}/build/x86_64/Release/x64-release-vcpkg"; do
       if [[ -d "${cand}/vcpkg_installed" ]]; then
         BUILD_DIR="$cand"
@@ -50,6 +56,9 @@ case "${1:-}" in
         elif [[ "$cand" == *arm64-release-vcpkg* ]]; then
           INSTALL_PREFIX="${ROOT}/install/aarch64/Release"
           TRIPLET="arm64-linux-custom"
+        elif [[ "$cand" == *x64-release-vcpkg-docker* ]]; then
+          INSTALL_PREFIX="${ROOT}/install/x86_64/Release-docker"
+          TRIPLET="x64-linux-custom-release"
         else
           INSTALL_PREFIX="${ROOT}/install/x86_64/Release"
           TRIPLET="x64-linux-custom"
@@ -66,7 +75,7 @@ case "${1:-}" in
     ;;
   -h|--help)
     echo "用法: $0 [preset] [--full]"
-    echo "preset: arm64-release-vcpkg-docker | arm64-release-vcpkg | x64-release-vcpkg | x64-debug-vcpkg"
+    echo "preset: arm64-release-vcpkg-docker | arm64-release-vcpkg | x64-release-vcpkg-docker | x64-release-vcpkg | x64-debug-vcpkg"
     echo "--full: 拷贝 vcpkg 全部 .so（默认仅拷贝 bin/lib 的传递依赖闭包以精简 thirdparty）"
     exit 0
     ;;
