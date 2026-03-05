@@ -1,13 +1,10 @@
 cmake_minimum_required(VERSION 3.9)
 project(ov_core)
 
-# Include libraries (if we don't have opencv 4, then fallback to opencv 3)
+# Include libraries (prefer opencv 4 from vcpkg, fallback to opencv 3 for system/ROS)
 # The OpenCV version needs to match the one used by cv_bridge otherwise you will get a segmentation fault!
 find_package(Eigen3 REQUIRED)
-find_package(OpenCV 3 QUIET)
-if (NOT OpenCV_FOUND)
-    find_package(OpenCV 4 REQUIRED)
-endif ()
+find_package(OpenCV 4 QUIET)
 find_package(Ceres REQUIRED)
 message(STATUS "OPENCV: " ${OpenCV_VERSION})
 
@@ -146,8 +143,8 @@ target_include_directories(${PROJECT_NAME}_lib
 
 target_link_libraries(${PROJECT_NAME}_lib PUBLIC ${thirdparty_libraries})
 
-# GCC 7 用 experimental/filesystem 需链接 libstdc++fs
-if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS "8")
+# GCC 7/8 的 std::filesystem 在 libstdc++fs 中，GCC 9+ 已并入 libstdc++
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS "9")
   target_link_libraries(${PROJECT_NAME}_lib PRIVATE stdc++fs)
 endif()
 

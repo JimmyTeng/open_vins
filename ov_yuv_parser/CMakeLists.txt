@@ -7,7 +7,7 @@ string(TIMESTAMP BUILD_TIMESTAMP "%b %d %Y %H:%M:%S" UTC)
 # =============================================================================
 # Dependencies
 # =============================================================================
-find_package(OpenCV REQUIRED)
+find_package(OpenCV 4 QUIET)
 find_package(Eigen3 REQUIRED)
 find_package(Ceres REQUIRED)
 

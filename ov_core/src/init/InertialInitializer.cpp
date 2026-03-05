@@ -128,13 +128,10 @@ bool InertialInitializer::initialize(double &timestamp, Eigen::MatrixXd &covaria
     // 如果无法计算视差则返回
     int feat_thresh = 15;  // 特征数量阈值
     if (num_features0 < feat_thresh || num_features1 < feat_thresh) {
-      PRINT_INFO(YELLOW "[InertialInitializer]:初始化失败, 视差计算所需特征不足: min(前段特征 %d, 后段特征 %d) < %d\n" RESET, num_features0, num_features1, feat_thresh);
+      // PRINT_INFO(YELLOW "[InertialInitializer]:初始化失败, 视差计算所需特征不足: min(前段特征 %d, 后段特征 %d) < %d\n" RESET, num_features0, num_features1, feat_thresh);
       return false;
     }
-    if (print_debug) {
-    // 检查是否通过我们的检查！
-      PRINT_DEBUG(YELLOW "[InertialInitializer]: 前段视差 %.3f, 后段视差 %.3f (%.2f 阈值)\n" RESET, avg_disp0, avg_disp1, params.init_max_disparity);
-    }
+
     // 判断两个时间段是否检测到运动（视差超过阈值）
     disparity_detected_moving_1to0 = (avg_disp0 > params.init_max_disparity);
     disparity_detected_moving_2to1 = (avg_disp1 > params.init_max_disparity);

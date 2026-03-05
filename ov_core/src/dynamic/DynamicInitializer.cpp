@@ -21,6 +21,8 @@
 
 #include "DynamicInitializer.h"
 
+#include <algorithm>
+
 #include "ceres/Factor_GenericPrior.h"
 #include "ceres/Factor_ImageReprojCalib.h"
 #include "ceres/Factor_ImuCPIv1.h"
@@ -73,18 +75,18 @@ bool DynamicInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarian
     it_imu = imu_data->erase(it_imu);
   }
   if (_db->get_internal_data().size() < 0.75 * params.init_max_features) {
-    PRINT_INFO(YELLOW "[DynamicInitializer] 动态初始化失败: 特征数据库检查失败 - 有 %zu 个特征点, 需要 %.0f\n" RESET, 
-               _db->get_internal_data().size(), 0.75 * params.init_max_features);
+    // PRINT_INFO(YELLOW "[DynamicInitializer] 动态初始化失败: 特征数据库检查失败 - 有 %zu 个特征点, 需要 %.0f\n" RESET, 
+    //            _db->get_internal_data().size(), 0.75 * params.init_max_features);
     return false;
   }
   // IMU 数据检查：需同时满足两点
   // 1) imu_data->size() >= 2：擦除“早于初始化窗口起点”的旧样本后，窗口内至少要有 2 个 IMU 样本才能做积分（相邻两帧间积分）
   // 2) have_old_imu_readings：必须曾存在过早于 (oldest_time + calib_camimu_dt) 的 IMU 数据并被擦除，说明缓冲曾覆盖到窗口起点，才能从窗口起点做前向传播
   if (imu_data->size() < 2 || !have_old_imu_readings) {
-    PRINT_INFO(YELLOW "[DynamicInitializer] 动态初始化失败: IMU数据检查失败 - "
-               "窗口内剩余样本数=%zu (需>=2), 是否曾有过窗口前旧数据=%d (需=1)。"
-               "若剩余<2 请检查 IMU 频率或 init_window_time；若旧数据=0 请确认 IMU 在窗口开始前已启动。\n" RESET,
-               imu_data->size(), have_old_imu_readings);
+    // PRINT_INFO(YELLOW "[DynamicInitializer] 动态初始化失败: IMU数据检查失败 - "
+    //            "窗口内剩余样本数=%zu (需>=2), 是否曾有过窗口前旧数据=%d (需=1)。"
+    //            "若剩余<2 请检查 IMU 频率或 init_window_time；若旧数据=0 请确认 IMU 在窗口开始前已启动。\n" RESET,
+    //            imu_data->size(), have_old_imu_readings);
     return false;
   }
   if (print_debug) {
