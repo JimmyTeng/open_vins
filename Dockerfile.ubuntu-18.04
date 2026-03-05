@@ -1,13 +1,14 @@
-# Ubuntu 18.04 构建环境（含 ARM64 交叉工具链，兼容 glibc 2.29）
-# 基础镜像 Ubuntu 18.04 = glibc 2.27，生成的二进制可在 glibc 2.29 上运行。
+# Ubuntu 18.04 + ROS Melodic 构建环境（含 ARM64 交叉工具链，兼容 glibc 2.29）
+# 基础镜像 ros:melodic-perception = Ubuntu 18.04 + ROS 感知套件（OpenCV/PCL/视觉），最全官方镜像。
+# glibc 2.27，生成的二进制可在 glibc 2.29 上运行。
 # 使用国内源：apt 阿里云，CMake/Ninja 使用 GitHub 国内加速镜像。
 #
 # 验证/支持版本（可通过 --build-arg 覆盖）：
-#   UBUNTU_IMAGE   - 基础镜像，默认 ubuntu:18.04
+#   UBUNTU_IMAGE   - 基础镜像，默认 ros:melodic-perception（最全版：含感知/视觉库）
 #   CMAKE_VERSION  - CMake 版本，需满足 vcpkg 要求（≥3.31），默认 3.31.10
 #   MIRROR_GH      - GitHub 加速镜像前缀，默认 https://ghproxy.com
 
-ARG UBUNTU_IMAGE=ubuntu:18.04
+ARG UBUNTU_IMAGE=ros:melodic-perception
 FROM ${UBUNTU_IMAGE}
 
 ARG MIRROR_GH=https://ghproxy.com
@@ -18,8 +19,11 @@ RUN sed -i 's|http://archive.ubuntu.com|http://mirrors.aliyun.com|g' /etc/apt/so
     sed -i 's|http://security.ubuntu.com|http://mirrors.aliyun.com|g' /etc/apt/sources.list
 
 # 系统依赖与 install_sys_deps.sh 对齐（不含 apt cmake，使用下方 tarball 的 3.31.10）
+# gcc-8/g++-8: Eigen 5 + OpenCV 需 _mm256_set_m128* 等 AVX intrinsic，GCC 7 无，GCC 8 有；AVX512 通过 triplet 的 -march=haswell 禁用
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    gcc-8 \
+    g++-8 \
     cmake \
     ninja-build \
     pkg-config \
@@ -54,6 +58,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     g++-aarch64-linux-gnu \
     wget \
     && rm -rf /var/lib/apt/lists/*
+
+# 默认使用 GCC 8（Eigen 5 AVX 需 GCC 8+；AVX512 由 triplet -march=haswell 禁用）
+RUN update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-8 80 \
+    && update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-8 80
 
 # CMake 需满足 vcpkg 要求（≥3.31.10）；优先用 script/ 下本地包，否则从国内镜像拉取
 # Ninja 使用 apt 的 ninja-build，无需单独下载
