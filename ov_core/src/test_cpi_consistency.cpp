@@ -8,7 +8,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <vector>
-
+#include <memory>
 #include <Eigen/Dense>
 
 #include "cpi/CpiV1.h"

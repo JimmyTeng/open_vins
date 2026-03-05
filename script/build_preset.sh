@@ -74,10 +74,67 @@ PY
   die "无法列出 presets：需要可用的 cmake（建议 >= 3.20）或 python3。"
 }
 
+# 输出所有 preset 名称，每行一个（用于选单）
+list_preset_names() {
+  cd "${PROJECT_ROOT}"
+  if has_cmd python3 && [[ -f "${PROJECT_ROOT}/CMakePresets.json" ]]; then
+    python3 - <<'PY'
+import json, pathlib
+root = pathlib.Path("CMakePresets.json")
+data = json.loads(root.read_text(encoding="utf-8"))
+presets = list(data.get("configurePresets", []))
+for inc in data.get("include", []):
+  inc_path = root.parent / inc
+  inc_data = json.loads(inc_path.read_text(encoding="utf-8"))
+  presets.extend(inc_data.get("configurePresets", []))
+for x in presets:
+  if isinstance(x, dict) and x.get("name") and not x.get("hidden"):
+    print(x["name"])
+PY
+    return 0
+  fi
+  return 1
+}
+
+# 无参数时进入交互选单，设置全局 PRESET
+run_interactive_menu() {
+  local -a names
+  local i n num
+  names=()
+  while IFS= read -r line; do
+    [[ -n "${line}" ]] && names+=("${line}")
+  done < <(list_preset_names || true)
+  if [[ ${#names[@]} -eq 0 ]]; then
+    die "无法获取 preset 列表（需要 python3 与 CMakePresets.json）。"
+  fi
+  echo "请选择要使用的 configure preset："
+  echo ""
+  for i in "${!names[@]}"; do
+    n=$((i + 1))
+    echo "  ${n}) ${names[i]}"
+  done
+  echo "  0) 退出"
+  echo ""
+  while true; do
+    read -r -p "请输入序号 [1-${#names[@]}]: " num
+    if [[ "${num}" == "0" ]]; then
+      echo "已取消。"
+      exit 0
+    fi
+    if [[ "${num}" =~ ^[0-9]+$ ]] && [[ "${num}" -ge 1 ]] && [[ "${num}" -le ${#names[@]} ]]; then
+      PRESET="${names[num-1]}"
+      echo "已选择: ${PRESET}"
+      return 0
+    fi
+    echo "无效序号，请重新输入。"
+  done
+}
+
 usage() {
   cat <<'EOF'
 用法:
-  ./script/build_preset.sh <preset> [选项]
+  ./script/build_preset.sh [<preset>] [选项]
+  ./script/build_preset.sh              无参数时进入交互选单选择 preset
   ./script/build_preset.sh --list-presets
   ./script/build_preset.sh --completion-bash
 
@@ -193,29 +250,23 @@ EOF
 }
 
 if [[ $# -lt 1 ]]; then
-  usage
-  exit 1
-fi
-
-if [[ "${1:-}" == "--completion-bash" ]]; then
+  run_interactive_menu
+  # 选单已设置 PRESET，$@ 仍为空，下面直接解析选项（可为空）
+elif [[ "${1:-}" == "--completion-bash" ]]; then
   print_completion_bash
   exit 0
-fi
-
-if [[ "${1:-}" == "--list-presets" || "${1:-}" == "--list" ]]; then
+elif [[ "${1:-}" == "--list-presets" || "${1:-}" == "--list" ]]; then
   list_presets
   exit 0
-fi
-
-if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+elif [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   usage
   exit 0
+else
+  PRESET="${1:-}"
+  shift || true
 fi
 
-PRESET="${1:-}"
-shift || true
-
-if [[ -z "${PRESET}" || "${PRESET}" == -* ]]; then
+if [[ -z "${PRESET:-}" || "${PRESET}" == -* ]]; then
   echo "" >&2
   usage >&2
   exit 1
