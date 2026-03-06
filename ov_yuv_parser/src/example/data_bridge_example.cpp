@@ -8,14 +8,15 @@
  *  默认: data/yuv_data/init/outdoor/grass/static
  */
 
-#include "yuv_parser.h"
-#include "imu_parser.h"
-#include "system/vio_interface.h"
-#include "system/data_bridge.h"
-#include <iostream>
 #include <iomanip>
-#include <vector>
+#include <iostream>
 #include <string>
+#include <vector>
+
+#include "imu_parser.h"
+#include "system/data_bridge.h"
+#include "system/vio_interface.h"
+#include "yuv_parser.h"
 
 namespace ov_yuv_parser {
 
@@ -98,12 +99,10 @@ int main(int argc, char* argv[]) {
     std::cout << "--- 示例 1: ToImuData ---" << std::endl;
     std::cout << std::fixed << std::setprecision(6);
     std::cout << "  timestamp (s): " << ov_imu.timestamp << std::endl;
-    std::cout << "  gyro (rad/s): ["
-              << ov_imu.wm(0) << ", " << ov_imu.wm(1) << ", " << ov_imu.wm(2)
-              << "]" << std::endl;
-    std::cout << "  acc (m/s^2):  ["
-              << ov_imu.am(0) << ", " << ov_imu.am(1) << ", " << ov_imu.am(2)
-              << "]" << std::endl;
+    std::cout << "  gyro (rad/s): [" << ov_imu.wm(0) << ", " << ov_imu.wm(1)
+              << ", " << ov_imu.wm(2) << "]" << std::endl;
+    std::cout << "  acc (m/s^2):  [" << ov_imu.am(0) << ", " << ov_imu.am(1)
+              << ", " << ov_imu.am(2) << "]" << std::endl;
     std::cout << std::endl;
   }
 

@@ -4,12 +4,12 @@
  * R_k2tau、雅可比、协方差的差异。
  */
 
+#include <Eigen/Dense>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
-#include <vector>
 #include <memory>
-#include <Eigen/Dense>
+#include <vector>
 
 #include "cpi/CpiV1.h"
 #include "data_preprocessing/cpi_model.h"
@@ -22,8 +22,10 @@ namespace {
 
 constexpr double kTol = 1e-10;  // 相对/绝对容差
 
-bool is_close(double a, double b, double rel_tol = kTol, double abs_tol = kTol) {
-  return std::abs(a - b) <= abs_tol || std::abs(a - b) <= rel_tol * std::max(std::abs(a), std::abs(b));
+bool is_close(double a, double b, double rel_tol = kTol,
+              double abs_tol = kTol) {
+  return std::abs(a - b) <= abs_tol ||
+         std::abs(a - b) <= rel_tol * std::max(std::abs(a), std::abs(b));
 }
 
 bool matrix_close(const Eigen::MatrixXd& A, const Eigen::MatrixXd& B,
@@ -65,14 +67,16 @@ int main(int argc, char** argv) {
     printf("\n=== imu_avg=%s ===\n", imu_avg ? "true" : "false");
 
     // 构造 CpiV1 与 CpiModel
-    auto cpi_v1 = std::make_shared<CpiV1>(sigma_w, sigma_wb, sigma_a, sigma_ab, imu_avg);
+    auto cpi_v1 =
+        std::make_shared<CpiV1>(sigma_w, sigma_wb, sigma_a, sigma_ab, imu_avg);
     CpiModel cpi_model(sigma_w, sigma_wb, sigma_a, sigma_ab, imu_avg);
 
     // 设置相同线性化点
     cpi_v1->setLinearizationPoints(b_w, b_a);
     cpi_model.InitBias(b_w, b_a);
 
-    // 固定 IMU 序列（多段），边界处 pair[i].w1==pair[i+1].w0，保证 CpiSequence 单点序列与 CpiModel 一致
+    // 固定 IMU 序列（多段），边界处 pair[i].w1==pair[i+1].w0，保证 CpiSequence
+    // 单点序列与 CpiModel 一致
     struct ImuPair {
       double t0, t1;
       Eigen::Vector3d w0, a0, w1, a1;
@@ -99,7 +103,8 @@ int main(int argc, char** argv) {
 
     // 比较 DT
     if (!is_close(cpi_v1->DT, cpi_model.DT)) {
-      printf("  FAIL DT: CpiV1=%.12e CpiModel=%.12e\n", cpi_v1->DT, cpi_model.DT);
+      printf("  FAIL DT: CpiV1=%.12e CpiModel=%.12e\n", cpi_v1->DT,
+             cpi_model.DT);
       ++failed;
     } else {
       printf("  OK DT: %.12e\n", cpi_model.DT);
@@ -179,14 +184,18 @@ int main(int argc, char** argv) {
     seq.AddImu(t_last, pairs.back().w1, pairs.back().a1);
     CpiResult res_seq;
     if (seq.GetPreintegration(t_first, t_last, &res_seq)) {
-      bool ok = is_close(cpi_model.DT, res_seq.DT) && matrix_close(cpi_model.alpha_tau, res_seq.alpha_tau) &&
-                matrix_close(cpi_model.beta_tau, res_seq.beta_tau) && matrix_close(cpi_model.R_k2tau, res_seq.R_k2tau);
+      bool ok = is_close(cpi_model.DT, res_seq.DT) &&
+                matrix_close(cpi_model.alpha_tau, res_seq.alpha_tau) &&
+                matrix_close(cpi_model.beta_tau, res_seq.beta_tau) &&
+                matrix_close(cpi_model.R_k2tau, res_seq.R_k2tau);
       if (!ok) {
-        printf("  FAIL CpiSequence vs CpiModel (DT diff=%.2e alpha=%.2e beta=%.2e R=%.2e)\n",
-               std::abs(cpi_model.DT - res_seq.DT),
-               (cpi_model.alpha_tau - res_seq.alpha_tau).lpNorm<Eigen::Infinity>(),
-               (cpi_model.beta_tau - res_seq.beta_tau).lpNorm<Eigen::Infinity>(),
-               (cpi_model.R_k2tau - res_seq.R_k2tau).lpNorm<Eigen::Infinity>());
+        printf(
+            "  FAIL CpiSequence vs CpiModel (DT diff=%.2e alpha=%.2e beta=%.2e "
+            "R=%.2e)\n",
+            std::abs(cpi_model.DT - res_seq.DT),
+            (cpi_model.alpha_tau - res_seq.alpha_tau).lpNorm<Eigen::Infinity>(),
+            (cpi_model.beta_tau - res_seq.beta_tau).lpNorm<Eigen::Infinity>(),
+            (cpi_model.R_k2tau - res_seq.R_k2tau).lpNorm<Eigen::Infinity>());
         ++failed;
       } else {
         printf("  OK CpiSequence (AddImu 时预积分) vs CpiModel\n");
@@ -201,7 +210,8 @@ int main(int argc, char** argv) {
   {
     CpiModel m(1e-3, 1e-4, 1e-2, 1e-3, true);
     m.InitBias(vec3(0, 0, 0), vec3(0, 0, -9.81));
-    m.FeedImu(0.0, 0.01, vec3(0.1, 0, 0), vec3(0, 0, -9.81), vec3(0.1, 0, 0), vec3(0, 0, -9.81));
+    m.FeedImu(0.0, 0.01, vec3(0.1, 0, 0), vec3(0, 0, -9.81), vec3(0.1, 0, 0),
+              vec3(0, 0, -9.81));
     CpiSequence seq(1e-3, 1e-4, 1e-2, 1e-3, true);
     seq.SetBias(vec3(0, 0, 0), vec3(0, 0, -9.81));
     seq.AddImu(0.0, vec3(0.1, 0, 0), vec3(0, 0, -9.81));
@@ -209,7 +219,8 @@ int main(int argc, char** argv) {
     CpiResult r;
     seq.GetPreintegration(0.0, 0.01, &r);
     if (is_close(m.DT, r.DT) && matrix_close(m.alpha_tau, r.alpha_tau) &&
-        matrix_close(m.beta_tau, r.beta_tau) && matrix_close(m.R_k2tau, r.R_k2tau)) {
+        matrix_close(m.beta_tau, r.beta_tau) &&
+        matrix_close(m.R_k2tau, r.R_k2tau)) {
       printf("  单段 OK\n");
     } else {
       printf("  单段 FAIL (DT=%.2e alpha=%.2e)\n", std::abs(m.DT - r.DT),

@@ -20,6 +20,7 @@
  */
 
 #include "print.h"
+
 #include <cstdio>
 #include <cstdlib>
 
@@ -48,7 +49,8 @@ void Printer::setPrintLevel(const std::string &level) {
     setPrintLevel(PrintLevel::SILENT);
   else {
     std::cout << "Invalid print level requested: " << level << std::endl;
-    std::cout << "Valid levels are: ALL, DEBUG, INFO, WARNING, ERROR, SILENT" << std::endl;
+    std::cout << "Valid levels are: ALL, DEBUG, INFO, WARNING, ERROR, SILENT"
+              << std::endl;
     std::exit(EXIT_FAILURE);
   }
 }
@@ -57,36 +59,39 @@ void Printer::setPrintLevel(PrintLevel level) {
   Printer::current_print_level = level;
   std::cout << "Setting printing level to: ";
   switch (current_print_level) {
-  case PrintLevel::ALL:
-    std::cout << "ALL";
-    break;
-  case PrintLevel::DEBUG:
-    std::cout << "DEBUG";
-    break;
-  case PrintLevel::INFO:
-    std::cout << "INFO";
-    break;
-  case PrintLevel::WARNING:
-    std::cout << "WARNING";
-    break;
-  case PrintLevel::ERROR:
-    std::cout << "ERROR";
-    break;
-  case PrintLevel::SILENT:
-    std::cout << "SILENT";
-    break;
-  default:
-    std::cout << std::endl;
-    std::cout << "Invalid print level requested: " << level << std::endl;
-    std::cout << "Valid levels are: ALL, DEBUG, INFO, WARNING, ERROR, SILENT" << std::endl;
-    std::exit(EXIT_FAILURE);
+    case PrintLevel::ALL:
+      std::cout << "ALL";
+      break;
+    case PrintLevel::DEBUG:
+      std::cout << "DEBUG";
+      break;
+    case PrintLevel::INFO:
+      std::cout << "INFO";
+      break;
+    case PrintLevel::WARNING:
+      std::cout << "WARNING";
+      break;
+    case PrintLevel::ERROR:
+      std::cout << "ERROR";
+      break;
+    case PrintLevel::SILENT:
+      std::cout << "SILENT";
+      break;
+    default:
+      std::cout << std::endl;
+      std::cout << "Invalid print level requested: " << level << std::endl;
+      std::cout << "Valid levels are: ALL, DEBUG, INFO, WARNING, ERROR, SILENT"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
   }
   std::cout << std::endl;
 }
 
-void Printer::debugPrint(PrintLevel level, const char location[], const char line[], const char *format, ...) {
+void Printer::debugPrint(PrintLevel level, const char location[],
+                         const char line[], const char *format, ...) {
   // Only print for the current debug level
-  if (static_cast<int>(level) < static_cast<int>(Printer::current_print_level)) {
+  if (static_cast<int>(level) <
+      static_cast<int>(Printer::current_print_level)) {
     return;
   }
 
@@ -94,22 +99,22 @@ void Printer::debugPrint(PrintLevel level, const char location[], const char lin
   // Use Android logging on Android
   android_LogPriority log_priority;
   switch (level) {
-  case PrintLevel::ALL:
-  case PrintLevel::DEBUG:
-    log_priority = ANDROID_LOG_DEBUG;
-    break;
-  case PrintLevel::INFO:
-    log_priority = ANDROID_LOG_INFO;
-    break;
-  case PrintLevel::WARNING:
-    log_priority = ANDROID_LOG_WARN;
-    break;
-  case PrintLevel::ERROR:
-    log_priority = ANDROID_LOG_ERROR;
-    break;
-  default:
-    log_priority = ANDROID_LOG_INFO;
-    break;
+    case PrintLevel::ALL:
+    case PrintLevel::DEBUG:
+      log_priority = ANDROID_LOG_DEBUG;
+      break;
+    case PrintLevel::INFO:
+      log_priority = ANDROID_LOG_INFO;
+      break;
+    case PrintLevel::WARNING:
+      log_priority = ANDROID_LOG_WARN;
+      break;
+    case PrintLevel::ERROR:
+      log_priority = ANDROID_LOG_ERROR;
+      break;
+    default:
+      log_priority = ANDROID_LOG_INFO;
+      break;
   }
 
   // Build the message with location info (file:line) for all levels
@@ -118,9 +123,14 @@ void Printer::debugPrint(PrintLevel level, const char location[], const char lin
   std::string base_filename = path.substr(path.find_last_of("/\\") + 1);
   if (base_filename.size() > MAX_FILE_PATH_LEGTH) {
     snprintf(location_str, sizeof(location_str), "%s:%s ",
-             base_filename.substr(base_filename.size() - MAX_FILE_PATH_LEGTH, base_filename.size()).c_str(), line);
+             base_filename
+                 .substr(base_filename.size() - MAX_FILE_PATH_LEGTH,
+                         base_filename.size())
+                 .c_str(),
+             line);
   } else {
-    snprintf(location_str, sizeof(location_str), "%s:%s ", base_filename.c_str(), line);
+    snprintf(location_str, sizeof(location_str), "%s:%s ",
+             base_filename.c_str(), line);
   }
 
   // Format the message
@@ -131,14 +141,18 @@ void Printer::debugPrint(PrintLevel level, const char location[], const char lin
   va_end(args);
 
   // Log to Android logcat
-  __android_log_print(log_priority, LOG_TAG, "%s%s", location_str, formatted_msg);
+  __android_log_print(log_priority, LOG_TAG, "%s%s", location_str,
+                      formatted_msg);
 #else
   // Use standard printf on non-Android platforms
   // Print the location info (file:line) for all levels so logs are traceable
   std::string path(location);
   std::string base_filename = path.substr(path.find_last_of("/\\") + 1);
   if (base_filename.size() > MAX_FILE_PATH_LEGTH) {
-    printf("%s", base_filename.substr(base_filename.size() - MAX_FILE_PATH_LEGTH, base_filename.size()).c_str());
+    printf("%s", base_filename
+                     .substr(base_filename.size() - MAX_FILE_PATH_LEGTH,
+                             base_filename.size())
+                     .c_str());
   } else {
     printf("%s", base_filename.c_str());
   }

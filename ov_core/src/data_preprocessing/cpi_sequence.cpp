@@ -1,10 +1,11 @@
 // Copyright 2025 the project authors.
 
 #include "data_preprocessing/cpi_sequence.h"
-#include "utils/quat_ops.h"
 
 #include <algorithm>
 #include <cmath>
+
+#include "utils/quat_ops.h"
 
 namespace data_preprocessing {
 

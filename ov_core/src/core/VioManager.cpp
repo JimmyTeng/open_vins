@@ -29,28 +29,27 @@
 #include <map>
 #include <sstream>
 #include <vector>
-#include "opencv2/highgui.hpp"
+
 #include "feat/Feature.h"
 #include "feat/FeatureDatabase.h"
 #include "feat/FeatureInitializer.h"
+#include "init/InertialInitializer.h"
+#include "opencv2/highgui.hpp"
+#include "state/Propagator.h"
+#include "state/State.h"
+#include "state/StateHelper.h"
 #include "track/TrackAruco.h"
 #include "track/TrackDescriptor.h"
 #include "track/TrackKLT.h"
 #include "track/TrackSIM.h"
 #include "types/Landmark.h"
 #include "types/LandmarkRepresentation.h"
-#include "utils/opencv_lambda_body.h"
-#include "utils/print.h"
-#include "utils/sensor_data.h"
-
-#include "init/InertialInitializer.h"
-
-#include "state/Propagator.h"
-#include "state/State.h"
-#include "state/StateHelper.h"
 #include "update/UpdaterMSCKF.h"
 #include "update/UpdaterSLAM.h"
 #include "update/UpdaterZeroVelocity.h"
+#include "utils/opencv_lambda_body.h"
+#include "utils/print.h"
+#include "utils/sensor_data.h"
 
 using namespace ov_core;
 using namespace ov_type;
@@ -65,8 +64,8 @@ static size_t num_features_after_tracking = 0;
  * VioManager构造函数 - 初始化VIO系统
  * @param params_ VIO管理器配置参数
  */
-VioManager::VioManager(VioManagerOptions &params_) : thread_init_running(false), thread_init_success(false) {
-
+VioManager::VioManager(VioManagerOptions &params_)
+    : thread_init_running(false), thread_init_success(false) {
   // 启动信息
   // Nice startup message
   PRINT_DEBUG("=======================================\n");
@@ -86,8 +85,8 @@ VioManager::VioManager(VioManagerOptions &params_) : thread_init_running(false),
   // This will globally set the thread count we will use
   // -1 will reset to the system default threading (usually the num of cores)
   cv::setNumThreads(params.num_opencv_threads);
-  //cv::setNumThreads(2);
-  
+  // cv::setNumThreads(2);
+
   cv::setRNGSeed(0);
 
   // 创建状态对象
@@ -119,8 +118,10 @@ VioManager::VioManager(VioManagerOptions &params_) : thread_init_running(false),
   // Loop through and load each of the cameras
   state->_cam_intrinsics_cameras = params.camera_intrinsics;
   for (int i = 0; i < state->_options.num_cameras; i++) {
-    state->_cam_intrinsics.at(i)->set_value(params.camera_intrinsics.at(i)->get_value());
-    state->_cam_intrinsics.at(i)->set_fej(params.camera_intrinsics.at(i)->get_value());
+    state->_cam_intrinsics.at(i)->set_value(
+        params.camera_intrinsics.at(i)->get_value());
+    state->_cam_intrinsics.at(i)->set_fej(
+        params.camera_intrinsics.at(i)->get_value());
     state->_calib_IMUtoCAM.at(i)->set_value(params.camera_extrinsics.at(i));
     state->_calib_IMUtoCAM.at(i)->set_fej(params.camera_extrinsics.at(i));
   }
@@ -144,7 +145,8 @@ VioManager::VioManager(VioManagerOptions &params_) : thread_init_running(false),
     std::filesystem::create_directories(p.parent_path());
     // 打开统计文件
     // Open our statistics file!
-    of_statistics.open(params.record_timing_filepath, std::ofstream::out | std::ofstream::app);
+    of_statistics.open(params.record_timing_filepath,
+                       std::ofstream::out | std::ofstream::app);
     // 写入表头信息
     // Write the header information into it
     of_statistics << "# timestamp (sec),tracking,propagation,msckf update,";
@@ -162,48 +164,62 @@ VioManager::VioManager(VioManagerOptions &params_) : thread_init_running(false),
   // 注意：初始化后我们将增加特征跟踪的总数
   // 注意：我们将在所有相机之间均匀分配特征总数
   // Let's make a feature extractor
-  // NOTE: after we initialize we will increase the total number of feature tracks
-  // NOTE: we will split the total number of features over all cameras uniformly
-  int init_max_features = std::floor((double)params.init_options.init_max_features / (double)params.state_options.num_cameras);
+  // NOTE: after we initialize we will increase the total number of feature
+  // tracks NOTE: we will split the total number of features over all cameras
+  // uniformly
+  int init_max_features =
+      std::floor((double)params.init_options.init_max_features /
+                 (double)params.state_options.num_cameras);
   // 很奇怪的设定，应该是设置每个相机的特征点数量
   if (params.use_klt) {
     // 使用KLT（Kanade-Lucas-Tomasi）跟踪器
-    trackFEATS = std::shared_ptr<TrackBase>(new TrackKLT(state->_cam_intrinsics_cameras, init_max_features,
-                                                         state->_options.max_aruco_features, params.use_stereo, params.histogram_method,
-                                                         params.fast_threshold, params.grid_x, params.grid_y, params.min_px_dist));
+    trackFEATS = std::shared_ptr<TrackBase>(
+        new TrackKLT(state->_cam_intrinsics_cameras, init_max_features,
+                     state->_options.max_aruco_features, params.use_stereo,
+                     params.histogram_method, params.fast_threshold,
+                     params.grid_x, params.grid_y, params.min_px_dist));
   } else {
     // 使用描述符跟踪器
     trackFEATS = std::shared_ptr<TrackBase>(new TrackDescriptor(
-        state->_cam_intrinsics_cameras, init_max_features, state->_options.max_aruco_features, params.use_stereo, params.histogram_method,
-        params.fast_threshold, params.grid_x, params.grid_y, params.min_px_dist, params.knn_ratio));
+        state->_cam_intrinsics_cameras, init_max_features,
+        state->_options.max_aruco_features, params.use_stereo,
+        params.histogram_method, params.fast_threshold, params.grid_x,
+        params.grid_y, params.min_px_dist, params.knn_ratio));
   }
 
   // 初始化ArUco标签提取器
   // Initialize our aruco tag extractor
   if (params.use_aruco) {
-    trackARUCO = std::shared_ptr<TrackBase>(new TrackAruco(state->_cam_intrinsics_cameras, state->_options.max_aruco_features,
-                                                           params.use_stereo, params.histogram_method, params.downsize_aruco));
+    trackARUCO = std::shared_ptr<TrackBase>(new TrackAruco(
+        state->_cam_intrinsics_cameras, state->_options.max_aruco_features,
+        params.use_stereo, params.histogram_method, params.downsize_aruco));
   }
 
   // 初始化状态传播器（用于IMU积分和状态传播）
   // Initialize our state propagator
-  propagator = std::make_shared<Propagator>(params.imu_noises, params.gravity_mag);
+  propagator =
+      std::make_shared<Propagator>(params.imu_noises, params.gravity_mag);
 
   // 初始化状态初始化器
   // Our state initialize
-  initializer = std::make_shared<ov_init::InertialInitializer>(params.init_options, trackFEATS->get_feature_database());
+  initializer = std::make_shared<ov_init::InertialInitializer>(
+      params.init_options, trackFEATS->get_feature_database());
 
   // 创建更新器
   // Make the updater!
-  updaterMSCKF = std::make_shared<UpdaterMSCKF>(params.msckf_options, params.featinit_options);
-  updaterSLAM = std::make_shared<UpdaterSLAM>(params.slam_options, params.aruco_options, params.featinit_options);
+  updaterMSCKF = std::make_shared<UpdaterMSCKF>(params.msckf_options,
+                                                params.featinit_options);
+  updaterSLAM = std::make_shared<UpdaterSLAM>(
+      params.slam_options, params.aruco_options, params.featinit_options);
 
   // 如果使用零速度更新，则创建零速度更新器
   // If we are using zero velocity updates, then create the updater
   if (params.try_zupt) {
-    updaterZUPT = std::make_shared<UpdaterZeroVelocity>(params.zupt_options, params.imu_noises, trackFEATS->get_feature_database(),
-                                                        propagator,                                                         params.gravity_mag, params.zupt_max_velocity,
-                                                        params.zupt_noise_multiplier, params.zupt_max_disparity);
+    updaterZUPT = std::make_shared<UpdaterZeroVelocity>(
+        params.zupt_options, params.imu_noises,
+        trackFEATS->get_feature_database(), propagator, params.gravity_mag,
+        params.zupt_max_velocity, params.zupt_noise_multiplier,
+        params.zupt_max_disparity);
   }
 }
 
@@ -240,7 +256,8 @@ VioManager::~VioManager() {
 
   // 单帧耗时统计（用于百分位等，需要排序副本）
   std::vector<double> total_times_ms_sorted(n);
-  for (size_t i = 0; i < n; i++) total_times_ms_sorted[i] = total_times_sec[i] * 1000.0;
+  for (size_t i = 0; i < n; i++)
+    total_times_ms_sorted[i] = total_times_sec[i] * 1000.0;
   std::sort(total_times_ms_sorted.begin(), total_times_ms_sorted.end());
   double sum_ms = 0.0;
   for (double t : total_times_ms_sorted) sum_ms += t;
@@ -257,7 +274,8 @@ VioManager::~VioManager() {
   std::map<int, int> frames_per_second;
   for (double t : total_times_sec) {
     cum_sec += t;
-    int sec_idx = static_cast<int>(std::floor(cum_sec));  // 第 sec_idx 秒内完成（[sec_idx, sec_idx+1)）
+    int sec_idx = static_cast<int>(
+        std::floor(cum_sec));  // 第 sec_idx 秒内完成（[sec_idx, sec_idx+1)）
     if (sec_idx >= 0) {
       frames_per_second[sec_idx]++;
       if (sec_idx > max_sec_idx) max_sec_idx = sec_idx;
@@ -266,7 +284,9 @@ VioManager::~VioManager() {
   double total_processing_sec = cum_sec;
 
   // 计算帧率：总帧数/总耗时(秒) = 第i秒处理帧数的正确定义
-  double fps_overall = (total_processing_sec > 1e-9) ? (static_cast<double>(n) / total_processing_sec) : 0.0;
+  double fps_overall = (total_processing_sec > 1e-9)
+                           ? (static_cast<double>(n) / total_processing_sec)
+                           : 0.0;
   int fps_min_sec = std::numeric_limits<int>::max();
   int fps_max_sec = 0;
   for (const auto &kv : frames_per_second) {
@@ -277,12 +297,14 @@ VioManager::~VioManager() {
 
   std::ostringstream ss;
   ss << "\n========== 帧率分析 (数据集结束) ==========\n";
-  ss << "  总帧数: " << n << "  总耗时: " << std::fixed << std::setprecision(2) << total_processing_sec << " s\n";
+  ss << "  总帧数: " << n << "  总耗时: " << std::fixed << std::setprecision(2)
+     << total_processing_sec << " s\n";
   ss << "  单帧耗时(ms): 平均=" << std::setprecision(2) << mean_ms
-     << "  最小=" << min_ms << "  最大=" << max_ms
-     << "  P50=" << p50 << "  P95=" << p95 << "  P99=" << p99 << "\n";
+     << "  最小=" << min_ms << "  最大=" << max_ms << "  P50=" << p50
+     << "  P95=" << p95 << "  P99=" << p99 << "\n";
   ss << "  帧率(FPS): 总帧数/总耗时=" << std::setprecision(2) << fps_overall
-     << "  每秒最少=" << fps_min_sec << "帧  每秒最多=" << fps_max_sec << "帧\n";
+     << "  每秒最少=" << fps_min_sec << "帧  每秒最多=" << fps_max_sec
+     << "帧\n";
   if (max_sec_idx >= 0 && max_sec_idx <= 20) {
     ss << "  各秒帧数: ";
     for (int i = 0; i <= max_sec_idx; i++) {
@@ -300,18 +322,19 @@ VioManager::~VioManager() {
  * @param message IMU数据消息
  */
 void VioManager::feed_measurement_imu(const ov_core::ImuData &message) {
-
   // 我们需要的最旧IMU时间是最后一个克隆状态的时间
   // 我们不应该需要整个窗口，但如果时间倒退，我们就会需要
   // The oldest time we need IMU with is the last clone
-  // We shouldn't really need the whole window, but if we go backwards in time we will
+  // We shouldn't really need the whole window, but if we go backwards in time
+  // we will
   double oldest_time = state->margtimestep();
   if (oldest_time > state->_timestamp) {
     oldest_time = -1;
   }
   // 如果未初始化，使用初始化窗口时间
   if (!is_initialized_vio) {
-    oldest_time = message.timestamp - params.init_options.init_window_time + state->_calib_dt_CAMtoIMU->value()(0) - 0.10;
+    oldest_time = message.timestamp - params.init_options.init_window_time +
+                  state->_calib_dt_CAMtoIMU->value()(0) - 0.10;
   }
   // 将IMU数据传递给传播器
   propagator->feed_imu(message, oldest_time);
@@ -325,8 +348,10 @@ void VioManager::feed_measurement_imu(const ov_core::ImuData &message) {
   // 如果启用了零速度更新器，将IMU数据传递给它
   // 如果只在开始时进行零速度更新且已经移动过，则不需要传递
   // Push back to the zero velocity updater if it is enabled
-  // No need to push back if we are just doing the zv-update at the begining and we have moved
-  if (is_initialized_vio && updaterZUPT != nullptr && (!params.zupt_only_at_beginning || !has_moved_since_zupt)) {
+  // No need to push back if we are just doing the zv-update at the begining and
+  // we have moved
+  if (is_initialized_vio && updaterZUPT != nullptr &&
+      (!params.zupt_only_at_beginning || !has_moved_since_zupt)) {
     updaterZUPT->feed_imu(message, oldest_time);
   }
 }
@@ -337,9 +362,9 @@ void VioManager::feed_measurement_imu(const ov_core::ImuData &message) {
  * @param camids 相机ID列表
  * @param feats 特征点数据（特征ID和像素坐标）
  */
-void VioManager::feed_measurement_simulation(double timestamp, const std::vector<int> &camids,
-                                             const std::vector<std::vector<std::pair<size_t, Eigen::VectorXf>>> &feats) {
-
+void VioManager::feed_measurement_simulation(
+    double timestamp, const std::vector<int> &camids,
+    const std::vector<std::vector<std::pair<size_t, Eigen::VectorXf>>> &feats) {
   // 开始计时
   // Start timing
   rT1 = rtime_now();
@@ -348,19 +373,25 @@ void VioManager::feed_measurement_simulation(double timestamp, const std::vector
   // 如果没有，重新创建并将跟踪器转换为仿真跟踪器
   // Check if we actually have a simulated tracker
   // If not, recreate and re-cast the tracker to our simulation tracker
-  std::shared_ptr<TrackSIM> trackSIM = std::dynamic_pointer_cast<TrackSIM>(trackFEATS);
+  std::shared_ptr<TrackSIM> trackSIM =
+      std::dynamic_pointer_cast<TrackSIM>(trackFEATS);
   if (trackSIM == nullptr) {
     // 替换为仿真跟踪器
     // Replace with the simulated tracker
-    trackSIM = std::make_shared<TrackSIM>(state->_cam_intrinsics_cameras, state->_options.max_aruco_features);
+    trackSIM = std::make_shared<TrackSIM>(state->_cam_intrinsics_cameras,
+                                          state->_options.max_aruco_features);
     trackFEATS = trackSIM;
     // 也需要在初始化和零速度更新器中替换，因为它们指向trackFEATS的数据库指针
-    // Need to also replace it in init and zv-upt since it points to the trackFEATS db pointer
-    initializer = std::make_shared<ov_init::InertialInitializer>(params.init_options, trackFEATS->get_feature_database());
+    // Need to also replace it in init and zv-upt since it points to the
+    // trackFEATS db pointer
+    initializer = std::make_shared<ov_init::InertialInitializer>(
+        params.init_options, trackFEATS->get_feature_database());
     if (params.try_zupt) {
-      updaterZUPT = std::make_shared<UpdaterZeroVelocity>(params.zupt_options, params.imu_noises, trackFEATS->get_feature_database(),
-                                                          propagator, params.gravity_mag, params.zupt_max_velocity,
-                                                          params.zupt_noise_multiplier, params.zupt_max_disparity);
+      updaterZUPT = std::make_shared<UpdaterZeroVelocity>(
+          params.zupt_options, params.imu_noises,
+          trackFEATS->get_feature_database(), propagator, params.gravity_mag,
+          params.zupt_max_velocity, params.zupt_noise_multiplier,
+          params.zupt_max_disparity);
     }
     PRINT_WARNING(RED "[仿真]: 将跟踪器转换为TrackSIM对象！\n" RESET);
   }
@@ -373,9 +404,11 @@ void VioManager::feed_measurement_simulation(double timestamp, const std::vector
   // 检查是否应该进行零速度更新，如果是则更新状态
   // 注意：如果只在初始化阶段使用，且已经移动过，则不应该尝试零速度更新
   // Check if we should do zero-velocity, if so update the state with it
-  // Note that in the case that we only use in the beginning initialization phase
-  // If we have since moved, then we should never try to do a zero velocity update!
-  if (is_initialized_vio && updaterZUPT != nullptr && (!params.zupt_only_at_beginning || !has_moved_since_zupt)) {
+  // Note that in the case that we only use in the beginning initialization
+  // phase If we have since moved, then we should never try to do a zero
+  // velocity update!
+  if (is_initialized_vio && updaterZUPT != nullptr &&
+      (!params.zupt_only_at_beginning || !has_moved_since_zupt)) {
     // 如果状态时间相同，使用上一个时间步的决策
     // If the same state time, use the previous timestep decision
     if (state->_timestamp != timestamp) {
@@ -383,8 +416,10 @@ void VioManager::feed_measurement_simulation(double timestamp, const std::vector
     }
     if (did_zupt_update) {
       assert(state->_timestamp == timestamp);
-      propagator->clean_old_imu_measurements(timestamp + state->_calib_dt_CAMtoIMU->value()(0) - 0.10);
-      updaterZUPT->clean_old_imu_measurements(timestamp + state->_calib_dt_CAMtoIMU->value()(0) - 0.10);
+      propagator->clean_old_imu_measurements(
+          timestamp + state->_calib_dt_CAMtoIMU->value()(0) - 0.10);
+      updaterZUPT->clean_old_imu_measurements(
+          timestamp + state->_calib_dt_CAMtoIMU->value()(0) - 0.10);
       propagator->invalidate_cache();
       return;
     }
@@ -393,8 +428,12 @@ void VioManager::feed_measurement_simulation(double timestamp, const std::vector
   // 如果没有VIO初始化，则返回错误
   // If we do not have VIO initialization, then return an error
   if (!is_initialized_vio) {
-    PRINT_ERROR(RED "[仿真]: 在仿真特征之前，您的VIO系统应该已经初始化！！！\n" RESET);
-    PRINT_ERROR(RED "[仿真]: 在调用feed_measurement_simulation()之前，请先初始化您的系统！！！！\n" RESET);
+    PRINT_ERROR(
+        RED "[仿真]: 在仿真特征之前，您的VIO系统应该已经初始化！！！\n" RESET);
+    PRINT_ERROR(RED
+                "[仿真]: "
+                "在调用feed_measurement_simulation()"
+                "之前，请先初始化您的系统！！！！\n" RESET);
     std::exit(EXIT_FAILURE);
   }
 
@@ -418,14 +457,15 @@ void VioManager::feed_measurement_simulation(double timestamp, const std::vector
  * 跟踪图像并更新状态
  * @param message_const 相机数据消息（包含图像和时间戳）
  */
-void VioManager::track_image_and_update(const ov_core::CameraData &message_const) {
-
+void VioManager::track_image_and_update(
+    const ov_core::CameraData &message_const) {
   // 开始计时
   // Start timing
   rT1 = rtime_now();
 
   // 时间间隔用于下方合并打印（时间戳/间隔/Hz/Init + 跟踪统计）
-  // Time interval for combined print below (timestamp/interval/Hz/Init + tracking stats)
+  // Time interval for combined print below (timestamp/interval/Hz/Init +
+  // tracking stats)
   static double last_processed_timestamp = 0.0;
   double time_interval = 0.0;
   if (last_processed_timestamp > 0.0) {
@@ -438,13 +478,15 @@ void VioManager::track_image_and_update(const ov_core::CameraData &message_const
   assert(!message_const.sensor_ids.empty());
   assert(message_const.sensor_ids.size() == message_const.images.size());
   for (size_t i = 0; i < message_const.sensor_ids.size() - 1; i++) {
-    assert(message_const.sensor_ids.at(i) != message_const.sensor_ids.at(i + 1));
+    assert(message_const.sensor_ids.at(i) !=
+           message_const.sensor_ids.at(i + 1));
   }
 
   // 如果启用下采样，则对图像进行下采样
   // Downsample if we are downsampling
   ov_core::CameraData message = message_const;
-  for (size_t i = 0; i < message.sensor_ids.size() && params.downsample_cameras; i++) {
+  for (size_t i = 0; i < message.sensor_ids.size() && params.downsample_cameras;
+       i++) {
     cv::Mat img = message.images.at(i);
     cv::Mat mask = message.masks.at(i);
     cv::Mat img_temp, mask_temp;
@@ -462,22 +504,28 @@ void VioManager::track_image_and_update(const ov_core::CameraData &message_const
   // 获得目前还在跟踪的特征点坐标
   // Get coordinates of currently tracked features
   // Lambda函数：收集当前帧中被跟踪特征的UV坐标
-  // Lambda function: collect UV coordinates of tracked features in current frame
-  auto collect_tracked_feature_uvs = [&message](const std::shared_ptr<ov_core::FeatureDatabase> &feat_db) -> std::vector<std::pair<size_t, Eigen::Vector2f>> {
-    std::vector<std::pair<size_t, Eigen::Vector2f>> result; // (feature id, uv coordinates)
+  // Lambda function: collect UV coordinates of tracked features in current
+  // frame
+  auto collect_tracked_feature_uvs =
+      [&message](const std::shared_ptr<ov_core::FeatureDatabase> &feat_db)
+      -> std::vector<std::pair<size_t, Eigen::Vector2f>> {
+    std::vector<std::pair<size_t, Eigen::Vector2f>>
+        result;  // (feature id, uv coordinates)
     auto features_map = feat_db->get_internal_data();
     for (const auto &pair : features_map) {
       const auto &feat_ptr = pair.second;
       if (!feat_ptr->to_delete) {
         // 对于每个被跟踪的特征，找到该特征在本帧的UV坐标
         // For each tracked feature, find its UV coordinates in current frame
-        for (size_t cam_idx = 0; cam_idx < message.sensor_ids.size(); ++cam_idx) {
+        for (size_t cam_idx = 0; cam_idx < message.sensor_ids.size();
+             ++cam_idx) {
           size_t camid = message.sensor_ids[cam_idx];
           auto it_uvs = feat_ptr->uvs.find(camid);
           auto it_times = feat_ptr->timestamps.find(camid);
-          if (it_uvs != feat_ptr->uvs.end() && it_times != feat_ptr->timestamps.end()) {
-            const std::vector<double>& ts_vec = it_times->second;
-            const std::vector<Eigen::VectorXf>& uvs_vec = it_uvs->second;
+          if (it_uvs != feat_ptr->uvs.end() &&
+              it_times != feat_ptr->timestamps.end()) {
+            const std::vector<double> &ts_vec = it_times->second;
+            const std::vector<Eigen::VectorXf> &uvs_vec = it_uvs->second;
             for (size_t j = 0; j < ts_vec.size(); ++j) {
               if (ts_vec[j] == message.timestamp && uvs_vec[j].size() >= 2) {
                 Eigen::Vector2f uv(uvs_vec[j][0], uvs_vec[j][1]);
@@ -491,45 +539,56 @@ void VioManager::track_image_and_update(const ov_core::CameraData &message_const
     }
     return result;
   };
-  
-  std::vector<std::pair<size_t, Eigen::Vector2f>> tracked_feature_uvs_before = collect_tracked_feature_uvs(trackFEATS->get_feature_database());
+
+  std::vector<std::pair<size_t, Eigen::Vector2f>> tracked_feature_uvs_before =
+      collect_tracked_feature_uvs(trackFEATS->get_feature_database());
   trackFEATS->feed_new_camera(message);
   num_features_after_tracking = trackFEATS->get_feature_database()->size();
-  
-  std::vector<std::pair<size_t, Eigen::Vector2f>> tracked_feature_uvs_after = collect_tracked_feature_uvs(trackFEATS->get_feature_database());
 
-  
+  std::vector<std::pair<size_t, Eigen::Vector2f>> tracked_feature_uvs_after =
+      collect_tracked_feature_uvs(trackFEATS->get_feature_database());
 
   // 获取丢失的特征用于跟踪统计
   // 使用消息时间戳查找未跟踪到当前帧的特征
   // Get lost features for tracking statistics
-  // Use message timestamp to find features that were not tracked into this frame
-  std::vector<std::shared_ptr<Feature>> feats_lost_temp = 
-      trackFEATS->get_feature_database()->features_not_containing_newer(message.timestamp, false, true);
+  // Use message timestamp to find features that were not tracked into this
+  // frame
+  std::vector<std::shared_ptr<Feature>> feats_lost_temp =
+      trackFEATS->get_feature_database()->features_not_containing_newer(
+          message.timestamp, false, true);
   size_t num_features_lost_this_frame = feats_lost_temp.size();
-  
+
   // 打印跟踪统计信息用于调试
   // Print tracking statistics for debugging
   static int tracking_frame_count = 0;
   tracking_frame_count++;
-  long num_features_new = (long)num_features_after_tracking - (long)num_features_before_tracking;
-  long net_change = (long)num_features_after_tracking - (long)num_features_before_tracking;
-  
-  // 在初始化阶段或每200帧打印一次：时间戳/间隔/Hz/Init + 跟踪统计（由配置 print_tracking_stats 控制）
-  bool should_print_tracking = params.print_tracking_stats && ((!is_initialized_vio) || (tracking_frame_count % 200 == 0));
+  long num_features_new =
+      (long)num_features_after_tracking - (long)num_features_before_tracking;
+  long net_change =
+      (long)num_features_after_tracking - (long)num_features_before_tracking;
+
+  // 在初始化阶段或每200帧打印一次：时间戳/间隔/Hz/Init + 跟踪统计（由配置
+  // print_tracking_stats 控制）
+  bool should_print_tracking =
+      params.print_tracking_stats &&
+      ((!is_initialized_vio) || (tracking_frame_count % 200 == 0));
   if (should_print_tracking) {
-    PRINT_INFO(CYAN "[VM] 帧 #%d : %.6f s, 间隔: %.3f ms (%.2f Hz), Init: %d | 总数: %zu, 丢失: %zu, 新增: %ld, 净变化: %ld\n" RESET,
+    PRINT_INFO(CYAN
+               "[VM] 帧 #%d : %.6f s, 间隔: %.3f ms (%.2f Hz), Init: %d | "
+               "总数: %zu, 丢失: %zu, 新增: %ld, 净变化: %ld\n" RESET,
                tracking_frame_count, message.timestamp, time_interval * 1000.0,
-               (time_interval > 0 ? 1.0 / time_interval : 0.0), (int)is_initialized_vio,
-               num_features_after_tracking, num_features_lost_this_frame, num_features_new, net_change);
+               (time_interval > 0 ? 1.0 / time_interval : 0.0),
+               (int)is_initialized_vio, num_features_after_tracking,
+               num_features_lost_this_frame, num_features_new, net_change);
   }
 
   // 如果ArUco跟踪器可用，也将数据传递给它
   // 注意：ArUco的双目跟踪没有意义，因为我们默认有ID
   // 注意：因此如果进行双目跟踪，我们只调用立体跟踪
   // If the aruco tracker is available, the also pass to it
-  // NOTE: binocular tracking for aruco doesn't make sense as we by default have the ids
-  // NOTE: thus we just call the stereo tracking if we are doing binocular!
+  // NOTE: binocular tracking for aruco doesn't make sense as we by default have
+  // the ids NOTE: thus we just call the stereo tracking if we are doing
+  // binocular!
   if (is_initialized_vio && trackARUCO != nullptr) {
     trackARUCO->feed_new_camera(message);
   }
@@ -538,9 +597,11 @@ void VioManager::track_image_and_update(const ov_core::CameraData &message_const
   // 检查是否应该进行零速度更新，如果是则更新状态
   // 注意：如果只在初始化阶段使用，且已经移动过，则不应该尝试零速度更新
   // Check if we should do zero-velocity, if so update the state with it
-  // Note that in the case that we only use in the beginning initialization phase
-  // If we have since moved, then we should never try to do a zero velocity update!
-  if (is_initialized_vio && updaterZUPT != nullptr && (!params.zupt_only_at_beginning || !has_moved_since_zupt)) {
+  // Note that in the case that we only use in the beginning initialization
+  // phase If we have since moved, then we should never try to do a zero
+  // velocity update!
+  if (is_initialized_vio && updaterZUPT != nullptr &&
+      (!params.zupt_only_at_beginning || !has_moved_since_zupt)) {
     // 如果状态时间相同，使用上一个时间步的决策
     // If the same state time, use the previous timestep decision
     if (state->_timestamp != message.timestamp) {
@@ -548,8 +609,10 @@ void VioManager::track_image_and_update(const ov_core::CameraData &message_const
     }
     if (did_zupt_update) {
       assert(state->_timestamp == message.timestamp);
-      propagator->clean_old_imu_measurements(message.timestamp + state->_calib_dt_CAMtoIMU->value()(0) - 0.10);
-      updaterZUPT->clean_old_imu_measurements(message.timestamp + state->_calib_dt_CAMtoIMU->value()(0) - 0.10);
+      propagator->clean_old_imu_measurements(
+          message.timestamp + state->_calib_dt_CAMtoIMU->value()(0) - 0.10);
+      updaterZUPT->clean_old_imu_measurements(
+          message.timestamp + state->_calib_dt_CAMtoIMU->value()(0) - 0.10);
       propagator->invalidate_cache();
       return;
     }
@@ -578,8 +641,8 @@ void VioManager::track_image_and_update(const ov_core::CameraData &message_const
  * 这是VIO系统的核心函数，负责状态传播、特征管理和EKF更新
  * @param message 相机数据消息
  */
-void VioManager::do_feature_propagate_update(const ov_core::CameraData &message) {
-
+void VioManager::do_feature_propagate_update(
+    const ov_core::CameraData &message) {
   //===================================================================================
   // 状态传播和克隆状态增强
   // State propagation, and clone augmentation
@@ -587,7 +650,8 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
 
   // Return if the camera measurement is out of order
   if (state->_timestamp > message.timestamp) {
-    PRINT_WARNING(YELLOW "图像接收顺序错误，无法处理 (传播时间差 = %3f)\n" RESET,
+    PRINT_WARNING(YELLOW
+                  "图像接收顺序错误，无法处理 (传播时间差 = %3f)\n" RESET,
                   (message.timestamp - state->_timestamp));
     return;
   }
@@ -609,9 +673,12 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
   // 当我们至少有5个克隆状态时，我们可以开始处理，因为我们可以开始三角化...
   // If we have not reached max clones, we should just return...
   // This isn't super ideal, but it keeps the logic after this easier...
-  // We can start processing things when we have at least 5 clones since we can start triangulating things...
-  if ((int)state->_clones_IMU.size() < std::min(state->_options.max_clone_size, 5)) {
-    PRINT_DEBUG("[VM]: 等待足够的克隆状态 (%d / %d)....\n", (int)state->_clones_IMU.size(),
+  // We can start processing things when we have at least 5 clones since we can
+  // start triangulating things...
+  if ((int)state->_clones_IMU.size() <
+      std::min(state->_options.max_clone_size, 5)) {
+    PRINT_DEBUG("[VM]: 等待足够的克隆状态 (%d / %d)....\n",
+                (int)state->_clones_IMU.size(),
                 std::min(state->_options.max_clone_size, 5));
     return;
   }
@@ -620,7 +687,8 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
   // Return if we where unable to propagate
   if (state->_timestamp != message.timestamp) {
     PRINT_WARNING(RED "[VM]: 传播器无法将状态向前传播到指定时间！\n" RESET);
-    PRINT_WARNING(RED "[VM]: 距离上次传播已经过了 %.3f 秒\n" RESET, message.timestamp - state->_timestamp);
+    PRINT_WARNING(RED "[VM]: 距离上次传播已经过了 %.3f 秒\n" RESET,
+                  message.timestamp - state->_timestamp);
     return;
   }
   has_moved_since_zupt = true;
@@ -632,40 +700,56 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
 
   // 现在，让我们获取所有应该用于更新但在最新帧中丢失的特征
   // 我们明确请求在另一个更新步骤中未被删除（使用）的特征
-  // Now, lets get all features that should be used for an update that are lost in the newest frame
-  // We explicitly request features that have not been deleted (used) in another update step
+  // Now, lets get all features that should be used for an update that are lost
+  // in the newest frame We explicitly request features that have not been
+  // deleted (used) in another update step
   std::vector<std::shared_ptr<Feature>> feats_lost, feats_marg, feats_slam;
 
   // feats_lost 跟踪丢失的特征
-  feats_lost = trackFEATS->get_feature_database()->features_not_containing_newer(state->_timestamp, false, true);
-  
+  feats_lost =
+      trackFEATS->get_feature_database()->features_not_containing_newer(
+          state->_timestamp, false, true);
+
   // 打印跟踪统计信息用于调试
   // Print tracking statistics for debugging
   static int tracking_update_count = 0;
   tracking_update_count++;
   size_t num_features_current = trackFEATS->get_feature_database()->size();
   size_t num_features_lost = feats_lost.size();
-  
+
   // 计算新特征和净变化（使用跟踪步骤中的静态变量）
-  // Calculate new features and net change (using static variables from tracking step)
-  long num_features_new = (long)num_features_after_tracking - (long)num_features_before_tracking;
-  long net_change = (long)num_features_after_tracking - (long)num_features_before_tracking;
-  
+  // Calculate new features and net change (using static variables from tracking
+  // step)
+  long num_features_new =
+      (long)num_features_after_tracking - (long)num_features_before_tracking;
+  long net_change =
+      (long)num_features_after_tracking - (long)num_features_before_tracking;
+
   // 在初始化阶段或每200次更新打印一次（由配置 print_tracking_stats 控制）
-  bool should_print_tracking = params.print_tracking_stats && ((!is_initialized_vio) || (tracking_update_count % 200 == 0));
+  bool should_print_tracking =
+      params.print_tracking_stats &&
+      ((!is_initialized_vio) || (tracking_update_count % 200 == 0));
   if (should_print_tracking) {
-    PRINT_INFO(CYAN "[VM] 更新 #%d - 总特征数: %zu, 丢失: %zu, 新增: %ld, 净变化: %ld\n" RESET,
-               tracking_update_count, num_features_current, num_features_lost, num_features_new, net_change);
+    PRINT_INFO(CYAN
+               "[VM] 更新 #%d - 总特征数: %zu, 丢失: %zu, 新增: %ld, 净变化: "
+               "%ld\n" RESET,
+               tracking_update_count, num_features_current, num_features_lost,
+               num_features_new, net_change);
   }
 
   // 在达到最大克隆数之前，不需要获取最旧的特征
-  // Don't need to get the oldest features until we reach our max number of clones
-  if ((int)state->_clones_IMU.size() > state->_options.max_clone_size || (int)state->_clones_IMU.size() > 5) {
+  // Don't need to get the oldest features until we reach our max number of
+  // clones
+  if ((int)state->_clones_IMU.size() > state->_options.max_clone_size ||
+      (int)state->_clones_IMU.size() > 5) {
     // 注释：当克隆数量超过最大数量时，触发对最旧时间步的特征获取（边缘化时用）
-    feats_marg = trackFEATS->get_feature_database()->features_containing(state->margtimestep(), false, true);
-    //trackARUCO 信息需要被保留下来
-    if (trackARUCO != nullptr && message.timestamp - startup_time >= params.dt_slam_delay) {
-      feats_slam = trackARUCO->get_feature_database()->features_containing(state->margtimestep(), false, true);
+    feats_marg = trackFEATS->get_feature_database()->features_containing(
+        state->margtimestep(), false, true);
+    // trackARUCO 信息需要被保留下来
+    if (trackARUCO != nullptr &&
+        message.timestamp - startup_time >= params.dt_slam_delay) {
+      feats_slam = trackARUCO->get_feature_database()->features_containing(
+          state->margtimestep(), false, true);
     }
   }
 
@@ -673,13 +757,15 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
   // 例如：如果我们是cam1，而cam0还没有处理，我们不想在更新中使用那些特征
   // 例如：因此我们等到cam0处理其最新图像后再移除从该相机看到的特征
   // Remove any lost features that were from other image streams
-  // E.g: if we are cam1 and cam0 has not processed yet, we don't want to try to use those in the update yet
-  // E.g: thus we wait until cam0 process its newest image to remove features which were seen from that camera
+  // E.g: if we are cam1 and cam0 has not processed yet, we don't want to try to
+  // use those in the update yet E.g: thus we wait until cam0 process its newest
+  // image to remove features which were seen from that camera
   auto it1 = feats_lost.begin();
   while (it1 != feats_lost.end()) {
     bool found_current_message_camid = false;
     for (const auto &camuvpair : (*it1)->uvs) {
-      if (std::find(message.sensor_ids.begin(), message.sensor_ids.end(), camuvpair.first) != message.sensor_ids.end()) {
+      if (std::find(message.sensor_ids.begin(), message.sensor_ids.end(),
+                    camuvpair.first) != message.sensor_ids.end()) {
         found_current_message_camid = true;
         break;
       }
@@ -693,12 +779,15 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
 
   // 我们还需要确保最大跟踪不包含任何丢失的特征
   // 如果特征在最后一帧丢失，但在边缘化时间步有测量，则可能发生这种情况
-  // We also need to make sure that the max tracks does not contain any lost features
-  // This could happen if the feature was lost in the last frame, but has a measurement at the marg timestep
+  // We also need to make sure that the max tracks does not contain any lost
+  // features This could happen if the feature was lost in the last frame, but
+  // has a measurement at the marg timestep
   it1 = feats_lost.begin();
   while (it1 != feats_lost.end()) {
-    if (std::find(feats_marg.begin(), feats_marg.end(), (*it1)) != feats_marg.end()) {
-      // PRINT_WARNING(YELLOW "FOUND FEATURE THAT WAS IN BOTH feats_lost and feats_marg!!!!!!\n" RESET);
+    if (std::find(feats_marg.begin(), feats_marg.end(), (*it1)) !=
+        feats_marg.end()) {
+      // PRINT_WARNING(YELLOW "FOUND FEATURE THAT WAS IN BOTH feats_lost and
+      // feats_marg!!!!!!\n" RESET);
       it1 = feats_lost.erase(it1);
     } else {
       it1++;
@@ -706,7 +795,8 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
   }
 
   // 查找已达到最大长度的跟踪，这些可以转换为SLAM特征
-  // Find tracks that have reached max length, these can be made into SLAM features
+  // Find tracks that have reached max length, these can be made into SLAM
+  // features
   std::vector<std::shared_ptr<Feature>> feats_maxtracks;
   auto it2 = feats_marg.begin();
   while (it2 != feats_marg.end()) {
@@ -742,22 +832,33 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
   // 如果有空间，则追加新的SLAM特征
   // 同时检查是否已满足延迟时间要求（用于避免初始化阶段SLAM特征点质量不佳的问题）
   // Append a new SLAM feature if we have the room to do so
-  // Also check that we have waited our delay amount (normally prevents bad first set of slam points)
-  if (state->_options.max_slam_features > 0 && //需要做SLAM 特征
-      message.timestamp - startup_time >= params.dt_slam_delay && //等待延迟时间
-      (int)state->_features_SLAM.size() < state->_options.max_slam_features + curr_aruco_tags) {  //特征点数目超过限制
+  // Also check that we have waited our delay amount (normally prevents bad
+  // first set of slam points)
+  if (state->_options.max_slam_features > 0 &&  // 需要做SLAM 特征
+      message.timestamp - startup_time >=
+          params.dt_slam_delay &&  // 等待延迟时间
+      (int)state->_features_SLAM.size() <
+          state->_options.max_slam_features +
+              curr_aruco_tags) {  // 特征点数目超过限制
     // 获取要添加的总数，然后根据边缘化特征数组获取可以添加的最大数量
-    // Get the total amount to add, then the max amount that we can add given our marginalize feature array
-    int amount_to_add = (state->_options.max_slam_features + curr_aruco_tags) - (int)state->_features_SLAM.size();
-    int valid_amount = (amount_to_add > (int)feats_maxtracks.size()) ? (int)feats_maxtracks.size() : amount_to_add;
+    // Get the total amount to add, then the max amount that we can add given
+    // our marginalize feature array
+    int amount_to_add = (state->_options.max_slam_features + curr_aruco_tags) -
+                        (int)state->_features_SLAM.size();
+    int valid_amount = (amount_to_add > (int)feats_maxtracks.size())
+                           ? (int)feats_maxtracks.size()
+                           : amount_to_add;
     // 如果我们至少有一个可以添加，让我们添加它！
     // 注意：我们从feat_marg数组中移除它们，因为我们不想重用信息...
     // 目前从尾部取特征依赖于特征数据库的返回顺序，可能不够可靠
     // If we have at least 1 that we can add, lets add it!
-    // Note: we remove them from the feat_marg array since we don't want to reuse information...
+    // Note: we remove them from the feat_marg array since we don't want to
+    // reuse information...
     if (valid_amount > 0) {
-      feats_slam.insert(feats_slam.end(), feats_maxtracks.end() - valid_amount, feats_maxtracks.end());
-      feats_maxtracks.erase(feats_maxtracks.end() - valid_amount, feats_maxtracks.end());
+      feats_slam.insert(feats_slam.end(), feats_maxtracks.end() - valid_amount,
+                        feats_maxtracks.end());
+      feats_maxtracks.erase(feats_maxtracks.end() - valid_amount,
+                            feats_maxtracks.end());
     }
   }
 
@@ -765,31 +866,40 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
   // 注意：如果我们有一个丢失跟踪的SLAM特征，我们应该将其边缘化
   // 注意：我们只在当前相机消息是特征被看到的地方时才强制执行此操作
   // 注意：如果你不使用FEJ，这些类型的SLAM特征会*降低*估计器性能....//TOASK:为什么？
-  // 注意：如果SLAM特征连续几次更新失败，我们也会将其边缘化 这里是特征跟踪策略，特征跟踪策略决定了特征的寿命 可以加入图像质量评价
-  // Loop through current SLAM features, we have tracks of them, grab them for this update!
-  // NOTE: if we have a slam feature that has lost tracking, then we should marginalize it out
-  // NOTE: we only enforce this if the current camera message is where the feature was seen from
-  // NOTE: if you do not use FEJ, these types of slam features *degrade* the estimator performance....
-  // NOTE: we will also marginalize SLAM features if they have failed their update a couple times in a row
-  for (std::pair<const size_t, std::shared_ptr<Landmark>> &landmark : state->_features_SLAM) {
+  // 注意：如果SLAM特征连续几次更新失败，我们也会将其边缘化
+  // 这里是特征跟踪策略，特征跟踪策略决定了特征的寿命 可以加入图像质量评价 Loop
+  // through current SLAM features, we have tracks of them, grab them for this
+  // update! NOTE: if we have a slam feature that has lost tracking, then we
+  // should marginalize it out NOTE: we only enforce this if the current camera
+  // message is where the feature was seen from NOTE: if you do not use FEJ,
+  // these types of slam features *degrade* the estimator performance.... NOTE:
+  // we will also marginalize SLAM features if they have failed their update a
+  // couple times in a row
+  for (std::pair<const size_t, std::shared_ptr<Landmark>> &landmark :
+       state->_features_SLAM) {
     if (trackARUCO != nullptr) {
-      std::shared_ptr<Feature> feat1 = trackARUCO->get_feature_database()->get_feature(landmark.second->_featid);
-      if (feat1 != nullptr)
-        feats_slam.push_back(feat1);
+      std::shared_ptr<Feature> feat1 =
+          trackARUCO->get_feature_database()->get_feature(
+              landmark.second->_featid);
+      if (feat1 != nullptr) feats_slam.push_back(feat1);
     }
-    std::shared_ptr<Feature> feat2 = trackFEATS->get_feature_database()->get_feature(landmark.second->_featid);
-    if (feat2 != nullptr)
-      feats_slam.push_back(feat2);
+    std::shared_ptr<Feature> feat2 =
+        trackFEATS->get_feature_database()->get_feature(
+            landmark.second->_featid);
+    if (feat2 != nullptr) feats_slam.push_back(feat2);
     assert(landmark.second->_unique_camera_id != -1);
     bool current_unique_cam =
-        std::find(message.sensor_ids.begin(), message.sensor_ids.end(), landmark.second->_unique_camera_id) != message.sensor_ids.end();
+        std::find(message.sensor_ids.begin(), message.sensor_ids.end(),
+                  landmark.second->_unique_camera_id) !=
+        message.sensor_ids.end();
     // 改进的边缘化策略：
     // 1. 使用连续丢失帧数而不是单次丢失（避免偶尔遮挡误判）
     // 2. 根据运动状态调整阈值（静止时更宽容，运动时更严格）
     // 3. 结合更新失败次数综合判断
     // TODO: 更好的策略建议：
     //    - 添加连续丢失帧数计数器（如：tracking_fail_count）
-    //    - 静止状态（has_moved_since_zupt=false）：连续丢失N帧（如5-10帧）才边缘化
+    //    -
+    //    静止状态（has_moved_since_zupt=false）：连续丢失N帧（如5-10帧）才边缘化
     //    - 运动状态：连续丢失M帧（如2-3帧）就边缘化
     //    - 考虑特征历史质量（跟踪成功率、chi2历史等）
     //    - 使用时间窗口而非帧数（如：丢失超过X秒才边缘化）
@@ -816,7 +926,8 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
   // Separate our SLAM features into new ones, and old ones
   std::vector<std::shared_ptr<Feature>> feats_slam_DELAYED, feats_slam_UPDATE;
   for (size_t i = 0; i < feats_slam.size(); i++) {
-    if (state->_features_SLAM.find(feats_slam.at(i)->featid) != state->_features_SLAM.end()) {
+    if (state->_features_SLAM.find(feats_slam.at(i)->featid) !=
+        state->_features_SLAM.end()) {
       feats_slam_UPDATE.push_back(feats_slam.at(i));
       // PRINT_DEBUG("[UPDATE-SLAM]: found old feature %d (%d
       // measurements)\n",(int)feats_slam.at(i)->featid,(int)feats_slam.at(i)->timestamps_left.size());
@@ -827,30 +938,35 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
     }
   }
 
-  // 连接MSCKF特征数组（即不用于SLAM更新的特征） 
-  // Concatenate our MSCKF feature arrays (i.e., ones not being used for slam updates)
+  // 连接MSCKF特征数组（即不用于SLAM更新的特征）
+  // Concatenate our MSCKF feature arrays (i.e., ones not being used for slam
+  // updates)
   std::vector<std::shared_ptr<Feature>> featsup_MSCKF = feats_lost;
-  featsup_MSCKF.insert(featsup_MSCKF.end(), feats_marg.begin(), feats_marg.end());
-  featsup_MSCKF.insert(featsup_MSCKF.end(), feats_maxtracks.begin(), feats_maxtracks.end());
+  featsup_MSCKF.insert(featsup_MSCKF.end(), feats_marg.begin(),
+                       feats_marg.end());
+  featsup_MSCKF.insert(featsup_MSCKF.end(), feats_maxtracks.begin(),
+                       feats_maxtracks.end());
 
   //===================================================================================
   // 现在我们有了特征列表，让我们为MSCKF和SLAM执行EKF更新！
-  // Now that we have a list of features, lets do the EKF update for MSCKF and SLAM!
+  // Now that we have a list of features, lets do the EKF update for MSCKF and
+  // SLAM!
   //===================================================================================
 
   // 根据跟踪长度排序
   // TODO: 我们应该有更好的选择逻辑（例如视场中的均匀特征分布等）
   // TODO: 现在"丢失"的特征在这个向量的前面，而末尾的是长跟踪
   // Sort based on track length
-  // TODO: we should have better selection logic here (i.e. even feature distribution in the FOV etc..)
-  // TODO: right now features that are "lost" are at the front of this vector, while ones at the end are long-tracks
-  auto compare_feat = [](const std::shared_ptr<Feature> &a, const std::shared_ptr<Feature> &b) -> bool {
+  // TODO: we should have better selection logic here (i.e. even feature
+  // distribution in the FOV etc..)
+  // TODO: right now features that are "lost" are at the front of this vector,
+  // while ones at the end are long-tracks
+  auto compare_feat = [](const std::shared_ptr<Feature> &a,
+                         const std::shared_ptr<Feature> &b) -> bool {
     size_t asize = 0;
     size_t bsize = 0;
-    for (const auto &pair : a->timestamps)
-      asize += pair.second.size();
-    for (const auto &pair : b->timestamps)
-      bsize += pair.second.size();
+    for (const auto &pair : a->timestamps) asize += pair.second.size();
+    for (const auto &pair : b->timestamps) bsize += pair.second.size();
     return asize < bsize;
   };
   std::sort(featsup_MSCKF.begin(), featsup_MSCKF.end(), compare_feat);
@@ -859,10 +975,13 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
   // 注意：如果我们有超过最大值的特征，我们为这次更新选择"最佳"的（即最大跟踪）
   // 注意：这应该只在你想跟踪大量特征或计算资源有限时使用
   // Pass them to our MSCKF updater
-  // NOTE: if we have more then the max, we select the "best" ones (i.e. max tracks) for this update
-  // NOTE: this should only really be used if you want to track a lot of features, or have limited computational resources
+  // NOTE: if we have more then the max, we select the "best" ones (i.e. max
+  // tracks) for this update NOTE: this should only really be used if you want
+  // to track a lot of features, or have limited computational resources
   if ((int)featsup_MSCKF.size() > state->_options.max_msckf_in_update)
-    featsup_MSCKF.erase(featsup_MSCKF.begin(), featsup_MSCKF.end() - state->_options.max_msckf_in_update);
+    featsup_MSCKF.erase(
+        featsup_MSCKF.begin(),
+        featsup_MSCKF.end() - state->_options.max_msckf_in_update);
   updaterMSCKF->update(state, featsup_MSCKF);
   propagator->invalidate_cache();
   rT4 = rtime_now();
@@ -878,14 +997,19 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
     // 获取我们将用于更新的特征子向量
     // Get sub vector of the features we will update with
     std::vector<std::shared_ptr<Feature>> featsup_TEMP;
-    featsup_TEMP.insert(featsup_TEMP.begin(), feats_slam_UPDATE.begin(),
-                        feats_slam_UPDATE.begin() + std::min(state->_options.max_slam_in_update, (int)feats_slam_UPDATE.size()));
-    feats_slam_UPDATE.erase(feats_slam_UPDATE.begin(),
-                            feats_slam_UPDATE.begin() + std::min(state->_options.max_slam_in_update, (int)feats_slam_UPDATE.size()));
+    featsup_TEMP.insert(
+        featsup_TEMP.begin(), feats_slam_UPDATE.begin(),
+        feats_slam_UPDATE.begin() + std::min(state->_options.max_slam_in_update,
+                                             (int)feats_slam_UPDATE.size()));
+    feats_slam_UPDATE.erase(
+        feats_slam_UPDATE.begin(),
+        feats_slam_UPDATE.begin() + std::min(state->_options.max_slam_in_update,
+                                             (int)feats_slam_UPDATE.size()));
     // 执行更新
     // Do the update
     updaterSLAM->update(state, featsup_TEMP);
-    feats_slam_UPDATE_TEMP.insert(feats_slam_UPDATE_TEMP.end(), featsup_TEMP.begin(), featsup_TEMP.end());
+    feats_slam_UPDATE_TEMP.insert(feats_slam_UPDATE_TEMP.end(),
+                                  featsup_TEMP.begin(), featsup_TEMP.end());
     propagator->invalidate_cache();
   }
   feats_slam_UPDATE = feats_slam_UPDATE_TEMP;
@@ -902,7 +1026,6 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
   // 重新三角化当前帧中的所有当前跟踪
   // Re-triangulate all current tracks in the current frame
   if (message.sensor_ids.at(0) == 0) {
-
     // 重新三角化特征
     // Re-triangulate features
     retriangulate_active_tracks(message);
@@ -930,9 +1053,10 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
   // 从提取器中移除在上一个时间步用于更新的特征
   // 这允许如果这次未能使用测量，将来可以使用它们
   // 注意我们需要在输入新图像之前执行此操作，因为我们希望所有新测量不被删除
-  // Remove features that where used for the update from our extractors at the last timestep
-  // This allows for measurements to be used in the future if they failed to be used this time
-  // Note we need to do this before we feed a new image, as we want all new measurements to NOT be deleted
+  // Remove features that where used for the update from our extractors at the
+  // last timestep This allows for measurements to be used in the future if they
+  // failed to be used this time Note we need to do this before we feed a new
+  // image, as we want all new measurements to NOT be deleted
   trackFEATS->get_feature_database()->cleanup();
   if (trackARUCO != nullptr) {
     trackARUCO->get_feature_database()->cleanup();
@@ -940,8 +1064,10 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
 
   // 如果我们将要失去一个锚点姿态，首先执行锚点更改
   // 锚点的意义：
-  // 1. 对于"相对表示"（ANCHORED_*）的SLAM特征，它们的位置不是用全局坐标表示的，而是相对于某个"锚点相机姿态"表示的
-  // 2. 锚点通常是特征第一次被观测到的相机姿态，特征的位置存储在锚点相机坐标系中（或相对于锚点的表示，如逆深度）
+  // 1.
+  // 对于"相对表示"（ANCHORED_*）的SLAM特征，它们的位置不是用全局坐标表示的，而是相对于某个"锚点相机姿态"表示的
+  // 2.
+  // 锚点通常是特征第一次被观测到的相机姿态，特征的位置存储在锚点相机坐标系中（或相对于锚点的表示，如逆深度）
   // 3. 使用锚点的好处：
   //    - 避免全局坐标的不可观测性问题（特别是全局yaw角）
   //    - 在相机坐标系中特征通常有正的深度，数值更稳定
@@ -953,27 +1079,38 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
   //    - 这需要重新计算特征在新锚点下的表示，并正确传播协方差矩阵
   // First do anchor change if we are about to lose an anchor pose
   // Anchor meaning:
-  // 1. For "relative representation" (ANCHORED_*) SLAM features, their positions are not represented in global coordinates,
+  // 1. For "relative representation" (ANCHORED_*) SLAM features, their
+  // positions are not represented in global coordinates,
   //    but relative to some "anchor camera pose"
-  // 2. The anchor is usually the camera pose where the feature was first observed, and the feature position is stored in the
+  // 2. The anchor is usually the camera pose where the feature was first
+  // observed, and the feature position is stored in the
   //    anchor camera frame (or relative representation like inverse depth)
   // 3. Benefits of using anchors:
-  //    - Avoids unobservability issues with global coordinates (especially global yaw)
-  //    - Features in camera frame usually have positive depth, more numerically stable
-  //    - Can use more compact representations (e.g., single inverse depth) to reduce state dimension
+  //    - Avoids unobservability issues with global coordinates (especially
+  //    global yaw)
+  //    - Features in camera frame usually have positive depth, more numerically
+  //    stable
+  //    - Can use more compact representations (e.g., single inverse depth) to
+  //    reduce state dimension
   // 4. Why anchor change is needed:
-  //    - Sliding window periodically marginalizes oldest poses to control state size
-  //    - If a feature's anchor is exactly the pose to be marginalized, the feature loses its reference frame
-  //    - Therefore, must switch anchor to a newer pose still in the state before marginalization
-  //    - This requires recomputing the feature representation in the new anchor frame and correctly propagating covariance
+  //    - Sliding window periodically marginalizes oldest poses to control state
+  //    size
+  //    - If a feature's anchor is exactly the pose to be marginalized, the
+  //    feature loses its reference frame
+  //    - Therefore, must switch anchor to a newer pose still in the state
+  //    before marginalization
+  //    - This requires recomputing the feature representation in the new anchor
+  //    frame and correctly propagating covariance
   updaterSLAM->change_anchors(state);
 
   // 清理比边缘化时间更旧的特征
   // Cleanup any features older than the marginalization time
   if ((int)state->_clones_IMU.size() > state->_options.max_clone_size) {
-    trackFEATS->get_feature_database()->cleanup_measurements(state->margtimestep());
+    trackFEATS->get_feature_database()->cleanup_measurements(
+        state->margtimestep());
     if (trackARUCO != nullptr) {
-      trackARUCO->get_feature_database()->cleanup_measurements(state->margtimestep());
+      trackARUCO->get_feature_database()->cleanup_measurements(
+          state->margtimestep());
     }
   }
 
@@ -989,25 +1126,31 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
 
   // 获取时间统计信息
   // Get timing statitics information
-  double time_track = rtime_ms(rT1, rT2);      // 特征跟踪时间
-  double time_prop = rtime_ms(rT2, rT3);        // 状态传播时间
-  double time_msckf = rtime_ms(rT3, rT4);       // MSCKF更新时间
+  double time_track = rtime_ms(rT1, rT2);        // 特征跟踪时间
+  double time_prop = rtime_ms(rT2, rT3);         // 状态传播时间
+  double time_msckf = rtime_ms(rT3, rT4);        // MSCKF更新时间
   double time_slam_update = rtime_ms(rT4, rT5);  // SLAM更新时间
-  double time_slam_delay = rtime_ms(rT5, rT6); // SLAM延迟初始化时间
-  double time_marg = rtime_ms(rT6, rT7);       // 重新三角化和边缘化时间
-  double time_total = rtime_ms(rT1, rT7);     // 总时间
+  double time_slam_delay = rtime_ms(rT5, rT6);   // SLAM延迟初始化时间
+  double time_marg = rtime_ms(rT6, rT7);         // 重新三角化和边缘化时间
+  double time_total = rtime_ms(rT1, rT7);        // 总时间
 
   // 打印时间信息（由配置 print_timing 控制）
   // Timing information (controlled by config print_timing)
   if (params.print_timing) {
     PRINT_INFO(BLUE "[VM]: 跟踪耗时 %.2f ms\n" RESET, time_track);
     PRINT_INFO(BLUE "[VM]: 传播耗时 %.2f ms\n" RESET, time_prop);
-    PRINT_INFO(BLUE "[VM]: MSCKF更新耗时 %.2f ms (%d 个特征)\n" RESET, time_msckf, (int)featsup_MSCKF.size());
+    PRINT_INFO(BLUE "[VM]: MSCKF更新耗时 %.2f ms (%d 个特征)\n" RESET,
+               time_msckf, (int)featsup_MSCKF.size());
     if (state->_options.max_slam_features > 0) {
-      PRINT_INFO(BLUE "[VM]: SLAM更新耗时 %.2f ms (%d 个特征)\n" RESET, time_slam_update, (int)state->_features_SLAM.size());
-      PRINT_INFO(BLUE "[VM]: SLAM延迟初始化耗时 %.2f ms (%d 个特征)\n" RESET, time_slam_delay, (int)feats_slam_DELAYED.size());
+      PRINT_INFO(BLUE "[VM]: SLAM更新耗时 %.2f ms (%d 个特征)\n" RESET,
+                 time_slam_update, (int)state->_features_SLAM.size());
+      PRINT_INFO(BLUE "[VM]: SLAM延迟初始化耗时 %.2f ms (%d 个特征)\n" RESET,
+                 time_slam_delay, (int)feats_slam_DELAYED.size());
     }
-    PRINT_INFO(BLUE "[VM]: 重新三角化和边缘化耗时 %.2f ms (状态中有 %d 个克隆)\n" RESET, time_marg, (int)state->_clones_IMU.size());
+    PRINT_INFO(
+        BLUE
+        "[VM]: 重新三角化和边缘化耗时 %.2f ms (状态中有 %d 个克隆)\n" RESET,
+        time_marg, (int)state->_clones_IMU.size());
 
     std::stringstream ss;
     ss << "[VM]: 总耗时 " << std::setprecision(2) << time_total << " ms (相机";
@@ -1028,86 +1171,129 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
     double timestamp_inI = state->_timestamp + t_ItoC;
     // 追加到文件
     // Append to the file
-    of_statistics << std::fixed << std::setprecision(15) << timestamp_inI << "," << std::fixed << std::setprecision(5)
-                  << (time_track / 1000.0) << "," << (time_prop / 1000.0) << "," << (time_msckf / 1000.0) << ",";
+    of_statistics << std::fixed << std::setprecision(15) << timestamp_inI << ","
+                  << std::fixed << std::setprecision(5) << (time_track / 1000.0)
+                  << "," << (time_prop / 1000.0) << "," << (time_msckf / 1000.0)
+                  << ",";
     if (state->_options.max_slam_features > 0) {
-      of_statistics << (time_slam_update / 1000.0) << "," << (time_slam_delay / 1000.0) << ",";
+      of_statistics << (time_slam_update / 1000.0) << ","
+                    << (time_slam_delay / 1000.0) << ",";
     }
-    of_statistics << (time_marg / 1000.0) << "," << (time_total / 1000.0) << std::endl;
+    of_statistics << (time_marg / 1000.0) << "," << (time_total / 1000.0)
+                  << std::endl;
     of_statistics.flush();
   }
 
   // 更新我们行驶的距离
   // Update our distance traveled
-  if (timelastupdate != -1 && state->_clones_IMU.find(timelastupdate) != state->_clones_IMU.end()) {
-    Eigen::Matrix<double, 3, 1> dx = state->_imu->pos() - state->_clones_IMU.at(timelastupdate)->pos();
+  if (timelastupdate != -1 &&
+      state->_clones_IMU.find(timelastupdate) != state->_clones_IMU.end()) {
+    Eigen::Matrix<double, 3, 1> dx =
+        state->_imu->pos() - state->_clones_IMU.at(timelastupdate)->pos();
     distance += dx.norm();  // 累加位移距离
   }
   timelastupdate = message.timestamp;  // 更新最后更新时间戳
 
   // 调试：根据配置拼接状态与标定信息，最后一行打印（由 print_state_calib 控制）
   if (params.print_state_calib) {
-  std::ostringstream ss;
-  ss << std::fixed << std::setprecision(3)
-     << "[VM]: q_GtoI = " << state->_imu->quat()(0) << "," << state->_imu->quat()(1) << "," << state->_imu->quat()(2) << ","
-     << state->_imu->quat()(3) << " | p_IinG = " << state->_imu->pos()(0) << "," << state->_imu->pos()(1) << ","
-     << state->_imu->pos()(2) << " | Dist = " << std::setprecision(2) << distance << " s | bg = " << std::setprecision(4)
-     << state->_imu->bias_g()(0) << "," << state->_imu->bias_g()(1) << "," << state->_imu->bias_g()(2) << " | ba = "
-     << state->_imu->bias_a()(0) << "," << state->_imu->bias_a()(1) << "," << state->_imu->bias_a()(2);
+    std::ostringstream ss;
+    ss << std::fixed << std::setprecision(3)
+       << "[VM]: q_GtoI = " << state->_imu->quat()(0) << ","
+       << state->_imu->quat()(1) << "," << state->_imu->quat()(2) << ","
+       << state->_imu->quat()(3) << " | p_IinG = " << state->_imu->pos()(0)
+       << "," << state->_imu->pos()(1) << "," << state->_imu->pos()(2)
+       << " | Dist = " << std::setprecision(2) << distance
+       << " s | bg = " << std::setprecision(4) << state->_imu->bias_g()(0)
+       << "," << state->_imu->bias_g()(1) << "," << state->_imu->bias_g()(2)
+       << " | ba = " << state->_imu->bias_a()(0) << ","
+       << state->_imu->bias_a()(1) << "," << state->_imu->bias_a()(2);
 
-  if (state->_options.do_calib_camera_timeoffset) {
-    ss << " | 相机-IMU时间偏移 = " << std::setprecision(5) << state->_calib_dt_CAMtoIMU->value()(0);
-  }
-  if (state->_options.do_calib_camera_intrinsics) {
-    for (int i = 0; i < state->_options.num_cameras; i++) {
-      std::shared_ptr<Vec> calib = state->_cam_intrinsics.at(i);
-      ss << " | 相机" << i << "内参 = " << std::setprecision(3) << calib->value()(0) << "," << calib->value()(1) << ","
-         << calib->value()(2) << "," << calib->value()(3) << " | " << calib->value()(4) << "," << calib->value()(5) << ","
-         << calib->value()(6) << "," << calib->value()(7);
+    if (state->_options.do_calib_camera_timeoffset) {
+      ss << " | 相机-IMU时间偏移 = " << std::setprecision(5)
+         << state->_calib_dt_CAMtoIMU->value()(0);
     }
-  }
-  if (state->_options.do_calib_camera_pose) {
-    for (int i = 0; i < state->_options.num_cameras; i++) {
-      std::shared_ptr<PoseJPL> calib = state->_calib_IMUtoCAM.at(i);
-      ss << " | 相机" << i << "外参 = " << std::setprecision(3) << calib->quat()(0) << "," << calib->quat()(1) << ","
-         << calib->quat()(2) << "," << calib->quat()(3) << " | " << calib->pos()(0) << "," << calib->pos()(1) << ","
-         << calib->pos()(2);
+    if (state->_options.do_calib_camera_intrinsics) {
+      for (int i = 0; i < state->_options.num_cameras; i++) {
+        std::shared_ptr<Vec> calib = state->_cam_intrinsics.at(i);
+        ss << " | 相机" << i << "内参 = " << std::setprecision(3)
+           << calib->value()(0) << "," << calib->value()(1) << ","
+           << calib->value()(2) << "," << calib->value()(3) << " | "
+           << calib->value()(4) << "," << calib->value()(5) << ","
+           << calib->value()(6) << "," << calib->value()(7);
+      }
     }
-  }
-  if (state->_options.do_calib_imu_intrinsics && state->_options.imu_model == StateOptions::ImuModel::KALIBR) {
-    ss << " | q_GYROtoI = " << std::setprecision(3) << state->_calib_imu_GYROtoIMU->value()(0) << ","
-       << state->_calib_imu_GYROtoIMU->value()(1) << "," << state->_calib_imu_GYROtoIMU->value()(2) << ","
-       << state->_calib_imu_GYROtoIMU->value()(3);
-  }
-  if (state->_options.do_calib_imu_intrinsics && state->_options.imu_model == StateOptions::ImuModel::RPNG) {
-    ss << " | q_ACCtoI = " << std::setprecision(3) << state->_calib_imu_ACCtoIMU->value()(0) << ","
-       << state->_calib_imu_ACCtoIMU->value()(1) << "," << state->_calib_imu_ACCtoIMU->value()(2) << ","
-       << state->_calib_imu_ACCtoIMU->value()(3);
-  }
-  if (state->_options.do_calib_imu_intrinsics && state->_options.imu_model == StateOptions::ImuModel::KALIBR) {
-    ss << " | Dw = " << std::setprecision(4) << state->_calib_imu_dw->value()(0) << "," << state->_calib_imu_dw->value()(1)
-       << "," << state->_calib_imu_dw->value()(2) << "," << state->_calib_imu_dw->value()(3)
-       << "," << state->_calib_imu_dw->value()(4) << "," << state->_calib_imu_dw->value()(5)
-       << " | Da = " << state->_calib_imu_da->value()(0) << "," << state->_calib_imu_da->value()(1) << ","
-       << state->_calib_imu_da->value()(2) << "," << state->_calib_imu_da->value()(3) << ","
-       << state->_calib_imu_da->value()(4) << "," << state->_calib_imu_da->value()(5);
-  }
-  if (state->_options.do_calib_imu_intrinsics && state->_options.imu_model == StateOptions::ImuModel::RPNG) {
-    ss << " | Dw = " << std::setprecision(4) << state->_calib_imu_dw->value()(0) << "," << state->_calib_imu_dw->value()(1)
-       << "," << state->_calib_imu_dw->value()(2) << "," << state->_calib_imu_dw->value()(3) << ","
-       << state->_calib_imu_dw->value()(4) << "," << state->_calib_imu_dw->value()(5)
-       << " | Da = " << state->_calib_imu_da->value()(0) << "," << state->_calib_imu_da->value()(1) << ","
-       << state->_calib_imu_da->value()(2) << "," << state->_calib_imu_da->value()(3) << ","
-       << state->_calib_imu_da->value()(4) << "," << state->_calib_imu_da->value()(5);
-  }
-  if (state->_options.do_calib_imu_intrinsics && state->_options.do_calib_imu_g_sensitivity) {
-    ss << " | Tg = " << std::setprecision(4) << state->_calib_imu_tg->value()(0) << "," << state->_calib_imu_tg->value()(1)
-       << "," << state->_calib_imu_tg->value()(2) << "," << state->_calib_imu_tg->value()(3) << ","
-       << state->_calib_imu_tg->value()(4) << "," << state->_calib_imu_tg->value()(5) << ","
-       << state->_calib_imu_tg->value()(6) << "," << state->_calib_imu_tg->value()(7) << ","
-       << state->_calib_imu_tg->value()(8);
-  }
-  ss << "\n";
-  PRINT_INFO("%s", ss.str().c_str());
+    if (state->_options.do_calib_camera_pose) {
+      for (int i = 0; i < state->_options.num_cameras; i++) {
+        std::shared_ptr<PoseJPL> calib = state->_calib_IMUtoCAM.at(i);
+        ss << " | 相机" << i << "外参 = " << std::setprecision(3)
+           << calib->quat()(0) << "," << calib->quat()(1) << ","
+           << calib->quat()(2) << "," << calib->quat()(3) << " | "
+           << calib->pos()(0) << "," << calib->pos()(1) << ","
+           << calib->pos()(2);
+      }
+    }
+    if (state->_options.do_calib_imu_intrinsics &&
+        state->_options.imu_model == StateOptions::ImuModel::KALIBR) {
+      ss << " | q_GYROtoI = " << std::setprecision(3)
+         << state->_calib_imu_GYROtoIMU->value()(0) << ","
+         << state->_calib_imu_GYROtoIMU->value()(1) << ","
+         << state->_calib_imu_GYROtoIMU->value()(2) << ","
+         << state->_calib_imu_GYROtoIMU->value()(3);
+    }
+    if (state->_options.do_calib_imu_intrinsics &&
+        state->_options.imu_model == StateOptions::ImuModel::RPNG) {
+      ss << " | q_ACCtoI = " << std::setprecision(3)
+         << state->_calib_imu_ACCtoIMU->value()(0) << ","
+         << state->_calib_imu_ACCtoIMU->value()(1) << ","
+         << state->_calib_imu_ACCtoIMU->value()(2) << ","
+         << state->_calib_imu_ACCtoIMU->value()(3);
+    }
+    if (state->_options.do_calib_imu_intrinsics &&
+        state->_options.imu_model == StateOptions::ImuModel::KALIBR) {
+      ss << " | Dw = " << std::setprecision(4)
+         << state->_calib_imu_dw->value()(0) << ","
+         << state->_calib_imu_dw->value()(1) << ","
+         << state->_calib_imu_dw->value()(2) << ","
+         << state->_calib_imu_dw->value()(3) << ","
+         << state->_calib_imu_dw->value()(4) << ","
+         << state->_calib_imu_dw->value()(5)
+         << " | Da = " << state->_calib_imu_da->value()(0) << ","
+         << state->_calib_imu_da->value()(1) << ","
+         << state->_calib_imu_da->value()(2) << ","
+         << state->_calib_imu_da->value()(3) << ","
+         << state->_calib_imu_da->value()(4) << ","
+         << state->_calib_imu_da->value()(5);
+    }
+    if (state->_options.do_calib_imu_intrinsics &&
+        state->_options.imu_model == StateOptions::ImuModel::RPNG) {
+      ss << " | Dw = " << std::setprecision(4)
+         << state->_calib_imu_dw->value()(0) << ","
+         << state->_calib_imu_dw->value()(1) << ","
+         << state->_calib_imu_dw->value()(2) << ","
+         << state->_calib_imu_dw->value()(3) << ","
+         << state->_calib_imu_dw->value()(4) << ","
+         << state->_calib_imu_dw->value()(5)
+         << " | Da = " << state->_calib_imu_da->value()(0) << ","
+         << state->_calib_imu_da->value()(1) << ","
+         << state->_calib_imu_da->value()(2) << ","
+         << state->_calib_imu_da->value()(3) << ","
+         << state->_calib_imu_da->value()(4) << ","
+         << state->_calib_imu_da->value()(5);
+    }
+    if (state->_options.do_calib_imu_intrinsics &&
+        state->_options.do_calib_imu_g_sensitivity) {
+      ss << " | Tg = " << std::setprecision(4)
+         << state->_calib_imu_tg->value()(0) << ","
+         << state->_calib_imu_tg->value()(1) << ","
+         << state->_calib_imu_tg->value()(2) << ","
+         << state->_calib_imu_tg->value()(3) << ","
+         << state->_calib_imu_tg->value()(4) << ","
+         << state->_calib_imu_tg->value()(5) << ","
+         << state->_calib_imu_tg->value()(6) << ","
+         << state->_calib_imu_tg->value()(7) << ","
+         << state->_calib_imu_tg->value()(8);
+    }
+    ss << "\n";
+    PRINT_INFO("%s", ss.str().c_str());
   }
 }

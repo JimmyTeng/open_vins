@@ -21,11 +21,10 @@
 
 #include "StaticInitializer.h"
 
-#include "utils/helper.h"
-
 #include "feat/FeatureHelper.h"
 #include "types/IMU.h"
 #include "utils/colors.h"
+#include "utils/helper.h"
 #include "utils/print.h"
 #include "utils/quat_ops.h"
 #include "utils/sensor_data.h"
@@ -36,16 +35,19 @@ using namespace ov_init;
 
 size_t StaticInitializer::min_imu_samples_per_window() const { return 2; }
 
-bool StaticInitializer::initialize(double &timestamp, Eigen::MatrixXd &covariance, std::vector<std::shared_ptr<Type>> &order,
-                                   std::shared_ptr<IMU> t_imu, bool wait_for_jerk) {
-
+bool StaticInitializer::initialize(double &timestamp,
+                                   Eigen::MatrixXd &covariance,
+                                   std::vector<std::shared_ptr<Type>> &order,
+                                   std::shared_ptr<IMU> t_imu,
+                                   bool wait_for_jerk) {
   PRINT_INFO(CYAN "========================================\n" RESET);
   PRINT_INFO(CYAN "[静态初始化] 静态初始化开始\n" RESET);
   PRINT_INFO(CYAN "========================================\n" RESET);
 
   // 如果没有测量值则返回
   if (imu_data->size() < 2) {
-    PRINT_INFO(YELLOW "[静态初始化] 静态初始化失败: 没有足够的IMU测量值\n" RESET);
+    PRINT_INFO(YELLOW
+               "[静态初始化] 静态初始化失败: 没有足够的IMU测量值\n" RESET);
     return false;
   }
 
@@ -55,7 +57,9 @@ bool StaticInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarianc
 
   // 如果没有足够的数据用于两个窗口则返回
   if (newesttime - oldesttime < params.init_window_time) {
-    PRINT_INFO(YELLOW "[静态初始化] 静态初始化失败: 无法选择IMU读数窗口, 没有足够的读数，没有足够的时间窗口\n" RESET);
+    PRINT_INFO(YELLOW
+               "[静态初始化] 静态初始化失败: 无法选择IMU读数窗口, "
+               "没有足够的读数，没有足够的时间窗口\n" RESET);
     return false;
   }
 
@@ -65,20 +69,26 @@ bool StaticInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarianc
 
   std::vector<ImuData> window_1to0, window_2to1;
   for (const ImuData &data : *imu_data) {
-    if (data.timestamp > newesttime - 0.5 * params.init_window_time && data.timestamp <= newesttime - 0.0 * params.init_window_time) {
-      // 一半窗口时间用于计算加速度的平均值 t∈[newesttime - 0.5 * params.init_window_time, newesttime - 0.0 * params.init_window_time]
+    if (data.timestamp > newesttime - 0.5 * params.init_window_time &&
+        data.timestamp <= newesttime - 0.0 * params.init_window_time) {
+      // 一半窗口时间用于计算加速度的平均值 t∈[newesttime - 0.5 *
+      // params.init_window_time, newesttime - 0.0 * params.init_window_time]
       window_1to0.push_back(data);
     }
-    if (data.timestamp > newesttime - 1.0 * params.init_window_time && data.timestamp <= newesttime - 0.5 * params.init_window_time) {
+    if (data.timestamp > newesttime - 1.0 * params.init_window_time &&
+        data.timestamp <= newesttime - 0.5 * params.init_window_time) {
       // 整个窗口时间用于计算加速度的方差
       window_2to1.push_back(data);
     }
   }
 
   // 如果这两个都失败则返回
-  
-  if (window_1to0.size() < min_imu_samples_per_window() || window_2to1.size() < min_imu_samples_per_window()) {
-    PRINT_INFO(YELLOW "[静态初始化] 静态初始化失败: 窗口选择失败, 无法选择IMU读数窗口, 没有足够的读数\n" RESET);
+
+  if (window_1to0.size() < min_imu_samples_per_window() ||
+      window_2to1.size() < min_imu_samples_per_window()) {
+    PRINT_INFO(YELLOW
+               "[静态初始化] 静态初始化失败: 窗口选择失败, "
+               "无法选择IMU读数窗口, 没有足够的读数\n" RESET);
     return false;
   }
 
@@ -109,14 +119,23 @@ bool StaticInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarianc
   }
   a_var_2to1 = std::sqrt(a_var_2to1 / ((int)window_2to1.size() - 1));
   if (print_debug) {
-    PRINT_INFO(YELLOW "  [静态初始化] IMU 激励标准差统计: 阶段2到1:%.3f, 阶段1到0:%.3f\n" RESET, a_var_2to1, a_var_1to0);
+    PRINT_INFO(YELLOW
+               "  [静态初始化] IMU 激励标准差统计: 阶段2到1:%.3f, "
+               "阶段1到0:%.3f\n" RESET,
+               a_var_2to1, a_var_1to0);
   }
 
   // 情况1: 如果最新窗口低于阈值并且我们想等待直到检测到急动
   // 说明：当前仍静止，等待急动模式需要检测到运动开始才能初始化
-  // wait_for_jerk=true: 系统未启用ZUPT，需要等待急动(从静止到运动的跳变)来确认设备开始运动
+  // wait_for_jerk=true:
+  // 系统未启用ZUPT，需要等待急动(从静止到运动的跳变)来确认设备开始运动
   if (a_var_1to0 < params.init_imu_thresh && wait_for_jerk) {
-    PRINT_INFO(YELLOW "  [静态初始化] 静态初始化失败[情况1-等待急动模式(wait_for_jerk=true,未启用ZUPT)]: 最新窗口仍静止(方差%.3f < 阈值%.3f), 需要等待急动(运动开始)才能初始化\n" RESET, a_var_1to0, params.init_imu_thresh);
+    PRINT_INFO(YELLOW
+               "  [静态初始化] "
+               "静态初始化失败[情况1-等待急动模式(wait_for_jerk=true,"
+               "未启用ZUPT)]: 最新窗口仍静止(方差%.3f < 阈值%.3f), "
+               "需要等待急动(运动开始)才能初始化\n" RESET,
+               a_var_1to0, params.init_imu_thresh);
     return false;
   }
 
@@ -125,17 +144,29 @@ bool StaticInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarianc
   // 说明：旧窗口有运动，等待急动模式下需要先静止才能初始化
   // wait_for_jerk=true: 系统未启用ZUPT，需要先静止再检测到急动才能初始化
   if (a_var_2to1 > params.init_imu_thresh && wait_for_jerk) {
-    PRINT_INFO(YELLOW "  [静态初始化] 静态初始化失败[情况2-等待急动模式(wait_for_jerk=true,未启用ZUPT)]: 旧窗口检测到运动(方差%.3f > 阈值%.3f), 需要等待静止才能初始化\n" RESET, a_var_2to1, params.init_imu_thresh);
+    PRINT_INFO(
+        YELLOW
+        "  [静态初始化] "
+        "静态初始化失败[情况2-等待急动模式(wait_for_jerk=true,未启用ZUPT)]: "
+        "旧窗口检测到运动(方差%.3f > 阈值%.3f), 需要等待静止才能初始化\n" RESET,
+        a_var_2to1, params.init_imu_thresh);
     return false;
   }
 
   // 情况3: 如果任一窗口高于阈值并且我们不等待急动
   // 那么我们不是静止的（即正在移动），所以我们应该等待直到静止
   // 说明：检测到运动，非等待急动模式下需要静止才能初始化
-  // wait_for_jerk=false: 系统已启用ZUPT，可在静止状态下立即初始化，但当前检测到运动需要等待静止
-  if ((a_var_1to0 > params.init_imu_thresh || a_var_2to1 > params.init_imu_thresh) && !wait_for_jerk) {
-    PRINT_INFO(YELLOW "  [静态初始化] 静态初始化失败[情况3-非等待急动模式(wait_for_jerk=false,已启用ZUPT)]: 检测到运动(方差阶段2到1:%.3f, 阶段1到0:%.3f > 阈值%.3f), 需要等待静止才能初始化\n" RESET, a_var_2to1, a_var_1to0,
-               params.init_imu_thresh);
+  // wait_for_jerk=false:
+  // 系统已启用ZUPT，可在静止状态下立即初始化，但当前检测到运动需要等待静止
+  if ((a_var_1to0 > params.init_imu_thresh ||
+       a_var_2to1 > params.init_imu_thresh) &&
+      !wait_for_jerk) {
+    PRINT_INFO(YELLOW
+               "  [静态初始化] "
+               "静态初始化失败[情况3-非等待急动模式(wait_for_jerk=false,"
+               "已启用ZUPT)]: 检测到运动(方差阶段2到1:%.3f, 阶段1到0:%.3f > "
+               "阈值%.3f), 需要等待静止才能初始化\n" RESET,
+               a_var_2to1, a_var_1to0, params.init_imu_thresh);
     return false;
   }
 
@@ -164,10 +195,14 @@ bool StaticInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarianc
   // 创建基础协方差及其协方差排序
   order.clear();
   order.push_back(t_imu);
-  covariance = std::pow(0.02, 2) * Eigen::MatrixXd::Identity(t_imu->size(), t_imu->size());
-  covariance.block(0, 0, 3, 3) = std::pow(0.02, 2) * Eigen::Matrix3d::Identity(); // q
-  covariance.block(3, 3, 3, 3) = std::pow(0.05, 2) * Eigen::Matrix3d::Identity(); // p
-  covariance.block(6, 6, 3, 3) = std::pow(0.01, 2) * Eigen::Matrix3d::Identity(); // v (static)
+  covariance = std::pow(0.02, 2) *
+               Eigen::MatrixXd::Identity(t_imu->size(), t_imu->size());
+  covariance.block(0, 0, 3, 3) =
+      std::pow(0.02, 2) * Eigen::Matrix3d::Identity();  // q
+  covariance.block(3, 3, 3, 3) =
+      std::pow(0.05, 2) * Eigen::Matrix3d::Identity();  // p
+  covariance.block(6, 6, 3, 3) =
+      std::pow(0.01, 2) * Eigen::Matrix3d::Identity();  // v (static)
 
   // VIO系统有4个自由度的不可观测方向，可以任意选择。
   // 这意味着在启动时，我们可以将偏航角和位置固定为100%已知。
@@ -178,8 +213,9 @@ bool StaticInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarianc
   // R_GtoI = R_GtoI*R_GtoG -> H = R_GtoI
   // Eigen::Matrix3d R_GtoI = quat_2_Rot(q_GtoI);
   // covariance(2, 2) = std::pow(1e-4, 2);
-  // covariance.block(0, 0, 3, 3) = R_GtoI * covariance.block(0, 0, 3, 3) * R_GtoI.transpose();
-  // covariance.block(3, 3, 3, 3) = std::pow(1e-3, 2) * Eigen::Matrix3d::Identity();
+  // covariance.block(0, 0, 3, 3) = R_GtoI * covariance.block(0, 0, 3, 3) *
+  // R_GtoI.transpose(); covariance.block(3, 3, 3, 3) = std::pow(1e-3, 2) *
+  // Eigen::Matrix3d::Identity();
 
   PRINT_INFO(CYAN "========================================\n" RESET);
   PRINT_INFO(CYAN "  [静态初始化] 静态初始化成功\n" RESET);

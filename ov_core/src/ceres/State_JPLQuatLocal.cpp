@@ -25,8 +25,8 @@
 
 using namespace ov_init;
 
-bool State_JPLQuatLocal::Plus(const double *x, const double *delta, double *x_plus_delta) const {
-
+bool State_JPLQuatLocal::Plus(const double *x, const double *delta,
+                              double *x_plus_delta) const {
   // Apply the standard JPL update: q <-- [d_th/2; 1] (x) q
   Eigen::Map<const Eigen::Vector4d> q(x);
 
@@ -56,7 +56,8 @@ bool State_JPLQuatLocal::PlusJacobian(const double *x, double *jacobian) const {
   return true;
 }
 
-bool State_JPLQuatLocal::Minus(const double *y, const double *x, double *delta) const {
+bool State_JPLQuatLocal::Minus(const double *y, const double *x,
+                               double *delta) const {
   Eigen::Map<const Eigen::Vector4d> q1(x);
   Eigen::Map<const Eigen::Vector4d> q2(y);
   Eigen::Vector4d q_rel = ov_core::quat_multiply(q2, ov_core::Inv(q1));
@@ -78,7 +79,8 @@ bool State_JPLQuatLocal::Minus(const double *y, const double *x, double *delta) 
   return true;
 }
 
-bool State_JPLQuatLocal::MinusJacobian(const double *x, double *jacobian) const {
+bool State_JPLQuatLocal::MinusJacobian(const double *x,
+                                       double *jacobian) const {
   // This is an approximation: ∂delta/∂x ≈ [I; 0]
   Eigen::Map<Eigen::Matrix<double, 3, 4, Eigen::RowMajor>> j(jacobian);
   j.setZero();
@@ -88,7 +90,8 @@ bool State_JPLQuatLocal::MinusJacobian(const double *x, double *jacobian) const 
 
 #else
 
-bool State_JPLQuatLocal::ComputeJacobian(const double *x, double *jacobian) const {
+bool State_JPLQuatLocal::ComputeJacobian(const double *x,
+                                         double *jacobian) const {
   Eigen::Map<Eigen::Matrix<double, 4, 3, Eigen::RowMajor>> j(jacobian);
   j.topRows<3>().setIdentity();
   j.bottomRows<1>().setZero();

@@ -24,7 +24,6 @@
 using namespace ov_core;
 
 void BsplineSE3::feed_trajectory(std::vector<Eigen::VectorXd> traj_points) {
-
   // 查找平均频率以用作我们的均匀时间步长
   double sumdt = 0;
   for (size_t i = 0; i < traj_points.size() - 1; i++) {
@@ -32,14 +31,16 @@ void BsplineSE3::feed_trajectory(std::vector<Eigen::VectorXd> traj_points) {
   }
   dt = sumdt / (traj_points.size() - 1);
   dt = (dt < 0.05) ? 0.05 : dt;
-  PRINT_DEBUG("[B-SPLINE]: control point dt = %.3f (original dt of %.3f)\n", dt, sumdt / (traj_points.size() - 1));
+  PRINT_DEBUG("[B-SPLINE]: control point dt = %.3f (original dt of %.3f)\n", dt,
+              sumdt / (traj_points.size() - 1));
 
   // 将所有轨迹点转换为SE(3)矩阵
   // 我们被给定 [timestamp, p_IinG, q_GtoI]
   AlignedEigenMat4d trajectory_points;
   for (size_t i = 0; i < traj_points.size() - 1; i++) {
     Eigen::Matrix4d T_IinG = Eigen::Matrix4d::Identity();
-    T_IinG.block(0, 0, 3, 3) = quat_2_Rot(traj_points.at(i).block(4, 0, 4, 1)).transpose();
+    T_IinG.block(0, 0, 3, 3) =
+        quat_2_Rot(traj_points.at(i).block(4, 0, 4, 1)).transpose();
     T_IinG.block(0, 3, 3, 1) = traj_points.at(i).block(1, 0, 3, 1);
     trajectory_points.insert({traj_points.at(i)(0), T_IinG});
   }
@@ -61,27 +62,28 @@ void BsplineSE3::feed_trajectory(std::vector<Eigen::VectorXd> traj_points) {
   // 然后创建样条控制点
   double timestamp_curr = timestamp_min;
   while (true) {
-
     // 获取当前时间的边界位姿
     double t0, t1;
     Eigen::Matrix4d pose0, pose1;
-    bool success = find_bounding_poses(timestamp_curr, trajectory_points, t0, pose0, t1, pose1);
-    // PRINT_DEBUG("[SIM]: time curr = %.6f | lambda = %.3f | dt = %.3f | dtmeas =
+    bool success = find_bounding_poses(timestamp_curr, trajectory_points, t0,
+                                       pose0, t1, pose1);
+    // PRINT_DEBUG("[SIM]: time curr = %.6f | lambda = %.3f | dt = %.3f | dtmeas
+    // =
     // %.3f\n",timestamp_curr,(timestamp_curr-t0)/(t1-t0),dt,(t1-t0));
 
     // 如果我们没有找到边界位姿，那意味着我们已到达数据集的末尾
     // 因此跳出循环，因为我们已经创建了最大数量的控制点
-    if (!success)
-      break;
+    if (!success) break;
 
     // 线性插值并追加到我们的控制点
     double lambda = (timestamp_curr - t0) / (t1 - t0);
-    Eigen::Matrix4d pose_interp = exp_se3(lambda * log_se3(pose1 * Inv_se3(pose0))) * pose0;
+    Eigen::Matrix4d pose_interp =
+        exp_se3(lambda * log_se3(pose1 * Inv_se3(pose0))) * pose0;
     control_points.insert({timestamp_curr, pose_interp});
     timestamp_curr += dt;
     // std::stringstream ss;
-    // ss << pose_interp(0,3) << "," << pose_interp(1,3) << "," << pose_interp(2,3) << std::endl;
-    // PRINT_DEBUG(ss.str().c_str());
+    // ss << pose_interp(0,3) << "," << pose_interp(1,3) << "," <<
+    // pose_interp(2,3) << std::endl; PRINT_DEBUG(ss.str().c_str());
   }
 
   // 系统的开始时间是两个dt，因为我们需要至少两个更旧的控制点
@@ -89,13 +91,15 @@ void BsplineSE3::feed_trajectory(std::vector<Eigen::VectorXd> traj_points) {
   PRINT_DEBUG("[B-SPLINE]: start trajectory time of %.6f\n", timestamp_start);
 }
 
-bool BsplineSE3::get_pose(double timestamp, Eigen::Matrix3d &R_GtoI, Eigen::Vector3d &p_IinG) {
-
+bool BsplineSE3::get_pose(double timestamp, Eigen::Matrix3d &R_GtoI,
+                          Eigen::Vector3d &p_IinG) {
   // 获取期望时间戳的边界位姿
   double t0, t1, t2, t3;
   Eigen::Matrix4d pose0, pose1, pose2, pose3;
-  bool success = find_bounding_control_points(timestamp, control_points, t0, pose0, t1, pose1, t2, pose2, t3, pose3);
-  // PRINT_DEBUG("[SIM]: time curr = %.6f | dt1 = %.3f | dt2 = %.3f | dt3 = %.3f | dt4 = %.3f | success =
+  bool success = find_bounding_control_points(
+      timestamp, control_points, t0, pose0, t1, pose1, t2, pose2, t3, pose3);
+  // PRINT_DEBUG("[SIM]: time curr = %.6f | dt1 = %.3f | dt2 = %.3f | dt3 = %.3f
+  // | dt4 = %.3f | success =
   // %d\n",timestamp,t0-timestamp,t1-timestamp,t2-timestamp,t3-timestamp,(int)success);
 
   // 如果无法获取边界位姿则返回失败
@@ -124,14 +128,16 @@ bool BsplineSE3::get_pose(double timestamp, Eigen::Matrix3d &R_GtoI, Eigen::Vect
   return true;
 }
 
-bool BsplineSE3::get_velocity(double timestamp, Eigen::Matrix3d &R_GtoI, Eigen::Vector3d &p_IinG, Eigen::Vector3d &w_IinI,
+bool BsplineSE3::get_velocity(double timestamp, Eigen::Matrix3d &R_GtoI,
+                              Eigen::Vector3d &p_IinG, Eigen::Vector3d &w_IinI,
                               Eigen::Vector3d &v_IinG) {
-
   // 获取期望时间戳的边界位姿
   double t0, t1, t2, t3;
   Eigen::Matrix4d pose0, pose1, pose2, pose3;
-  bool success = find_bounding_control_points(timestamp, control_points, t0, pose0, t1, pose1, t2, pose2, t3, pose3);
-  // PRINT_DEBUG("[SIM]: time curr = %.6f | dt1 = %.3f | dt2 = %.3f | dt3 = %.3f | dt4 = %.3f | success =
+  bool success = find_bounding_control_points(
+      timestamp, control_points, t0, pose0, t1, pose1, t2, pose2, t3, pose3);
+  // PRINT_DEBUG("[SIM]: time curr = %.6f | dt1 = %.3f | dt2 = %.3f | dt3 = %.3f
+  // | dt4 = %.3f | success =
   // %d\n",timestamp,t0-timestamp,t1-timestamp,t2-timestamp,t3-timestamp,(int)success);
 
   // 如果无法获取边界位姿则返回失败
@@ -171,19 +177,25 @@ bool BsplineSE3::get_velocity(double timestamp, Eigen::Matrix3d &R_GtoI, Eigen::
 
   // 最终获取插值速度
   // 注意: Rdot = R*skew(omega) => R^T*Rdot = skew(omega)
-  Eigen::Matrix4d vel_interp = pose0 * (A0dot * A1 * A2 + A0 * A1dot * A2 + A0 * A1 * A2dot);
-  w_IinI = vee(pose_interp.block(0, 0, 3, 3).transpose() * vel_interp.block(0, 0, 3, 3));
+  Eigen::Matrix4d vel_interp =
+      pose0 * (A0dot * A1 * A2 + A0 * A1dot * A2 + A0 * A1 * A2dot);
+  w_IinI = vee(pose_interp.block(0, 0, 3, 3).transpose() *
+               vel_interp.block(0, 0, 3, 3));
   v_IinG = vel_interp.block(0, 3, 3, 1);
   return true;
 }
 
-bool BsplineSE3::get_acceleration(double timestamp, Eigen::Matrix3d &R_GtoI, Eigen::Vector3d &p_IinG, Eigen::Vector3d &w_IinI,
-                                  Eigen::Vector3d &v_IinG, Eigen::Vector3d &alpha_IinI, Eigen::Vector3d &a_IinG) {
-
+bool BsplineSE3::get_acceleration(double timestamp, Eigen::Matrix3d &R_GtoI,
+                                  Eigen::Vector3d &p_IinG,
+                                  Eigen::Vector3d &w_IinI,
+                                  Eigen::Vector3d &v_IinG,
+                                  Eigen::Vector3d &alpha_IinI,
+                                  Eigen::Vector3d &a_IinG) {
   // 获取期望时间戳的边界位姿
   double t0, t1, t2, t3;
   Eigen::Matrix4d pose0, pose1, pose2, pose3;
-  bool success = find_bounding_control_points(timestamp, control_points, t0, pose0, t1, pose1, t2, pose2, t3, pose3);
+  bool success = find_bounding_control_points(
+      timestamp, control_points, t0, pose0, t1, pose1, t2, pose2, t3, pose3);
 
   // 如果无法获取边界位姿则返回失败
   if (!success) {
@@ -220,9 +232,12 @@ bool BsplineSE3::get_acceleration(double timestamp, Eigen::Matrix3d &R_GtoI, Eig
   Eigen::Matrix4d A0dot = b0dot * omega_10_hat * A0;
   Eigen::Matrix4d A1dot = b1dot * omega_21_hat * A1;
   Eigen::Matrix4d A2dot = b2dot * omega_32_hat * A2;
-  Eigen::Matrix4d A0dotdot = b0dot * omega_10_hat * A0dot + b0dotdot * omega_10_hat * A0;
-  Eigen::Matrix4d A1dotdot = b1dot * omega_21_hat * A1dot + b1dotdot * omega_21_hat * A1;
-  Eigen::Matrix4d A2dotdot = b2dot * omega_32_hat * A2dot + b2dotdot * omega_32_hat * A2;
+  Eigen::Matrix4d A0dotdot =
+      b0dot * omega_10_hat * A0dot + b0dotdot * omega_10_hat * A0;
+  Eigen::Matrix4d A1dotdot =
+      b1dot * omega_21_hat * A1dot + b1dotdot * omega_21_hat * A1;
+  Eigen::Matrix4d A2dotdot =
+      b2dot * omega_32_hat * A2dot + b2dotdot * omega_32_hat * A2;
 
   // 获取插值位姿
   Eigen::Matrix4d pose_interp = pose0 * A0 * A1 * A2;
@@ -231,24 +246,33 @@ bool BsplineSE3::get_acceleration(double timestamp, Eigen::Matrix3d &R_GtoI, Eig
 
   // 获取插值速度
   // 注意: Rdot = R*skew(omega) => R^T*Rdot = skew(omega)
-  Eigen::Matrix4d vel_interp = pose0 * (A0dot * A1 * A2 + A0 * A1dot * A2 + A0 * A1 * A2dot);
-  w_IinI = vee(pose_interp.block(0, 0, 3, 3).transpose() * vel_interp.block(0, 0, 3, 3));
+  Eigen::Matrix4d vel_interp =
+      pose0 * (A0dot * A1 * A2 + A0 * A1dot * A2 + A0 * A1 * A2dot);
+  w_IinI = vee(pose_interp.block(0, 0, 3, 3).transpose() *
+               vel_interp.block(0, 0, 3, 3));
   v_IinG = vel_interp.block(0, 3, 3, 1);
 
   // 最终获取插值加速度
   // 注意: Rdot = R*skew(omega)
-  // 注意: Rdotdot = Rdot*skew(omega) + R*skew(alpha) => R^T*(Rdotdot-Rdot*skew(omega))=skew(alpha)
-  Eigen::Matrix4d acc_interp = pose0 * (A0dotdot * A1 * A2 + A0 * A1dotdot * A2 + A0 * A1 * A2dotdot + 2 * A0dot * A1dot * A2 +
-                                        2 * A0 * A1dot * A2dot + 2 * A0dot * A1 * A2dot);
-  Eigen::Matrix3d omegaskew = pose_interp.block(0, 0, 3, 3).transpose() * vel_interp.block(0, 0, 3, 3);
-  alpha_IinI = vee(pose_interp.block(0, 0, 3, 3).transpose() * (acc_interp.block(0, 0, 3, 3) - vel_interp.block(0, 0, 3, 3) * omegaskew));
+  // 注意: Rdotdot = Rdot*skew(omega) + R*skew(alpha) =>
+  // R^T*(Rdotdot-Rdot*skew(omega))=skew(alpha)
+  Eigen::Matrix4d acc_interp =
+      pose0 * (A0dotdot * A1 * A2 + A0 * A1dotdot * A2 + A0 * A1 * A2dotdot +
+               2 * A0dot * A1dot * A2 + 2 * A0 * A1dot * A2dot +
+               2 * A0dot * A1 * A2dot);
+  Eigen::Matrix3d omegaskew =
+      pose_interp.block(0, 0, 3, 3).transpose() * vel_interp.block(0, 0, 3, 3);
+  alpha_IinI = vee(pose_interp.block(0, 0, 3, 3).transpose() *
+                   (acc_interp.block(0, 0, 3, 3) -
+                    vel_interp.block(0, 0, 3, 3) * omegaskew));
   a_IinG = acc_interp.block(0, 3, 3, 1);
   return true;
 }
 
-bool BsplineSE3::find_bounding_poses(const double timestamp, const AlignedEigenMat4d &poses, double &t0, Eigen::Matrix4d &pose0, double &t1,
+bool BsplineSE3::find_bounding_poses(const double timestamp,
+                                     const AlignedEigenMat4d &poses, double &t0,
+                                     Eigen::Matrix4d &pose0, double &t1,
                                      Eigen::Matrix4d &pose1) {
-
   // 设置默认值
   t0 = -1;
   t1 = -1;
@@ -260,8 +284,9 @@ bool BsplineSE3::find_bounding_poses(const double timestamp, const AlignedEigenM
   bool found_newer = false;
 
   // 查找用于插值的边界位姿
-  auto lower_bound = poses.lower_bound(timestamp); // 查找时间戳，如果不可用则查找next(timestamp)
-  auto upper_bound = poses.upper_bound(timestamp); // 查找next(timestamp)
+  auto lower_bound = poses.lower_bound(
+      timestamp);  // 查找时间戳，如果不可用则查找next(timestamp)
+  auto upper_bound = poses.upper_bound(timestamp);  // 查找next(timestamp)
 
   if (lower_bound != poses.end()) {
     // 检查下界是否为时间戳
@@ -291,17 +316,16 @@ bool BsplineSE3::find_bounding_poses(const double timestamp, const AlignedEigenM
   }
 
   // 断言时间戳
-  if (found_older && found_newer)
-    assert(t0 < t1);
+  if (found_older && found_newer) assert(t0 < t1);
 
   // 如果找到两个边界则返回true
   return (found_older && found_newer);
 }
 
-bool BsplineSE3::find_bounding_control_points(const double timestamp, const AlignedEigenMat4d &poses, double &t0, Eigen::Matrix4d &pose0,
-                                              double &t1, Eigen::Matrix4d &pose1, double &t2, Eigen::Matrix4d &pose2, double &t3,
-                                              Eigen::Matrix4d &pose3) {
-
+bool BsplineSE3::find_bounding_control_points(
+    const double timestamp, const AlignedEigenMat4d &poses, double &t0,
+    Eigen::Matrix4d &pose0, double &t1, Eigen::Matrix4d &pose1, double &t2,
+    Eigen::Matrix4d &pose2, double &t3, Eigen::Matrix4d &pose3) {
   // 设置默认值
   t0 = -1;
   t1 = -1;
@@ -316,8 +340,7 @@ bool BsplineSE3::find_bounding_control_points(const double timestamp, const Alig
   bool success = find_bounding_poses(timestamp, poses, t1, pose1, t2, pose2);
 
   // 如果失败则返回false
-  if (!success)
-    return false;
+  if (!success) return false;
 
   // 现在查找下方和上方的位姿
   auto iter_t1 = poses.find(t1);

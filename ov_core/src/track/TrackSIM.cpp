@@ -27,15 +27,14 @@
 
 using namespace ov_core;
 
-void TrackSIM::feed_measurement_simulation(double timestamp, const std::vector<int> &camids,
-                                           const std::vector<std::vector<std::pair<size_t, Eigen::VectorXf>>> &feats) {
-
+void TrackSIM::feed_measurement_simulation(
+    double timestamp, const std::vector<int> &camids,
+    const std::vector<std::vector<std::pair<size_t, Eigen::VectorXf>>> &feats) {
   // Assert our two vectors are equal
   assert(camids.size() == feats.size());
 
   // Loop through each camera
   for (size_t i = 0; i < camids.size(); i++) {
-
     // Current camera id
     int cam_id = camids.at(i);
 
@@ -47,7 +46,6 @@ void TrackSIM::feed_measurement_simulation(double timestamp, const std::vector<i
     // NOTE: we add the "currid" since we need to offset the simulator
     // NOTE: ids by the number of aruoc tags we have specified as tracking
     for (const auto &feat : feats.at(i)) {
-
       // Get our id value
       size_t id = feat.first + currid;
 
@@ -60,7 +58,8 @@ void TrackSIM::feed_measurement_simulation(double timestamp, const std::vector<i
 
       // Append to the database
       cv::Point2f npt_l = camera_calib.at(cam_id)->undistort_cv(kpt.pt);
-      database->update_feature(id, timestamp, cam_id, kpt.pt.x, kpt.pt.y, npt_l.x, npt_l.y);
+      database->update_feature(id, timestamp, cam_id, kpt.pt.x, kpt.pt.y,
+                               npt_l.x, npt_l.y);
     }
 
     // Get our width and height

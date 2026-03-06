@@ -25,10 +25,10 @@
 
 using namespace ov_init;
 
-Factor_GenericPrior::Factor_GenericPrior(const Eigen::MatrixXd &x_lin_, const std::vector<std::string> &x_type_,
-                                         const Eigen::MatrixXd &prior_Info, const Eigen::MatrixXd &prior_grad)
+Factor_GenericPrior::Factor_GenericPrior(
+    const Eigen::MatrixXd &x_lin_, const std::vector<std::string> &x_type_,
+    const Eigen::MatrixXd &prior_Info, const Eigen::MatrixXd &prior_grad)
     : x_lin(x_lin_), x_type(x_type_) {
-
   // First assert that our state and variables are of the correct size
   int state_size = 0;
   int state_error_size = 0;
@@ -64,13 +64,19 @@ Factor_GenericPrior::Factor_GenericPrior(const Eigen::MatrixXd &x_lin_, const st
   // Comes from the form: cost = A * (x - x_lin) + b
   Eigen::LLT<Eigen::MatrixXd> lltOfI(prior_Info);
   sqrtI = lltOfI.matrixL().transpose();
-  Eigen::MatrixXd I = Eigen::MatrixXd::Identity(prior_Info.rows(), prior_Info.rows());
+  Eigen::MatrixXd I =
+      Eigen::MatrixXd::Identity(prior_Info.rows(), prior_Info.rows());
   b = sqrtI.triangularView<Eigen::Upper>().solve(I) * prior_grad;
 
   // Check that we have a valid matrix that we can get the information of
-  if (std::isnan(prior_Info.norm()) || std::isnan(sqrtI.norm()) || std::isnan(b.norm())) {
-    std::cerr << "prior_Info - " << std::endl << prior_Info << std::endl << std::endl;
-    std::cerr << "prior_Info_inv - " << std::endl << prior_Info.inverse() << std::endl << std::endl;
+  if (std::isnan(prior_Info.norm()) || std::isnan(sqrtI.norm()) ||
+      std::isnan(b.norm())) {
+    std::cerr << "prior_Info - " << std::endl
+              << prior_Info << std::endl
+              << std::endl;
+    std::cerr << "prior_Info_inv - " << std::endl
+              << prior_Info.inverse() << std::endl
+              << std::endl;
     std::cerr << "b - " << std::endl << b << std::endl << std::endl;
     std::exit(EXIT_FAILURE);
   }
@@ -78,21 +84,17 @@ Factor_GenericPrior::Factor_GenericPrior(const Eigen::MatrixXd &x_lin_, const st
   // Set the number of measurements, and the block sized
   set_num_residuals(state_error_size);
   for (auto const &str : x_type_) {
-    if (str == "quat")
-      mutable_parameter_block_sizes()->push_back(4);
-    if (str == "quat_yaw")
-      mutable_parameter_block_sizes()->push_back(4);
-    if (str == "vec1")
-      mutable_parameter_block_sizes()->push_back(1);
-    if (str == "vec3")
-      mutable_parameter_block_sizes()->push_back(3);
-    if (str == "vec8")
-      mutable_parameter_block_sizes()->push_back(8);
+    if (str == "quat") mutable_parameter_block_sizes()->push_back(4);
+    if (str == "quat_yaw") mutable_parameter_block_sizes()->push_back(4);
+    if (str == "vec1") mutable_parameter_block_sizes()->push_back(1);
+    if (str == "vec3") mutable_parameter_block_sizes()->push_back(3);
+    if (str == "vec8") mutable_parameter_block_sizes()->push_back(8);
   }
 }
 
-bool Factor_GenericPrior::Evaluate(double const *const *parameters, double *residuals, double **jacobians) const {
-
+bool Factor_GenericPrior::Evaluate(double const *const *parameters,
+                                   double *residuals,
+                                   double **jacobians) const {
   // Location in our state and output residual
   int local_it = 0;
   int global_it = 0;
@@ -103,15 +105,19 @@ bool Factor_GenericPrior::Evaluate(double const *const *parameters, double *resi
     if (x_type[i] == "quat") {
       Eigen::Vector4d q_i = Eigen::Map<const Eigen::Vector4d>(parameters[i]);
       Eigen::Matrix3d R_i = ov_core::quat_2_Rot(q_i);
-      Eigen::Matrix3d R_lin = ov_core::quat_2_Rot(x_lin.block(global_it, 0, 4, 1));
+      Eigen::Matrix3d R_lin =
+          ov_core::quat_2_Rot(x_lin.block(global_it, 0, 4, 1));
       Eigen::Vector3d theta_err = ov_core::log_so3(R_i.transpose() * R_lin);
       res.block(local_it, 0, 3, 1) = -theta_err;
       if (jacobians && jacobians[i]) {
-        Eigen::Map<Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> jacobian(jacobians[i], num_residuals(), 4);
+        Eigen::Map<Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic,
+                                 Eigen::RowMajor>>
+            jacobian(jacobians[i], num_residuals(), 4);
         jacobian.setZero();
         Eigen::Matrix3d Jr_inv = ov_core::Jr_so3(theta_err).inverse();
         Eigen::Matrix3d H_theta = -Jr_inv * R_lin.transpose();
-        jacobian.block(0, 0, num_residuals(), 3) = sqrtI.block(0, local_it, num_residuals(), 3) * H_theta;
+        jacobian.block(0, 0, num_residuals(), 3) =
+            sqrtI.block(0, local_it, num_residuals(), 3) * H_theta;
       }
       global_it += 4;
       local_it += 3;
@@ -119,15 +125,20 @@ bool Factor_GenericPrior::Evaluate(double const *const *parameters, double *resi
       Eigen::Vector3d ez = Eigen::Vector3d(0.0, 0.0, 1.0);
       Eigen::Vector4d q_i = Eigen::Map<const Eigen::Vector4d>(parameters[i]);
       Eigen::Matrix3d R_i = ov_core::quat_2_Rot(q_i);
-      Eigen::Matrix3d R_lin = ov_core::quat_2_Rot(x_lin.block(global_it, 0, 4, 1));
+      Eigen::Matrix3d R_lin =
+          ov_core::quat_2_Rot(x_lin.block(global_it, 0, 4, 1));
       Eigen::Vector3d theta_err = ov_core::log_so3(R_i.transpose() * R_lin);
       res(local_it, 0) = -(ez.transpose() * theta_err)(0, 0);
       if (jacobians && jacobians[i]) {
-        Eigen::Map<Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> jacobian(jacobians[i], num_residuals(), 4);
+        Eigen::Map<Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic,
+                                 Eigen::RowMajor>>
+            jacobian(jacobians[i], num_residuals(), 4);
         jacobian.setZero();
         Eigen::Matrix3d Jr_inv = ov_core::Jr_so3(theta_err).inverse();
-        Eigen::Matrix<double, 1, 3> H_theta = -ez.transpose() * (Jr_inv * R_lin.transpose());
-        jacobian.block(0, 0, num_residuals(), 3) = sqrtI.block(0, local_it, num_residuals(), 1) * H_theta;
+        Eigen::Matrix<double, 1, 3> H_theta =
+            -ez.transpose() * (Jr_inv * R_lin.transpose());
+        jacobian.block(0, 0, num_residuals(), 3) =
+            sqrtI.block(0, local_it, num_residuals(), 1) * H_theta;
       }
       global_it += 4;
       local_it += 1;
@@ -135,37 +146,49 @@ bool Factor_GenericPrior::Evaluate(double const *const *parameters, double *resi
       double x = parameters[i][0];
       res(local_it, 0) = x - x_lin(global_it, 0);
       if (jacobians && jacobians[i]) {
-        Eigen::Map<Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> J_vi(jacobians[i], num_residuals(), 1);
-        J_vi.block(0, 0, num_residuals(), 1) = sqrtI.block(0, local_it, num_residuals(), 1);
+        Eigen::Map<Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic,
+                                 Eigen::RowMajor>>
+            J_vi(jacobians[i], num_residuals(), 1);
+        J_vi.block(0, 0, num_residuals(), 1) =
+            sqrtI.block(0, local_it, num_residuals(), 1);
       }
       global_it += 1;
       local_it += 1;
     } else if (x_type[i] == "vec3") {
-      Eigen::Matrix<double, 3, 1> p_i = Eigen::Map<const Eigen::Matrix<double, 3, 1>>(parameters[i]);
+      Eigen::Matrix<double, 3, 1> p_i =
+          Eigen::Map<const Eigen::Matrix<double, 3, 1>>(parameters[i]);
       res.block(local_it, 0, 3, 1) = p_i - x_lin.block(global_it, 0, 3, 1);
       if (jacobians && jacobians[i]) {
-        Eigen::Map<Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> jacobian(jacobians[i], num_residuals(), 3);
-        jacobian.block(0, 0, num_residuals(), 3) = sqrtI.block(0, local_it, num_residuals(), 3);
+        Eigen::Map<Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic,
+                                 Eigen::RowMajor>>
+            jacobian(jacobians[i], num_residuals(), 3);
+        jacobian.block(0, 0, num_residuals(), 3) =
+            sqrtI.block(0, local_it, num_residuals(), 3);
       }
       global_it += 3;
       local_it += 3;
     } else if (x_type[i] == "vec8") {
-      Eigen::Matrix<double, 8, 1> p_i = Eigen::Map<const Eigen::Matrix<double, 8, 1>>(parameters[i]);
+      Eigen::Matrix<double, 8, 1> p_i =
+          Eigen::Map<const Eigen::Matrix<double, 8, 1>>(parameters[i]);
       res.block(local_it, 0, 8, 1) = p_i - x_lin.block(global_it, 0, 8, 1);
       if (jacobians && jacobians[i]) {
-        Eigen::Map<Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> jacobian(jacobians[i], num_residuals(), 8);
-        jacobian.block(0, 0, num_residuals(), 8) = sqrtI.block(0, local_it, num_residuals(), 8);
+        Eigen::Map<Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic,
+                                 Eigen::RowMajor>>
+            jacobian(jacobians[i], num_residuals(), 8);
+        jacobian.block(0, 0, num_residuals(), 8) =
+            sqrtI.block(0, local_it, num_residuals(), 8);
       }
       global_it += 8;
       local_it += 8;
     } else {
-      std::cerr << "type - " << x_type[i] << " not implemented in prior" << std::endl;
+      std::cerr << "type - " << x_type[i] << " not implemented in prior"
+                << std::endl;
       std::exit(EXIT_FAILURE);
     }
   }
 
-  // Now that we have done x - x_lin we need to multiply by sqrtI and add b to get full cost
-  // Jacobians will already have sqrtI applied to them...
+  // Now that we have done x - x_lin we need to multiply by sqrtI and add b to
+  // get full cost Jacobians will already have sqrtI applied to them...
   res = sqrtI * res;
   res += b;
 

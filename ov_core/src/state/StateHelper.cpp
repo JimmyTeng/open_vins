@@ -22,7 +22,6 @@
 #include "StateHelper.h"
 
 #include "state/State.h"
-
 #include "types/Landmark.h"
 #include "utils/chi_squared_quantile.h"
 #include "utils/colors.h"
@@ -32,23 +31,31 @@ using namespace ov_core;
 using namespace ov_type;
 using namespace ov_msckf;
 
-void StateHelper::EKFPropagation(std::shared_ptr<State> state, const std::vector<std::shared_ptr<Type>> &order_NEW,
-                                 const std::vector<std::shared_ptr<Type>> &order_OLD, const Eigen::MatrixXd &Phi,
-                                 const Eigen::MatrixXd &Q) {
-
+void StateHelper::EKFPropagation(
+    std::shared_ptr<State> state,
+    const std::vector<std::shared_ptr<Type>> &order_NEW,
+    const std::vector<std::shared_ptr<Type>> &order_OLD,
+    const Eigen::MatrixXd &Phi, const Eigen::MatrixXd &Q) {
   // We need at least one old and new variable
   if (order_NEW.empty() || order_OLD.empty()) {
-    PRINT_ERROR(RED "StateHelper::EKFPropagation() - Called with empty variable arrays!\n" RESET);
+    PRINT_ERROR(RED
+                "StateHelper::EKFPropagation() - Called with empty variable "
+                "arrays!\n" RESET);
     std::exit(EXIT_FAILURE);
   }
 
   // Loop through our Phi order and ensure that they are continuous in memory
   int size_order_NEW = order_NEW.at(0)->size();
   for (size_t i = 0; i < order_NEW.size() - 1; i++) {
-    if (order_NEW.at(i)->id() + order_NEW.at(i)->size() != order_NEW.at(i + 1)->id()) {
-      PRINT_ERROR(RED "StateHelper::EKFPropagation() - Called with non-contiguous state elements!\n" RESET);
+    if (order_NEW.at(i)->id() + order_NEW.at(i)->size() !=
+        order_NEW.at(i + 1)->id()) {
+      PRINT_ERROR(RED
+                  "StateHelper::EKFPropagation() - Called with non-contiguous "
+                  "state elements!\n" RESET);
       PRINT_ERROR(
-          RED "StateHelper::EKFPropagation() - This code only support a state transition which is in the same order as the state\n" RESET);
+          RED
+          "StateHelper::EKFPropagation() - This code only support a state "
+          "transition which is in the same order as the state\n" RESET);
       std::exit(EXIT_FAILURE);
     }
     size_order_NEW += order_NEW.at(i + 1)->size();
@@ -76,18 +83,22 @@ void StateHelper::EKFPropagation(std::shared_ptr<State> state, const std::vector
 
   // Loop through all our old states and get the state transition times it
   // Cov_PhiT = [ Pxx ] [ Phi' ]'
-  Eigen::MatrixXd Cov_PhiT = Eigen::MatrixXd::Zero(state->_Cov.rows(), Phi.rows());
+  Eigen::MatrixXd Cov_PhiT =
+      Eigen::MatrixXd::Zero(state->_Cov.rows(), Phi.rows());
   for (size_t i = 0; i < order_OLD.size(); i++) {
     std::shared_ptr<Type> var = order_OLD.at(i);
     Cov_PhiT.noalias() +=
-        state->_Cov.block(0, var->id(), state->_Cov.rows(), var->size()) * Phi.block(0, Phi_id[i], Phi.rows(), var->size()).transpose();
+        state->_Cov.block(0, var->id(), state->_Cov.rows(), var->size()) *
+        Phi.block(0, Phi_id[i], Phi.rows(), var->size()).transpose();
   }
 
   // Get Phi_NEW*Covariance*Phi_NEW^t + Q
   Eigen::MatrixXd Phi_Cov_PhiT = Q.selfadjointView<Eigen::Upper>();
   for (size_t i = 0; i < order_OLD.size(); i++) {
     std::shared_ptr<Type> var = order_OLD.at(i);
-    Phi_Cov_PhiT.noalias() += Phi.block(0, Phi_id[i], Phi.rows(), var->size()) * Cov_PhiT.block(var->id(), 0, var->size(), Phi.rows());
+    Phi_Cov_PhiT.noalias() +=
+        Phi.block(0, Phi_id[i], Phi.rows(), var->size()) *
+        Cov_PhiT.block(var->id(), 0, var->size(), Phi.rows());
   }
 
   // We are good to go!
@@ -98,12 +109,15 @@ void StateHelper::EKFPropagation(std::shared_ptr<State> state, const std::vector
   state->_Cov.block(0, start_id, total_size, phi_size) = Cov_PhiT;
   state->_Cov.block(start_id, start_id, phi_size, phi_size) = Phi_Cov_PhiT;
 
-  // We should check if we are not positive semi-definitate (i.e. negative diagionals is not s.p.d)
+  // We should check if we are not positive semi-definitate (i.e. negative
+  // diagionals is not s.p.d)
   Eigen::VectorXd diags = state->_Cov.diagonal();
   bool found_neg = false;
   for (int i = 0; i < diags.rows(); i++) {
     if (diags(i) < 0.0) {
-      PRINT_WARNING(RED "StateHelper::EKFPropagation() - diagonal at %d is %.2f\n" RESET, i, diags(i));
+      PRINT_WARNING(
+          RED "StateHelper::EKFPropagation() - diagonal at %d is %.2f\n" RESET,
+          i, diags(i));
       found_neg = true;
     }
   }
@@ -112,9 +126,11 @@ void StateHelper::EKFPropagation(std::shared_ptr<State> state, const std::vector
   }
 }
 
-void StateHelper::EKFUpdate(std::shared_ptr<State> state, const std::vector<std::shared_ptr<Type>> &H_order, const Eigen::MatrixXd &H,
-                            const Eigen::VectorXd &res, const Eigen::MatrixXd &R) {
-
+void StateHelper::EKFUpdate(std::shared_ptr<State> state,
+                            const std::vector<std::shared_ptr<Type>> &H_order,
+                            const Eigen::MatrixXd &H,
+                            const Eigen::VectorXd &res,
+                            const Eigen::MatrixXd &R) {
   //==========================================================
   //==========================================================
   // Part of the Kalman Gain K = (P*H^T)*S^{-1} = M*S^{-1}
@@ -138,8 +154,10 @@ void StateHelper::EKFUpdate(std::shared_ptr<State> state, const std::vector<std:
     Eigen::MatrixXd M_i = Eigen::MatrixXd::Zero(var->size(), res.rows());
     for (size_t i = 0; i < H_order.size(); i++) {
       std::shared_ptr<Type> meas_var = H_order[i];
-      M_i.noalias() += state->_Cov.block(var->id(), meas_var->id(), var->size(), meas_var->size()) *
-                       H.block(0, H_id[i], H.rows(), meas_var->size()).transpose();
+      M_i.noalias() +=
+          state->_Cov.block(var->id(), meas_var->id(), var->size(),
+                            meas_var->size()) *
+          H.block(0, H_id[i], H.rows(), meas_var->size()).transpose();
     }
     M_a.block(var->id(), 0, var->size(), res.rows()) = M_i;
   }
@@ -147,7 +165,8 @@ void StateHelper::EKFUpdate(std::shared_ptr<State> state, const std::vector<std:
   //==========================================================
   //==========================================================
   // Get covariance of the involved terms
-  Eigen::MatrixXd P_small = StateHelper::get_marginal_covariance(state, H_order);
+  Eigen::MatrixXd P_small =
+      StateHelper::get_marginal_covariance(state, H_order);
 
   // Residual covariance S = H*Cov*H' + R
   Eigen::MatrixXd S(R.rows(), R.rows());
@@ -167,12 +186,15 @@ void StateHelper::EKFUpdate(std::shared_ptr<State> state, const std::vector<std:
   // Cov -= K * M_a.transpose();
   // Cov = 0.5*(Cov+Cov.transpose());
 
-  // We should check if we are not positive semi-definitate (i.e. negative diagionals is not s.p.d)
+  // We should check if we are not positive semi-definitate (i.e. negative
+  // diagionals is not s.p.d)
   Eigen::VectorXd diags = state->_Cov.diagonal();
   bool found_neg = false;
   for (int i = 0; i < diags.rows(); i++) {
     if (diags(i) < 0.0) {
-      PRINT_WARNING(RED "StateHelper::EKFUpdate() - diagonal at %d is %.2f\n" RESET, i, diags(i));
+      PRINT_WARNING(RED
+                    "StateHelper::EKFUpdate() - diagonal at %d is %.2f\n" RESET,
+                    i, diags(i));
       found_neg = true;
     }
   }
@@ -183,29 +205,31 @@ void StateHelper::EKFUpdate(std::shared_ptr<State> state, const std::vector<std:
   // Calculate our delta and update all our active states
   Eigen::VectorXd dx = K * res;
   for (size_t i = 0; i < state->_variables.size(); i++) {
-    state->_variables.at(i)->update(dx.block(state->_variables.at(i)->id(), 0, state->_variables.at(i)->size(), 1));
+    state->_variables.at(i)->update(dx.block(
+        state->_variables.at(i)->id(), 0, state->_variables.at(i)->size(), 1));
   }
 
-  // If we are doing online intrinsic calibration we should update our camera objects
-  // NOTE: is this the best place to put this update logic??? probably..
+  // If we are doing online intrinsic calibration we should update our camera
+  // objects NOTE: is this the best place to put this update logic??? probably..
   if (state->_options.do_calib_camera_intrinsics) {
     for (auto const &calib : state->_cam_intrinsics) {
-      state->_cam_intrinsics_cameras.at(calib.first)->set_value(calib.second->value());
+      state->_cam_intrinsics_cameras.at(calib.first)
+          ->set_value(calib.second->value());
     }
   }
 }
 
-void StateHelper::set_initial_covariance(std::shared_ptr<State> state, const Eigen::MatrixXd &covariance,
-                                         const std::vector<std::shared_ptr<ov_type::Type>> &order) {
-
-  // We need to loop through each element and overwrite the current covariance values
-  // For example consider the following:
-  // x = [ ori pos ] -> insert into -> x = [ ori bias pos ]
-  // P = [ P_oo P_op ] -> P = [ P_oo  0   P_op ]
+void StateHelper::set_initial_covariance(
+    std::shared_ptr<State> state, const Eigen::MatrixXd &covariance,
+    const std::vector<std::shared_ptr<ov_type::Type>> &order) {
+  // We need to loop through each element and overwrite the current covariance
+  // values For example consider the following: x = [ ori pos ] -> insert into
+  // -> x = [ ori bias pos ] P = [ P_oo P_op ] -> P = [ P_oo  0   P_op ]
   //     [ P_po P_pp ]        [  0    P*    0  ]
   //                          [ P_po  0   P_pp ]
-  // The key assumption here is that the covariance is block diagonal (cross-terms zero with P* can be dense)
-  // This is normally the care on startup (for example between calibration and the initial state
+  // The key assumption here is that the covariance is block diagonal
+  // (cross-terms zero with P* can be dense) This is normally the care on
+  // startup (for example between calibration and the initial state
 
   // For each variable, lets copy over all other variable cross terms
   // Note: this copies over itself to when i_index=k_index
@@ -213,8 +237,10 @@ void StateHelper::set_initial_covariance(std::shared_ptr<State> state, const Eig
   for (size_t i = 0; i < order.size(); i++) {
     int k_index = 0;
     for (size_t k = 0; k < order.size(); k++) {
-      state->_Cov.block(order[i]->id(), order[k]->id(), order[i]->size(), order[k]->size()) =
-          covariance.block(i_index, k_index, order[i]->size(), order[k]->size());
+      state->_Cov.block(order[i]->id(), order[k]->id(), order[i]->size(),
+                        order[k]->size()) =
+          covariance.block(i_index, k_index, order[i]->size(),
+                           order[k]->size());
       k_index += order[k]->size();
     }
     i_index += order[i]->size();
@@ -222,9 +248,9 @@ void StateHelper::set_initial_covariance(std::shared_ptr<State> state, const Eig
   state->_Cov = state->_Cov.selfadjointView<Eigen::Upper>();
 }
 
-Eigen::MatrixXd StateHelper::get_marginal_covariance(std::shared_ptr<State> state,
-                                                     const std::vector<std::shared_ptr<Type>> &small_variables) {
-
+Eigen::MatrixXd StateHelper::get_marginal_covariance(
+    std::shared_ptr<State> state,
+    const std::vector<std::shared_ptr<Type>> &small_variables) {
   // Calculate the marginal covariance size we need to make our matrix
   int cov_size = 0;
   for (size_t i = 0; i < small_variables.size(); i++) {
@@ -240,8 +266,11 @@ Eigen::MatrixXd StateHelper::get_marginal_covariance(std::shared_ptr<State> stat
   for (size_t i = 0; i < small_variables.size(); i++) {
     int k_index = 0;
     for (size_t k = 0; k < small_variables.size(); k++) {
-      Small_cov.block(i_index, k_index, small_variables[i]->size(), small_variables[k]->size()) =
-          state->_Cov.block(small_variables[i]->id(), small_variables[k]->id(), small_variables[i]->size(), small_variables[k]->size());
+      Small_cov.block(i_index, k_index, small_variables[i]->size(),
+                      small_variables[k]->size()) =
+          state->_Cov.block(small_variables[i]->id(), small_variables[k]->id(),
+                            small_variables[i]->size(),
+                            small_variables[k]->size());
       k_index += small_variables[k]->size();
     }
     i_index += small_variables[i]->size();
@@ -253,7 +282,6 @@ Eigen::MatrixXd StateHelper::get_marginal_covariance(std::shared_ptr<State> stat
 }
 
 Eigen::MatrixXd StateHelper::get_full_covariance(std::shared_ptr<State> state) {
-
   // Size of the covariance is the active
   int cov_size = (int)state->_Cov.rows();
 
@@ -267,16 +295,22 @@ Eigen::MatrixXd StateHelper::get_full_covariance(std::shared_ptr<State> state) {
   return full_cov;
 }
 
-void StateHelper::marginalize(std::shared_ptr<State> state, std::shared_ptr<Type> marg) {
-
+void StateHelper::marginalize(std::shared_ptr<State> state,
+                              std::shared_ptr<Type> marg) {
   // Check if the current state has the element we want to marginalize
-  if (std::find(state->_variables.begin(), state->_variables.end(), marg) == state->_variables.end()) {
-    PRINT_ERROR(RED "StateHelper::marginalize() - Called on variable that is not in the state\n" RESET);
-    PRINT_ERROR(RED "StateHelper::marginalize() - Marginalization, does NOT work on sub-variables yet...\n" RESET);
+  if (std::find(state->_variables.begin(), state->_variables.end(), marg) ==
+      state->_variables.end()) {
+    PRINT_ERROR(RED
+                "StateHelper::marginalize() - Called on variable that is not "
+                "in the state\n" RESET);
+    PRINT_ERROR(RED
+                "StateHelper::marginalize() - Marginalization, does NOT work "
+                "on sub-variables yet...\n" RESET);
     std::exit(EXIT_FAILURE);
   }
 
-  // Generic covariance has this form for x_1, x_m, x_2. If we want to remove x_m:
+  // Generic covariance has this form for x_1, x_m, x_2. If we want to remove
+  // x_m:
   //
   //  P_(x_1,x_1) P(x_1,x_m) P(x_1,x_2)
   //  P_(x_m,x_1) P(x_m,x_m) P(x_m,x_2)
@@ -287,25 +321,31 @@ void StateHelper::marginalize(std::shared_ptr<State> state, std::shared_ptr<Type
   //  P_(x_1,x_1) P(x_1,x_2)
   //  P_(x_2,x_1) P(x_2,x_2)
   //
-  // i.e. x_1 goes from 0 to marg_id, x_2 goes from marg_id+marg_size to Cov.rows() in the original covariance
+  // i.e. x_1 goes from 0 to marg_id, x_2 goes from marg_id+marg_size to
+  // Cov.rows() in the original covariance
 
   int marg_size = marg->size();
   int marg_id = marg->id();
   int x2_size = (int)state->_Cov.rows() - marg_id - marg_size;
 
-  Eigen::MatrixXd Cov_new(state->_Cov.rows() - marg_size, state->_Cov.rows() - marg_size);
+  Eigen::MatrixXd Cov_new(state->_Cov.rows() - marg_size,
+                          state->_Cov.rows() - marg_size);
 
   // P_(x_1,x_1)
-  Cov_new.block(0, 0, marg_id, marg_id) = state->_Cov.block(0, 0, marg_id, marg_id);
+  Cov_new.block(0, 0, marg_id, marg_id) =
+      state->_Cov.block(0, 0, marg_id, marg_id);
 
   // P_(x_1,x_2)
-  Cov_new.block(0, marg_id, marg_id, x2_size) = state->_Cov.block(0, marg_id + marg_size, marg_id, x2_size);
+  Cov_new.block(0, marg_id, marg_id, x2_size) =
+      state->_Cov.block(0, marg_id + marg_size, marg_id, x2_size);
 
   // P_(x_2,x_1)
-  Cov_new.block(marg_id, 0, x2_size, marg_id) = Cov_new.block(0, marg_id, marg_id, x2_size).transpose();
+  Cov_new.block(marg_id, 0, x2_size, marg_id) =
+      Cov_new.block(0, marg_id, marg_id, x2_size).transpose();
 
   // P(x_2,x_2)
-  Cov_new.block(marg_id, marg_id, x2_size, x2_size) = state->_Cov.block(marg_id + marg_size, marg_id + marg_size, x2_size, x2_size);
+  Cov_new.block(marg_id, marg_id, x2_size, x2_size) = state->_Cov.block(
+      marg_id + marg_size, marg_id + marg_size, x2_size, x2_size);
 
   // Now set new covariance
   // state->_Cov.resize(Cov_new.rows(),Cov_new.cols());
@@ -320,8 +360,10 @@ void StateHelper::marginalize(std::shared_ptr<State> state, std::shared_ptr<Type
     // Only keep non-marginal states
     if (state->_variables.at(i) != marg) {
       if (state->_variables.at(i)->id() > marg_id) {
-        // If the variable is "beyond" the marginal one in ordering, need to "move it forward"
-        state->_variables.at(i)->set_local_id(state->_variables.at(i)->id() - marg_size);
+        // If the variable is "beyond" the marginal one in ordering, need to
+        // "move it forward"
+        state->_variables.at(i)->set_local_id(state->_variables.at(i)->id() -
+                                              marg_size);
       }
       remaining_variables.push_back(state->_variables.at(i));
     }
@@ -329,34 +371,37 @@ void StateHelper::marginalize(std::shared_ptr<State> state, std::shared_ptr<Type
 
   // Delete the old state variable to free up its memory
   // NOTE: we don't need to do this any more since our variable is a shared ptr
-  // NOTE: thus this is automatically managed, but this allows outside references to keep the old variable
-  // delete marg;
+  // NOTE: thus this is automatically managed, but this allows outside
+  // references to keep the old variable delete marg;
   marg->set_local_id(-1);
 
   // Now set variables as the remaining ones
   state->_variables = remaining_variables;
 }
 
-std::shared_ptr<Type> StateHelper::clone(std::shared_ptr<State> state, std::shared_ptr<Type> variable_to_clone) {
-
+std::shared_ptr<Type> StateHelper::clone(
+    std::shared_ptr<State> state, std::shared_ptr<Type> variable_to_clone) {
   // Get total size of new cloned variables, and the old covariance size
   int total_size = variable_to_clone->size();
   int old_size = (int)state->_Cov.rows();
   int new_loc = (int)state->_Cov.rows();
 
   // Resize both our covariance to the new size
-  state->_Cov.conservativeResizeLike(Eigen::MatrixXd::Zero(old_size + total_size, old_size + total_size));
+  state->_Cov.conservativeResizeLike(
+      Eigen::MatrixXd::Zero(old_size + total_size, old_size + total_size));
 
   // What is the new state, and variable we inserted
   const std::vector<std::shared_ptr<Type>> new_variables = state->_variables;
   std::shared_ptr<Type> new_clone = nullptr;
 
-  // Loop through all variables, and find the variable that we are going to clone
+  // Loop through all variables, and find the variable that we are going to
+  // clone
   for (size_t k = 0; k < state->_variables.size(); k++) {
-
     // Skip this if it is not the same
-    // First check if the top level variable is the same, then check the sub-variables
-    std::shared_ptr<Type> type_check = state->_variables.at(k)->check_if_subvariable(variable_to_clone);
+    // First check if the top level variable is the same, then check the
+    // sub-variables
+    std::shared_ptr<Type> type_check =
+        state->_variables.at(k)->check_if_subvariable(variable_to_clone);
     if (state->_variables.at(k) == variable_to_clone) {
       type_check = state->_variables.at(k);
     } else if (type_check != variable_to_clone) {
@@ -367,9 +412,12 @@ std::shared_ptr<Type> StateHelper::clone(std::shared_ptr<State> state, std::shar
     int old_loc = type_check->id();
 
     // Copy the covariance elements
-    state->_Cov.block(new_loc, new_loc, total_size, total_size) = state->_Cov.block(old_loc, old_loc, total_size, total_size);
-    state->_Cov.block(0, new_loc, old_size, total_size) = state->_Cov.block(0, old_loc, old_size, total_size);
-    state->_Cov.block(new_loc, 0, total_size, old_size) = state->_Cov.block(old_loc, 0, total_size, old_size);
+    state->_Cov.block(new_loc, new_loc, total_size, total_size) =
+        state->_Cov.block(old_loc, old_loc, total_size, total_size);
+    state->_Cov.block(0, new_loc, old_size, total_size) =
+        state->_Cov.block(0, old_loc, old_size, total_size);
+    state->_Cov.block(new_loc, 0, total_size, old_size) =
+        state->_Cov.block(old_loc, 0, total_size, old_size);
 
     // Create clone from the type being cloned
     new_clone = type_check->clone();
@@ -379,8 +427,12 @@ std::shared_ptr<Type> StateHelper::clone(std::shared_ptr<State> state, std::shar
 
   // Check if the current state has this variable
   if (new_clone == nullptr) {
-    PRINT_ERROR(RED "StateHelper::clone() - Called on variable is not in the state\n" RESET);
-    PRINT_ERROR(RED "StateHelper::clone() - Ensure that the variable specified is a variable, or sub-variable..\n" RESET);
+    PRINT_ERROR(RED
+                "StateHelper::clone() - Called on variable is not in the "
+                "state\n" RESET);
+    PRINT_ERROR(RED
+                "StateHelper::clone() - Ensure that the variable specified is "
+                "a variable, or sub-variable..\n" RESET);
     std::exit(EXIT_FAILURE);
   }
 
@@ -389,30 +441,49 @@ std::shared_ptr<Type> StateHelper::clone(std::shared_ptr<State> state, std::shar
   return new_clone;
 }
 
-bool StateHelper::initialize(std::shared_ptr<State> state, std::shared_ptr<Type> new_variable,
-                             const std::vector<std::shared_ptr<Type>> &H_order, Eigen::MatrixXd &H_R, Eigen::MatrixXd &H_L,
-                             Eigen::MatrixXd &R, Eigen::VectorXd &res, double chi_2_mult) {
-
+bool StateHelper::initialize(std::shared_ptr<State> state,
+                             std::shared_ptr<Type> new_variable,
+                             const std::vector<std::shared_ptr<Type>> &H_order,
+                             Eigen::MatrixXd &H_R, Eigen::MatrixXd &H_L,
+                             Eigen::MatrixXd &R, Eigen::VectorXd &res,
+                             double chi_2_mult) {
   // Check that this new variable is not already initialized
-  if (std::find(state->_variables.begin(), state->_variables.end(), new_variable) != state->_variables.end()) {
-    PRINT_ERROR("StateHelper::initialize_invertible() - Called on variable that is already in the state\n");
-    PRINT_ERROR("StateHelper::initialize_invertible() - Found this variable at %d in covariance\n", new_variable->id());
+  if (std::find(state->_variables.begin(), state->_variables.end(),
+                new_variable) != state->_variables.end()) {
+    PRINT_ERROR(
+        "StateHelper::initialize_invertible() - Called on variable that is "
+        "already in the state\n");
+    PRINT_ERROR(
+        "StateHelper::initialize_invertible() - Found this variable at %d in "
+        "covariance\n",
+        new_variable->id());
     std::exit(EXIT_FAILURE);
   }
 
-  // Check that we have isotropic noise (i.e. is diagonal and all the same value)
+  // Check that we have isotropic noise (i.e. is diagonal and all the same
+  // value)
   // TODO: can we simplify this so it doesn't take as much time?
   assert(R.rows() == R.cols());
   assert(R.rows() > 0);
   for (int r = 0; r < R.rows(); r++) {
     for (int c = 0; c < R.cols(); c++) {
       if (r == c && R(0, 0) != R(r, c)) {
-        PRINT_ERROR(RED "StateHelper::initialize() - Your noise is not isotropic!\n" RESET);
-        PRINT_ERROR(RED "StateHelper::initialize() - Found a value of %.2f verses value of %.2f\n" RESET, R(r, c), R(0, 0));
+        PRINT_ERROR(
+            RED
+            "StateHelper::initialize() - Your noise is not isotropic!\n" RESET);
+        PRINT_ERROR(RED
+                    "StateHelper::initialize() - Found a value of %.2f verses "
+                    "value of %.2f\n" RESET,
+                    R(r, c), R(0, 0));
         std::exit(EXIT_FAILURE);
       } else if (r != c && R(r, c) != 0.0) {
-        PRINT_ERROR(RED "StateHelper::initialize() - Your noise is not diagonal!\n" RESET);
-        PRINT_ERROR(RED "StateHelper::initialize() - Found a value of %.2f at row %d and column %d\n" RESET, R(r, c), r, c);
+        PRINT_ERROR(
+            RED
+            "StateHelper::initialize() - Your noise is not diagonal!\n" RESET);
+        PRINT_ERROR(RED
+                    "StateHelper::initialize() - Found a value of %.2f at row "
+                    "%d and column %d\n" RESET,
+                    R(r, c), r, c);
         std::exit(EXIT_FAILURE);
       }
     }
@@ -421,7 +492,8 @@ bool StateHelper::initialize(std::shared_ptr<State> state, std::shared_ptr<Type>
   //==========================================================
   //==========================================================
   // First we perform QR givens to seperate the system
-  // The top will be a system that depends on the new state, while the bottom does not
+  // The top will be a system that depends on the new state, while the bottom
+  // does not
   size_t new_var_size = new_variable->size();
   assert((int)new_var_size == H_L.cols());
 
@@ -432,10 +504,13 @@ bool StateHelper::initialize(std::shared_ptr<State> state, std::shared_ptr<Type>
       tempHo_GR.makeGivens(H_L(m - 1, n), H_L(m, n));
       // Multiply G to the corresponding lines (m-1,m) in each matrix
       // Note: we only apply G to the nonzero cols [n:Ho.cols()-n-1], while
-      //       it is equivalent to applying G to the entire cols [0:Ho.cols()-1].
-      (H_L.block(m - 1, n, 2, H_L.cols() - n)).applyOnTheLeft(0, 1, tempHo_GR.adjoint());
+      //       it is equivalent to applying G to the entire cols
+      //       [0:Ho.cols()-1].
+      (H_L.block(m - 1, n, 2, H_L.cols() - n))
+          .applyOnTheLeft(0, 1, tempHo_GR.adjoint());
       (res.block(m - 1, 0, 2, 1)).applyOnTheLeft(0, 1, tempHo_GR.adjoint());
-      (H_R.block(m - 1, 0, 2, H_R.cols())).applyOnTheLeft(0, 1, tempHo_GR.adjoint());
+      (H_R.block(m - 1, 0, 2, H_R.cols()))
+          .applyOnTheLeft(0, 1, tempHo_GR.adjoint());
     }
   }
 
@@ -447,9 +522,13 @@ bool StateHelper::initialize(std::shared_ptr<State> state, std::shared_ptr<Type>
   Eigen::MatrixXd Rinit = R.block(0, 0, new_var_size, new_var_size);
 
   // 2. Nullspace projected updating system
-  Eigen::MatrixXd Hup = H_R.block(new_var_size, 0, H_R.rows() - new_var_size, H_R.cols());
-  Eigen::VectorXd resup = res.block(new_var_size, 0, res.rows() - new_var_size, 1);
-  Eigen::MatrixXd Rup = R.block(new_var_size, new_var_size, R.rows() - new_var_size, R.rows() - new_var_size);
+  Eigen::MatrixXd Hup =
+      H_R.block(new_var_size, 0, H_R.rows() - new_var_size, H_R.cols());
+  Eigen::VectorXd resup =
+      res.block(new_var_size, 0, res.rows() - new_var_size, 1);
+  Eigen::MatrixXd Rup =
+      R.block(new_var_size, new_var_size, R.rows() - new_var_size,
+              R.rows() - new_var_size);
 
   //==========================================================
   //==========================================================
@@ -470,7 +549,8 @@ bool StateHelper::initialize(std::shared_ptr<State> state, std::shared_ptr<Type>
   //==========================================================
   //==========================================================
   // Finally, initialize it in our state
-  StateHelper::initialize_invertible(state, new_variable, H_order, Hxinit, H_finit, Rinit, resinit);
+  StateHelper::initialize_invertible(state, new_variable, H_order, Hxinit,
+                                     H_finit, Rinit, resinit);
 
   // Update with updating portion
   if (Hup.rows() > 0) {
@@ -479,30 +559,48 @@ bool StateHelper::initialize(std::shared_ptr<State> state, std::shared_ptr<Type>
   return true;
 }
 
-void StateHelper::initialize_invertible(std::shared_ptr<State> state, std::shared_ptr<Type> new_variable,
-                                        const std::vector<std::shared_ptr<Type>> &H_order, const Eigen::MatrixXd &H_R,
-                                        const Eigen::MatrixXd &H_L, const Eigen::MatrixXd &R, const Eigen::VectorXd &res) {
-
+void StateHelper::initialize_invertible(
+    std::shared_ptr<State> state, std::shared_ptr<Type> new_variable,
+    const std::vector<std::shared_ptr<Type>> &H_order,
+    const Eigen::MatrixXd &H_R, const Eigen::MatrixXd &H_L,
+    const Eigen::MatrixXd &R, const Eigen::VectorXd &res) {
   // Check that this new variable is not already initialized
-  if (std::find(state->_variables.begin(), state->_variables.end(), new_variable) != state->_variables.end()) {
-    PRINT_ERROR("StateHelper::initialize_invertible() - Called on variable that is already in the state\n");
-    PRINT_ERROR("StateHelper::initialize_invertible() - Found this variable at %d in covariance\n", new_variable->id());
+  if (std::find(state->_variables.begin(), state->_variables.end(),
+                new_variable) != state->_variables.end()) {
+    PRINT_ERROR(
+        "StateHelper::initialize_invertible() - Called on variable that is "
+        "already in the state\n");
+    PRINT_ERROR(
+        "StateHelper::initialize_invertible() - Found this variable at %d in "
+        "covariance\n",
+        new_variable->id());
     std::exit(EXIT_FAILURE);
   }
 
-  // Check that we have isotropic noise (i.e. is diagonal and all the same value)
+  // Check that we have isotropic noise (i.e. is diagonal and all the same
+  // value)
   // TODO: can we simplify this so it doesn't take as much time?
   assert(R.rows() == R.cols());
   assert(R.rows() > 0);
   for (int r = 0; r < R.rows(); r++) {
     for (int c = 0; c < R.cols(); c++) {
       if (r == c && R(0, 0) != R(r, c)) {
-        PRINT_ERROR(RED "StateHelper::initialize_invertible() - Your noise is not isotropic!\n" RESET);
-        PRINT_ERROR(RED "StateHelper::initialize_invertible() - Found a value of %.2f verses value of %.2f\n" RESET, R(r, c), R(0, 0));
+        PRINT_ERROR(RED
+                    "StateHelper::initialize_invertible() - Your noise is not "
+                    "isotropic!\n" RESET);
+        PRINT_ERROR(RED
+                    "StateHelper::initialize_invertible() - Found a value of "
+                    "%.2f verses value of %.2f\n" RESET,
+                    R(r, c), R(0, 0));
         std::exit(EXIT_FAILURE);
       } else if (r != c && R(r, c) != 0.0) {
-        PRINT_ERROR(RED "StateHelper::initialize_invertible() - Your noise is not diagonal!\n" RESET);
-        PRINT_ERROR(RED "StateHelper::initialize_invertible() - Found a value of %.2f at row %d and column %d\n" RESET, R(r, c), r, c);
+        PRINT_ERROR(RED
+                    "StateHelper::initialize_invertible() - Your noise is not "
+                    "diagonal!\n" RESET);
+        PRINT_ERROR(RED
+                    "StateHelper::initialize_invertible() - Found a value of "
+                    "%.2f at row %d and column %d\n" RESET,
+                    R(r, c), r, c);
         std::exit(EXIT_FAILURE);
       }
     }
@@ -532,7 +630,8 @@ void StateHelper::initialize_invertible(std::shared_ptr<State> state, std::share
     Eigen::MatrixXd M_i = Eigen::MatrixXd::Zero(var->size(), res.rows());
     for (size_t i = 0; i < H_order.size(); i++) {
       std::shared_ptr<Type> meas_var = H_order.at(i);
-      M_i += state->_Cov.block(var->id(), meas_var->id(), var->size(), meas_var->size()) *
+      M_i += state->_Cov.block(var->id(), meas_var->id(), var->size(),
+                               meas_var->size()) *
              H_R.block(0, H_id[i], H_R.rows(), meas_var->size()).transpose();
     }
     M_a.block(var->id(), 0, var->size(), res.rows()) = M_i;
@@ -541,7 +640,8 @@ void StateHelper::initialize_invertible(std::shared_ptr<State> state, std::share
   //==========================================================
   //==========================================================
   // Get covariance of this small jacobian
-  Eigen::MatrixXd P_small = StateHelper::get_marginal_covariance(state, H_order);
+  Eigen::MatrixXd P_small =
+      StateHelper::get_marginal_covariance(state, H_order);
 
   // M = H_R*Cov*H_R' + R
   Eigen::MatrixXd M(H_R.rows(), H_R.rows());
@@ -552,17 +652,23 @@ void StateHelper::initialize_invertible(std::shared_ptr<State> state, std::share
   assert(H_L.rows() == H_L.cols());
   assert(H_L.rows() == new_variable->size());
   Eigen::MatrixXd H_Linv = H_L.inverse();
-  Eigen::MatrixXd P_LL = H_Linv * M.selfadjointView<Eigen::Upper>() * H_Linv.transpose();
+  Eigen::MatrixXd P_LL =
+      H_Linv * M.selfadjointView<Eigen::Upper>() * H_Linv.transpose();
 
   // Augment the covariance matrix
   size_t oldSize = state->_Cov.rows();
-  state->_Cov.conservativeResizeLike(Eigen::MatrixXd::Zero(oldSize + new_variable->size(), oldSize + new_variable->size()));
-  state->_Cov.block(0, oldSize, oldSize, new_variable->size()).noalias() = -M_a * H_Linv.transpose();
-  state->_Cov.block(oldSize, 0, new_variable->size(), oldSize) = state->_Cov.block(0, oldSize, oldSize, new_variable->size()).transpose();
-  state->_Cov.block(oldSize, oldSize, new_variable->size(), new_variable->size()) = P_LL;
+  state->_Cov.conservativeResizeLike(Eigen::MatrixXd::Zero(
+      oldSize + new_variable->size(), oldSize + new_variable->size()));
+  state->_Cov.block(0, oldSize, oldSize, new_variable->size()).noalias() =
+      -M_a * H_Linv.transpose();
+  state->_Cov.block(oldSize, 0, new_variable->size(), oldSize) =
+      state->_Cov.block(0, oldSize, oldSize, new_variable->size()).transpose();
+  state->_Cov.block(oldSize, oldSize, new_variable->size(),
+                    new_variable->size()) = P_LL;
 
-  // Update the variable that will be initialized (invertible systems can only update the new variable).
-  // However this update should be almost zero if we already used a conditional Gauss-Newton to solve for the initial estimate
+  // Update the variable that will be initialized (invertible systems can only
+  // update the new variable). However this update should be almost zero if we
+  // already used a conditional Gauss-Newton to solve for the initial estimate
   new_variable->update(H_Linv * res);
 
   // Now collect results, and add it to the state variables
@@ -570,34 +676,39 @@ void StateHelper::initialize_invertible(std::shared_ptr<State> state, std::share
   state->_variables.push_back(new_variable);
 
   // std::stringstream ss;
-  // ss << new_variable->id() <<  " init dx = " << (H_Linv * res).transpose() << std::endl;
-  // PRINT_DEBUG(ss.str().c_str());
+  // ss << new_variable->id() <<  " init dx = " << (H_Linv * res).transpose() <<
+  // std::endl; PRINT_DEBUG(ss.str().c_str());
 }
 
-void StateHelper::augment_clone(std::shared_ptr<State> state, Eigen::Matrix<double, 3, 1> last_w) {
-
+void StateHelper::augment_clone(std::shared_ptr<State> state,
+                                Eigen::Matrix<double, 3, 1> last_w) {
   // We can't insert a clone that occured at the same timestamp!
   if (state->_clones_IMU.find(state->_timestamp) != state->_clones_IMU.end()) {
-    PRINT_ERROR(RED "TRIED TO INSERT A CLONE AT THE SAME TIME AS AN EXISTING CLONE, EXITING!#!@#!@#\n" RESET);
+    PRINT_ERROR(RED
+                "TRIED TO INSERT A CLONE AT THE SAME TIME AS AN EXISTING "
+                "CLONE, EXITING!#!@#!@#\n" RESET);
     std::exit(EXIT_FAILURE);
   }
 
   // Call on our cloner and add it to our vector of types
   // NOTE: this will clone the clone pose to the END of the covariance...
-  std::shared_ptr<Type> posetemp = StateHelper::clone(state, state->_imu->pose());
+  std::shared_ptr<Type> posetemp =
+      StateHelper::clone(state, state->_imu->pose());
 
   // Cast to a JPL pose type, check if valid
   std::shared_ptr<PoseJPL> pose = std::dynamic_pointer_cast<PoseJPL>(posetemp);
   if (pose == nullptr) {
-    PRINT_ERROR(RED "INVALID OBJECT RETURNED FROM STATEHELPER CLONE, EXITING!#!@#!@#\n" RESET);
+    PRINT_ERROR(RED
+                "INVALID OBJECT RETURNED FROM STATEHELPER CLONE, "
+                "EXITING!#!@#!@#\n" RESET);
     std::exit(EXIT_FAILURE);
   }
 
   // Append the new clone to our clone vector
   state->_clones_IMU[state->_timestamp] = pose;
 
-  // If we are doing time calibration, then our clones are a function of the time offset
-  // Logic is based on Mingyang Li and Anastasios I. Mourikis paper:
+  // If we are doing time calibration, then our clones are a function of the
+  // time offset Logic is based on Mingyang Li and Anastasios I. Mourikis paper:
   // http://journals.sagepub.com/doi/pdf/10.1177/0278364913515286
   if (state->_options.do_calib_camera_timeoffset) {
     // Jacobian to augment by
@@ -607,16 +718,20 @@ void StateHelper::augment_clone(std::shared_ptr<State> state, Eigen::Matrix<doub
     // Augment covariance with time offset Jacobian
     // TODO: replace this with a call to the EKFPropagate function instead....
     state->_Cov.block(0, pose->id(), state->_Cov.rows(), 6) +=
-        state->_Cov.block(0, state->_calib_dt_CAMtoIMU->id(), state->_Cov.rows(), 1) * dnc_dt.transpose();
+        state->_Cov.block(0, state->_calib_dt_CAMtoIMU->id(),
+                          state->_Cov.rows(), 1) *
+        dnc_dt.transpose();
     state->_Cov.block(pose->id(), 0, 6, state->_Cov.rows()) +=
-        dnc_dt * state->_Cov.block(state->_calib_dt_CAMtoIMU->id(), 0, 1, state->_Cov.rows());
+        dnc_dt * state->_Cov.block(state->_calib_dt_CAMtoIMU->id(), 0, 1,
+                                   state->_Cov.rows());
   }
 }
 
 void StateHelper::marginalize_old_clone(std::shared_ptr<State> state) {
   if ((int)state->_clones_IMU.size() > state->_options.max_clone_size) {
     double marginal_time = state->margtimestep();
-    // Lock the mutex to avoid deleting any elements from _clones_IMU while accessing it from other threads
+    // Lock the mutex to avoid deleting any elements from _clones_IMU while
+    // accessing it from other threads
     std::lock_guard<std::mutex> lock(state->_mutex_state);
     assert(marginal_time != INFINITY);
     StateHelper::marginalize(state, state->_clones_IMU.at(marginal_time));
@@ -632,7 +747,8 @@ void StateHelper::marginalize_slam(std::shared_ptr<State> state) {
   int ct_marginalized = 0;
   auto it0 = state->_features_SLAM.begin();
   while (it0 != state->_features_SLAM.end()) {
-    if ((*it0).second->should_marg && (int)(*it0).first > 4 * state->_options.max_aruco_features) {
+    if ((*it0).second->should_marg &&
+        (int)(*it0).first > 4 * state->_options.max_aruco_features) {
       StateHelper::marginalize(state, (*it0).second);
       it0 = state->_features_SLAM.erase(it0);
       ct_marginalized++;

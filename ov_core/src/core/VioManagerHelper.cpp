@@ -20,18 +20,15 @@
  */
 
 #include "VioManager.h"
-
 #include "feat/Feature.h"
 #include "feat/FeatureDatabase.h"
 #include "feat/FeatureInitializer.h"
-#include "types/LandmarkRepresentation.h"
-#include "utils/print.h"
-
 #include "init/InertialInitializer.h"
-
 #include "state/Propagator.h"
 #include "state/State.h"
 #include "state/StateHelper.h"
+#include "types/LandmarkRepresentation.h"
+#include "utils/print.h"
 
 using namespace ov_core;
 using namespace ov_type;
@@ -39,10 +36,10 @@ using namespace ov_msckf;
 
 /**
  * @brief 使用真值初始化系统
- * @param imustate 17维状态向量 [time(sec), q_GtoI, p_IinG, v_IinG, b_gyro, b_accel]
+ * @param imustate 17维状态向量 [time(sec), q_GtoI, p_IinG, v_IinG, b_gyro,
+ * b_accel]
  */
 void VioManager::initialize_with_gt(Eigen::Matrix<double, 17, 1> imustate) {
-
   // 初始化系统状态
   // Initialize the system
   state->_imu->set_value(imustate.block(1, 0, 16, 1));
@@ -53,10 +50,15 @@ void VioManager::initialize_with_gt(Eigen::Matrix<double, 17, 1> imustate) {
   // Fix the global yaw and position gauge freedoms
   // TODO: Why does this break out simulation consistency metrics?
   std::vector<std::shared_ptr<ov_type::Type>> order = {state->_imu};
-  Eigen::MatrixXd Cov = std::pow(0.02, 2) * Eigen::MatrixXd::Identity(state->_imu->size(), state->_imu->size());
-  Cov.block(0, 0, 3, 3) = std::pow(0.017, 2) * Eigen::Matrix3d::Identity(); // q 旋转四元数协方差
-  Cov.block(3, 3, 3, 3) = std::pow(0.05, 2) * Eigen::Matrix3d::Identity();  // p 位置协方差
-  Cov.block(6, 6, 3, 3) = std::pow(0.01, 2) * Eigen::Matrix3d::Identity();  // v 速度协方差（静态）
+  Eigen::MatrixXd Cov =
+      std::pow(0.02, 2) *
+      Eigen::MatrixXd::Identity(state->_imu->size(), state->_imu->size());
+  Cov.block(0, 0, 3, 3) =
+      std::pow(0.017, 2) * Eigen::Matrix3d::Identity();  // q 旋转四元数协方差
+  Cov.block(3, 3, 3, 3) =
+      std::pow(0.05, 2) * Eigen::Matrix3d::Identity();  // p 位置协方差
+  Cov.block(6, 6, 3, 3) =
+      std::pow(0.01, 2) * Eigen::Matrix3d::Identity();  // v 速度协方差（静态）
   StateHelper::set_initial_covariance(state, Cov, order);
 
   // 设置状态时间戳
@@ -75,14 +77,21 @@ void VioManager::initialize_with_gt(Eigen::Matrix<double, 17, 1> imustate) {
   // 打印初始化信息
   // Print what we init'ed with
   PRINT_DEBUG(GREEN "[VMH]: 从真值文件初始化成功！！！！\n" RESET);
-  PRINT_DEBUG(GREEN "[VMH]: 姿态 = %.4f, %.4f, %.4f, %.4f\n" RESET, state->_imu->quat()(0), state->_imu->quat()(1),
+  PRINT_DEBUG(GREEN "[VMH]: 姿态 = %.4f, %.4f, %.4f, %.4f\n" RESET,
+              state->_imu->quat()(0), state->_imu->quat()(1),
               state->_imu->quat()(2), state->_imu->quat()(3));
-  PRINT_DEBUG(GREEN "[VMH]: 陀螺仪偏差 = %.4f, %.4f, %.4f\n" RESET, state->_imu->bias_g()(0), state->_imu->bias_g()(1),
+  PRINT_DEBUG(GREEN "[VMH]: 陀螺仪偏差 = %.4f, %.4f, %.4f\n" RESET,
+              state->_imu->bias_g()(0), state->_imu->bias_g()(1),
               state->_imu->bias_g()(2));
-  PRINT_DEBUG(GREEN "[VMH]: 速度 = %.4f, %.4f, %.4f\n" RESET, state->_imu->vel()(0), state->_imu->vel()(1), state->_imu->vel()(2));
-  PRINT_DEBUG(GREEN "[VMH]: 加速度计偏差 = %.4f, %.4f, %.4f\n" RESET, state->_imu->bias_a()(0), state->_imu->bias_a()(1),
+  PRINT_DEBUG(GREEN "[VMH]: 速度 = %.4f, %.4f, %.4f\n" RESET,
+              state->_imu->vel()(0), state->_imu->vel()(1),
+              state->_imu->vel()(2));
+  PRINT_DEBUG(GREEN "[VMH]: 加速度计偏差 = %.4f, %.4f, %.4f\n" RESET,
+              state->_imu->bias_a()(0), state->_imu->bias_a()(1),
               state->_imu->bias_a()(2));
-  PRINT_DEBUG(GREEN "[VMH]: 位置 = %.4f, %.4f, %.4f\n" RESET, state->_imu->pos()(0), state->_imu->pos()(1), state->_imu->pos()(2));
+  PRINT_DEBUG(GREEN "[VMH]: 位置 = %.4f, %.4f, %.4f\n" RESET,
+              state->_imu->pos()(0), state->_imu->pos()(1),
+              state->_imu->pos()(2));
 }
 
 /**
@@ -91,13 +100,13 @@ void VioManager::initialize_with_gt(Eigen::Matrix<double, 17, 1> imustate) {
  * @return 如果成功初始化则返回true
  */
 bool VioManager::try_to_initialize(const ov_core::CameraData &message) {
-
   // 如果初始化线程正在运行，直接返回
   // 注意：我们在队列上加锁，因为可能已完成一次更新
   // 并且正在使用此队列向前传播状态。在这种情况下我们应该等待
   // Directly return if the initialization thread is running
   // Note that we lock on the queue since we could have finished an update
-  // And are using this queue to propagate the state forward. We should wait in this case
+  // And are using this queue to propagate the state forward. We should wait in
+  // this case
   if (thread_init_running) {
     std::lock_guard<std::mutex> lck(camera_queue_init_mtx);
     camera_queue_init.push_back(message.timestamp);
@@ -111,7 +120,8 @@ bool VioManager::try_to_initialize(const ov_core::CameraData &message) {
   }
 
   // 在第二个线程中运行初始化，以便可以按需要慢速执行
-  // Run the initialization in a second thread so it can go as slow as it desires
+  // Run the initialization in a second thread so it can go as slow as it
+  // desires
   thread_init_running = true;
   std::thread thread([&] {
     // 从初始化器返回的结果
@@ -125,17 +135,20 @@ bool VioManager::try_to_initialize(const ov_core::CameraData &message) {
     // 如果没有启用零速度更新，我们将等待一个急动（jerk）
     // 否则可以立即初始化，因为零速度更新将处理静止情况
     // Try to initialize the system
-    // We will wait for a jerk if we do not have the zero velocity update enabled
-    // Otherwise we can initialize right away as the zero velocity will handle the stationary case
+    // We will wait for a jerk if we do not have the zero velocity update
+    // enabled Otherwise we can initialize right away as the zero velocity will
+    // handle the stationary case
     bool wait_for_jerk = (updaterZUPT == nullptr);
-    bool success = initializer->initialize(timestamp, covariance, order, state->_imu, wait_for_jerk);
+    bool success = initializer->initialize(timestamp, covariance, order,
+                                           state->_imu, wait_for_jerk);
 
     // 如果成功初始化，我们将根据需要设置协方差和状态元素
     // TODO: 在这里设置克隆状态和SLAM特征，以便我们可以立即开始更新...
-    // If we have initialized successfully we will set the covariance and state elements as needed
-    // TODO: set the clones and SLAM features here so we can start updating right away...
+    // If we have initialized successfully we will set the covariance and state
+    // elements as needed
+    // TODO: set the clones and SLAM features here so we can start updating
+    // right away...
     if (success) {
-
       // 设置协方差（状态应该已经在初始化器中设置）
       // Set our covariance (state should already be set in the initializer)
       StateHelper::set_initial_covariance(state, covariance, order);
@@ -149,12 +162,16 @@ bool VioManager::try_to_initialize(const ov_core::CameraData &message) {
       // 同时将特征点数量增加到估计期间所需的数量
       // 注意：我们将在所有相机之间均匀分配特征点总数
       // Cleanup any features older than the initialization time
-      // Also increase the number of features to the desired amount during estimation
-      // NOTE: we will split the total number of features over all cameras uniformly
-      trackFEATS->get_feature_database()->cleanup_measurements(state->_timestamp);
-      trackFEATS->set_num_features(std::floor((double)params.num_pts / (double)params.state_options.num_cameras));
+      // Also increase the number of features to the desired amount during
+      // estimation NOTE: we will split the total number of features over all
+      // cameras uniformly
+      trackFEATS->get_feature_database()->cleanup_measurements(
+          state->_timestamp);
+      trackFEATS->set_num_features(std::floor(
+          (double)params.num_pts / (double)params.state_options.num_cameras));
       if (trackARUCO != nullptr) {
-        trackARUCO->get_feature_database()->cleanup_measurements(state->_timestamp);
+        trackARUCO->get_feature_database()->cleanup_measurements(
+            state->_timestamp);
       }
 
       // 如果正在移动，则不执行零速度更新
@@ -166,13 +183,21 @@ bool VioManager::try_to_initialize(const ov_core::CameraData &message) {
       // Else we are good to go, print out our stats
       auto init_rT2 = rtime_now();
       PRINT_INFO(GREEN "========================================\n" RESET);
-      PRINT_INFO(GREEN "[VMH] 动态初始化完成，耗时 %.2f ms\n" RESET, rtime_ms(init_rT1, init_rT2));
-      PRINT_INFO(GREEN "[VMH] 速度 (% 8.4f, % 8.4f, % 8.4f) 姿态 (% 8.4f, % 8.4f, % 8.4f, % 8.4f)\n" RESET,
-                 state->_imu->vel()(0), state->_imu->vel()(1), state->_imu->vel()(2),
-                 state->_imu->quat()(0), state->_imu->quat()(1), state->_imu->quat()(2), state->_imu->quat()(3));
-      PRINT_INFO(GREEN "[VMH] 陀螺 (% 8.4f, % 8.4f, % 8.4f) 加计 (% 8.4f, % 8.4f, % 8.4f)\n" RESET,
-                 state->_imu->bias_g()(0), state->_imu->bias_g()(1), state->_imu->bias_g()(2),
-                 state->_imu->bias_a()(0), state->_imu->bias_a()(1), state->_imu->bias_a()(2));
+      PRINT_INFO(GREEN "[VMH] 动态初始化完成，耗时 %.2f ms\n" RESET,
+                 rtime_ms(init_rT1, init_rT2));
+      PRINT_INFO(GREEN
+                 "[VMH] 速度 (% 8.4f, % 8.4f, % 8.4f) 姿态 (% 8.4f, % 8.4f, % "
+                 "8.4f, % 8.4f)\n" RESET,
+                 state->_imu->vel()(0), state->_imu->vel()(1),
+                 state->_imu->vel()(2), state->_imu->quat()(0),
+                 state->_imu->quat()(1), state->_imu->quat()(2),
+                 state->_imu->quat()(3));
+      PRINT_INFO(GREEN
+                 "[VMH] 陀螺 (% 8.4f, % 8.4f, % 8.4f) 加计 (% 8.4f, % 8.4f, % "
+                 "8.4f)\n" RESET,
+                 state->_imu->bias_g()(0), state->_imu->bias_g()(1),
+                 state->_imu->bias_g()(2), state->_imu->bias_a()(0),
+                 state->_imu->bias_a()(1), state->_imu->bias_a()(2));
       PRINT_INFO(GREEN "========================================\n" RESET);
 
       // 移除早于初始化时间的相机时间戳
@@ -190,15 +215,21 @@ bool VioManager::try_to_initialize(const ov_core::CameraData &message) {
       // 现在我们已经初始化，将状态传播到当前时间步
       // 一般来说，只要初始化没有花费太长时间，这应该是可以的
       // 如果初始偏差不好，传播超过几秒将成为一个问题
-      // Now we have initialized we will propagate the state to the current timestep
-      // In general this should be ok as long as the initialization didn't take too long to perform
-      // Propagating over multiple seconds will become an issue if the initial biases are bad
-      size_t clone_rate = (size_t)((double)camera_timestamps_to_init.size() / (double)params.state_options.max_clone_size) + 1;
-      for (size_t i = 0; i < camera_timestamps_to_init.size(); i += clone_rate) {
+      // Now we have initialized we will propagate the state to the current
+      // timestep In general this should be ok as long as the initialization
+      // didn't take too long to perform Propagating over multiple seconds will
+      // become an issue if the initial biases are bad
+      size_t clone_rate =
+          (size_t)((double)camera_timestamps_to_init.size() /
+                   (double)params.state_options.max_clone_size) +
+          1;
+      for (size_t i = 0; i < camera_timestamps_to_init.size();
+           i += clone_rate) {
         propagator->propagate_and_clone(state, camera_timestamps_to_init.at(i));
         StateHelper::marginalize_old_clone(state);
       }
-      PRINT_DEBUG(YELLOW "[VMH]: 将状态向前推进了 %.2f 秒\n" RESET, state->_timestamp - timestamp);
+      PRINT_DEBUG(YELLOW "[VMH]: 将状态向前推进了 %.2f 秒\n" RESET,
+                  state->_timestamp - timestamp);
       thread_init_success = true;
       camera_queue_init.clear();
 
@@ -226,8 +257,8 @@ bool VioManager::try_to_initialize(const ov_core::CameraData &message) {
  * @brief 重新三角化活动跟踪的特征点
  * @param message 相机数据消息
  */
-void VioManager::retriangulate_active_tracks(const ov_core::CameraData &message) {
-
+void VioManager::retriangulate_active_tracks(
+    const ov_core::CameraData &message) {
   // 开始计时
   // Start timing
   rtime_t retri_rT1, retri_rT2, retri_rT3;
@@ -235,12 +266,14 @@ void VioManager::retriangulate_active_tracks(const ov_core::CameraData &message)
 
   // 清除旧的活动跟踪数据
   // Clear old active track data
-  assert(state->_clones_IMU.find(message.timestamp) != state->_clones_IMU.end());
+  assert(state->_clones_IMU.find(message.timestamp) !=
+         state->_clones_IMU.end());
   active_tracks_time = message.timestamp;
   active_image = cv::Mat();
   trackFEATS->display_active(active_image, 255, 255, 255, 255, 255, 255, " ");
   if (!active_image.empty()) {
-    active_image = active_image(cv::Rect(0, 0, message.images.at(0).cols, message.images.at(0).rows));
+    active_image = active_image(
+        cv::Rect(0, 0, message.images.at(0).cols, message.images.at(0).rows));
   }
   active_tracks_posinG.clear();
   active_tracks_uvd.clear();
@@ -263,7 +296,6 @@ void VioManager::retriangulate_active_tracks(const ov_core::CameraData &message)
   // Append our new observations for each camera
   std::map<size_t, cv::Point2f> feat_uvs_in_cam0;
   for (auto const &cam_id : message.sensor_ids) {
-
     // IMU historical clone
     Eigen::Matrix3d R_GtoI = state->_clones_IMU.at(active_tracks_time)->Rot();
     Eigen::Vector3d p_IinG = state->_clones_IMU.at(active_tracks_time)->pos();
@@ -280,7 +312,6 @@ void VioManager::retriangulate_active_tracks(const ov_core::CameraData &message)
     assert(last_obs.find(cam_id) != last_obs.end());
     assert(last_ids.find(cam_id) != last_ids.end());
     for (size_t i = 0; i < last_obs.at(cam_id).size(); i++) {
-
       // Record this feature uv if is seen from cam0
       size_t featid = last_ids.at(cam_id).at(i);
       cv::Point2f pt_d = last_obs.at(cam_id).at(i).pt;
@@ -289,14 +320,16 @@ void VioManager::retriangulate_active_tracks(const ov_core::CameraData &message)
       }
 
       // 如果这是SLAM特征点，则跳过（状态估计优先）
-      // Skip this feature if it is a SLAM feature (the state estimate takes priority)
+      // Skip this feature if it is a SLAM feature (the state estimate takes
+      // priority)
       if (state->_features_SLAM.find(featid) != state->_features_SLAM.end()) {
         continue;
       }
 
       // 获取UV坐标归一化向量
       // Get the UV coordinate normal
-      cv::Point2f pt_n = state->_cam_intrinsics_cameras.at(cam_id)->undistort_cv(pt_d);
+      cv::Point2f pt_n =
+          state->_cam_intrinsics_cameras.at(cam_id)->undistort_cv(pt_d);
       Eigen::Matrix<double, 3, 1> b_i;
       b_i << pt_n.x, pt_n.y, 1;
       b_i = R_GtoCi.transpose() * b_i;
@@ -314,12 +347,13 @@ void VioManager::retriangulate_active_tracks(const ov_core::CameraData &message)
       } else {
         active_feat_linsys_A_new[featid] = Ai + active_feat_linsys_A[featid];
         active_feat_linsys_b_new[featid] = bi + active_feat_linsys_b[featid];
-        active_feat_linsys_count_new[featid] = 1 + active_feat_linsys_count[featid];
+        active_feat_linsys_count_new[featid] =
+            1 + active_feat_linsys_count[featid];
       }
 
-      // For this feature, recover its 3d position if we have enough observations!
+      // For this feature, recover its 3d position if we have enough
+      // observations!
       if (active_feat_linsys_count_new.at(featid) > 3) {
-
         // Recover feature estimate
         Eigen::Matrix3d A = active_feat_linsys_A_new[featid];
         Eigen::Vector3d b = active_feat_linsys_b_new[featid];
@@ -331,12 +365,15 @@ void VioManager::retriangulate_active_tracks(const ov_core::CameraData &message)
         Eigen::MatrixXd singularValues;
         singularValues.resize(svd.singularValues().rows(), 1);
         singularValues = svd.singularValues();
-        double condA = singularValues(0, 0) / singularValues(singularValues.rows() - 1, 0);
+        double condA =
+            singularValues(0, 0) / singularValues(singularValues.rows() - 1, 0);
 
         // If we have a bad condition number, or it is too close
         // Then set the flag for bad (i.e. set z-axis to nan)
-        if (std::abs(condA) <= params.featinit_options.max_cond_number && p_FinCi(2, 0) >= params.featinit_options.min_dist &&
-            p_FinCi(2, 0) <= params.featinit_options.max_dist && !std::isnan(p_FinCi.norm())) {
+        if (std::abs(condA) <= params.featinit_options.max_cond_number &&
+            p_FinCi(2, 0) >= params.featinit_options.min_dist &&
+            p_FinCi(2, 0) <= params.featinit_options.max_dist &&
+            !std::isnan(p_FinCi.norm())) {
           active_tracks_posinG_new[featid] = p_FinG;
         }
       }
@@ -354,24 +391,30 @@ void VioManager::retriangulate_active_tracks(const ov_core::CameraData &message)
 
   // 如果没有特征点则返回
   // Return if no features
-  if (active_tracks_posinG.empty() && state->_features_SLAM.empty())
-    return;
+  if (active_tracks_posinG.empty() && state->_features_SLAM.empty()) return;
 
   // 追加我们拥有的SLAM特征点
   // Append our SLAM features we have
   for (const auto &feat : state->_features_SLAM) {
     Eigen::Vector3d p_FinG = feat.second->get_xyz(false);
-    if (LandmarkRepresentation::is_relative_representation(feat.second->_feat_representation)) {
+    if (LandmarkRepresentation::is_relative_representation(
+            feat.second->_feat_representation)) {
       // Assert that we have an anchor pose for this feature
       assert(feat.second->_anchor_cam_id != -1);
       // Get calibration for our anchor camera
-      Eigen::Matrix3d R_ItoC = state->_calib_IMUtoCAM.at(feat.second->_anchor_cam_id)->Rot();
-      Eigen::Vector3d p_IinC = state->_calib_IMUtoCAM.at(feat.second->_anchor_cam_id)->pos();
+      Eigen::Matrix3d R_ItoC =
+          state->_calib_IMUtoCAM.at(feat.second->_anchor_cam_id)->Rot();
+      Eigen::Vector3d p_IinC =
+          state->_calib_IMUtoCAM.at(feat.second->_anchor_cam_id)->pos();
       // Anchor pose orientation and position
-      Eigen::Matrix3d R_GtoI = state->_clones_IMU.at(feat.second->_anchor_clone_timestamp)->Rot();
-      Eigen::Vector3d p_IinG = state->_clones_IMU.at(feat.second->_anchor_clone_timestamp)->pos();
+      Eigen::Matrix3d R_GtoI =
+          state->_clones_IMU.at(feat.second->_anchor_clone_timestamp)->Rot();
+      Eigen::Vector3d p_IinG =
+          state->_clones_IMU.at(feat.second->_anchor_clone_timestamp)->pos();
       // Feature in the global frame
-      p_FinG = R_GtoI.transpose() * R_ItoC.transpose() * (feat.second->get_xyz(false) - p_IinC) + p_IinG;
+      p_FinG = R_GtoI.transpose() * R_ItoC.transpose() *
+                   (feat.second->get_xyz(false) - p_IinC) +
+               p_IinG;
     }
     active_tracks_posinG[feat.second->_featid] = p_FinG;
   }
@@ -394,24 +437,24 @@ void VioManager::retriangulate_active_tracks(const ov_core::CameraData &message)
   // 4. Next we can update our variable with the global position
   //    We also will project the features into the current frame
   for (const auto &feat : active_tracks_posinG) {
-
     // 暂时跳过当前帧中未看到的特征点
     // TODO: 我们应该发布不在cam0中跟踪的其他特征点吗？？
     // For now skip features not seen from current frame
     // TODO: should we publish other features not tracked in cam0??
-    if (feat_uvs_in_cam0.find(feat.first) == feat_uvs_in_cam0.end())
-      continue;
+    if (feat_uvs_in_cam0.find(feat.first) == feat_uvs_in_cam0.end()) continue;
 
     // 计算特征点在当前帧中的深度
     // 将SLAM特征点和非cam0特征点投影到当前参考帧
     // Calculate the depth of the feature in the current frame
-    // Project SLAM feature and non-cam0 features into the current frame of reference
+    // Project SLAM feature and non-cam0 features into the current frame of
+    // reference
     Eigen::Vector3d p_FinIi = R_GtoIi * (feat.second - p_IiinG);
     Eigen::Vector3d p_FinCi = R_ItoC * p_FinIi + p_IinC;
     double depth = p_FinCi(2);
     Eigen::Vector2d uv_dist;
     if (feat_uvs_in_cam0.find(feat.first) != feat_uvs_in_cam0.end()) {
-      uv_dist << (double)feat_uvs_in_cam0.at(feat.first).x, (double)feat_uvs_in_cam0.at(feat.first).y;
+      uv_dist << (double)feat_uvs_in_cam0.at(feat.first).x,
+          (double)feat_uvs_in_cam0.at(feat.first).y;
     } else {
       Eigen::Vector2d uv_norm;
       uv_norm << p_FinCi(0) / depth, p_FinCi(1) / depth;
@@ -428,8 +471,10 @@ void VioManager::retriangulate_active_tracks(const ov_core::CameraData &message)
     // Skip if not valid (i.e. negative depth, or outside of image)
     int width = state->_cam_intrinsics_cameras.at(0)->w();
     int height = state->_cam_intrinsics_cameras.at(0)->h();
-    if (uv_dist(0) < 0 || (int)uv_dist(0) >= width || uv_dist(1) < 0 || (int)uv_dist(1) >= height) {
-      // PRINT_DEBUG("feat %zu -> depth = %.2f | u_d = %.2f | v_d = %.2f\n",(*it2)->featid,depth,uv_dist(0),uv_dist(1));
+    if (uv_dist(0) < 0 || (int)uv_dist(0) >= width || uv_dist(1) < 0 ||
+        (int)uv_dist(1) >= height) {
+      // PRINT_DEBUG("feat %zu -> depth = %.2f | u_d = %.2f | v_d =
+      // %.2f\n",(*it2)->featid,depth,uv_dist(0),uv_dist(1));
       continue;
     }
 
@@ -442,10 +487,15 @@ void VioManager::retriangulate_active_tracks(const ov_core::CameraData &message)
   retri_rT3 = rtime_now();
 
   // Timing information
-  PRINT_ALL(CYAN "[VMH]: 三角化耗时 %.2f ms (%zu 个已三角化，共 %zu 个活动特征)\n" RESET,
-            rtime_ms(retri_rT1, retri_rT2), total_triangulated, active_feat_linsys_A.size());
-  PRINT_ALL(CYAN "[VMH]: 重投影到当前帧耗时 %.2f ms\n" RESET, rtime_ms(retri_rT2, retri_rT3));
-  PRINT_ALL(CYAN "[VMH]: 总耗时 %.2f ms\n" RESET, rtime_ms(retri_rT1, retri_rT3));
+  PRINT_ALL(
+      CYAN
+      "[VMH]: 三角化耗时 %.2f ms (%zu 个已三角化，共 %zu 个活动特征)\n" RESET,
+      rtime_ms(retri_rT1, retri_rT2), total_triangulated,
+      active_feat_linsys_A.size());
+  PRINT_ALL(CYAN "[VMH]: 重投影到当前帧耗时 %.2f ms\n" RESET,
+            rtime_ms(retri_rT2, retri_rT3));
+  PRINT_ALL(CYAN "[VMH]: 总耗时 %.2f ms\n" RESET,
+            rtime_ms(retri_rT1, retri_rT3));
 }
 
 /**
@@ -453,11 +503,9 @@ void VioManager::retriangulate_active_tracks(const ov_core::CameraData &message)
  * @return 包含跟踪特征的可视化图像
  */
 cv::Mat VioManager::get_historical_viz_image() {
-
   // 如果尚未准备好则返回
   // Return if not ready yet
-  if (state == nullptr || trackFEATS == nullptr)
-    return cv::Mat();
+  if (state == nullptr || trackFEATS == nullptr) return cv::Mat();
 
   // 构建应高亮显示的特征ID列表（例如SLAM特征）
   // Build an id-list of what features we should highlight (i.e. SLAM)
@@ -473,10 +521,13 @@ cv::Mat VioManager::get_historical_viz_image() {
 
   // Get the current active tracks
   cv::Mat img_history;
-  trackFEATS->display_history(img_history, 255, 255, 0, 255, 255, 255, highlighted_ids, overlay);
+  trackFEATS->display_history(img_history, 255, 255, 0, 255, 255, 255,
+                              highlighted_ids, overlay);
   if (trackARUCO != nullptr) {
-    trackARUCO->display_history(img_history, 0, 255, 255, 255, 255, 255, highlighted_ids, overlay);
-    // trackARUCO->display_active(img_history, 0, 255, 255, 255, 255, 255, overlay);
+    trackARUCO->display_history(img_history, 0, 255, 255, 255, 255, 255,
+                                highlighted_ids, overlay);
+    // trackARUCO->display_active(img_history, 0, 255, 255, 255, 255, 255,
+    // overlay);
   }
 
   // Finally return the image
@@ -491,20 +542,26 @@ std::vector<Eigen::Vector3d> VioManager::get_features_SLAM() {
   std::vector<Eigen::Vector3d> slam_feats;
   for (auto &f : state->_features_SLAM) {
     // 跳过ArUco特征（ID小于等于4*max_aruco_features）
-    if ((int)f.first <= 4 * state->_options.max_aruco_features)
-      continue;
+    if ((int)f.first <= 4 * state->_options.max_aruco_features) continue;
     // 如果是相对表示的特征，需要转换到全局坐标系
-    if (ov_type::LandmarkRepresentation::is_relative_representation(f.second->_feat_representation)) {
+    if (ov_type::LandmarkRepresentation::is_relative_representation(
+            f.second->_feat_representation)) {
       // Assert that we have an anchor pose for this feature
       assert(f.second->_anchor_cam_id != -1);
       // Get calibration for our anchor camera
-      Eigen::Matrix<double, 3, 3> R_ItoC = state->_calib_IMUtoCAM.at(f.second->_anchor_cam_id)->Rot();
-      Eigen::Matrix<double, 3, 1> p_IinC = state->_calib_IMUtoCAM.at(f.second->_anchor_cam_id)->pos();
+      Eigen::Matrix<double, 3, 3> R_ItoC =
+          state->_calib_IMUtoCAM.at(f.second->_anchor_cam_id)->Rot();
+      Eigen::Matrix<double, 3, 1> p_IinC =
+          state->_calib_IMUtoCAM.at(f.second->_anchor_cam_id)->pos();
       // Anchor pose orientation and position
-      Eigen::Matrix<double, 3, 3> R_GtoI = state->_clones_IMU.at(f.second->_anchor_clone_timestamp)->Rot();
-      Eigen::Matrix<double, 3, 1> p_IinG = state->_clones_IMU.at(f.second->_anchor_clone_timestamp)->pos();
+      Eigen::Matrix<double, 3, 3> R_GtoI =
+          state->_clones_IMU.at(f.second->_anchor_clone_timestamp)->Rot();
+      Eigen::Matrix<double, 3, 1> p_IinG =
+          state->_clones_IMU.at(f.second->_anchor_clone_timestamp)->pos();
       // Feature in the global frame
-      slam_feats.push_back(R_GtoI.transpose() * R_ItoC.transpose() * (f.second->get_xyz(false) - p_IinC) + p_IinG);
+      slam_feats.push_back(R_GtoI.transpose() * R_ItoC.transpose() *
+                               (f.second->get_xyz(false) - p_IinC) +
+                           p_IinG);
     } else {
       slam_feats.push_back(f.second->get_xyz(false));
     }
@@ -520,19 +577,25 @@ std::vector<Eigen::Vector3d> VioManager::get_features_ARUCO() {
   std::vector<Eigen::Vector3d> aruco_feats;
   for (auto &f : state->_features_SLAM) {
     // 只处理ArUco特征（ID小于等于4*max_aruco_features）
-    if ((int)f.first > 4 * state->_options.max_aruco_features)
-      continue;
-    if (ov_type::LandmarkRepresentation::is_relative_representation(f.second->_feat_representation)) {
+    if ((int)f.first > 4 * state->_options.max_aruco_features) continue;
+    if (ov_type::LandmarkRepresentation::is_relative_representation(
+            f.second->_feat_representation)) {
       // Assert that we have an anchor pose for this feature
       assert(f.second->_anchor_cam_id != -1);
       // Get calibration for our anchor camera
-      Eigen::Matrix<double, 3, 3> R_ItoC = state->_calib_IMUtoCAM.at(f.second->_anchor_cam_id)->Rot();
-      Eigen::Matrix<double, 3, 1> p_IinC = state->_calib_IMUtoCAM.at(f.second->_anchor_cam_id)->pos();
+      Eigen::Matrix<double, 3, 3> R_ItoC =
+          state->_calib_IMUtoCAM.at(f.second->_anchor_cam_id)->Rot();
+      Eigen::Matrix<double, 3, 1> p_IinC =
+          state->_calib_IMUtoCAM.at(f.second->_anchor_cam_id)->pos();
       // Anchor pose orientation and position
-      Eigen::Matrix<double, 3, 3> R_GtoI = state->_clones_IMU.at(f.second->_anchor_clone_timestamp)->Rot();
-      Eigen::Matrix<double, 3, 1> p_IinG = state->_clones_IMU.at(f.second->_anchor_clone_timestamp)->pos();
+      Eigen::Matrix<double, 3, 3> R_GtoI =
+          state->_clones_IMU.at(f.second->_anchor_clone_timestamp)->Rot();
+      Eigen::Matrix<double, 3, 1> p_IinG =
+          state->_clones_IMU.at(f.second->_anchor_clone_timestamp)->pos();
       // Feature in the global frame
-      aruco_feats.push_back(R_GtoI.transpose() * R_ItoC.transpose() * (f.second->get_xyz(false) - p_IinC) + p_IinG);
+      aruco_feats.push_back(R_GtoI.transpose() * R_ItoC.transpose() *
+                                (f.second->get_xyz(false) - p_IinC) +
+                            p_IinG);
     } else {
       aruco_feats.push_back(f.second->get_xyz(false));
     }

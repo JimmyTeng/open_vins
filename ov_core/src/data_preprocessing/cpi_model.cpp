@@ -2,9 +2,10 @@
 // 使用 ov_core quat_ops（与 CpiV1 一致），无 Sophus 依赖。
 
 #include "data_preprocessing/cpi_model.h"
-#include "utils/quat_ops.h"
 
 #include <cmath>
+
+#include "utils/quat_ops.h"
 
 namespace data_preprocessing {
 
@@ -84,7 +85,8 @@ void CpiModel::FeedImu(double t_0, double t_1, const Vector3& w_m_0,
     R_tau2tau1 = eye3_ - delta_t * w_x + (dt_2 / 2.0) * w_x_2;
   } else {
     const double mag_w2 = mag_w * mag_w;
-    R_tau2tau1 = eye3_ - (sin_wt / mag_w) * w_x + ((1.0 - cos_wt) / mag_w2) * w_x_2;
+    R_tau2tau1 =
+        eye3_ - (sin_wt / mag_w) * w_x + ((1.0 - cos_wt) / mag_w2) * w_x_2;
   }
 
   Matrix3 R_k2tau1 = R_tau2tau1 * R_k2tau;
@@ -100,7 +102,8 @@ void CpiModel::FeedImu(double t_0, double t_1, const Vector3& w_m_0,
     const double mag_w3 = mag_w * mag_w * mag_w;
     const double mag_w4 = mag_w3 * mag_w;
     f_1 = (w_dt * cos_wt - sin_wt) / mag_w3;
-    f_2 = (w_dt * w_dt - 2.0 * cos_wt - 2.0 * w_dt * sin_wt + 2.0) / (2.0 * mag_w4);
+    f_2 = (w_dt * w_dt - 2.0 * cos_wt - 2.0 * w_dt * sin_wt + 2.0) /
+          (2.0 * mag_w4);
     f_3 = -(1.0 - cos_wt) / (mag_w * mag_w);
     f_4 = (w_dt - sin_wt) / mag_w3;
   }
@@ -120,7 +123,8 @@ void CpiModel::FeedImu(double t_0, double t_1, const Vector3& w_m_0,
   } else {
     const double w_dt2 = w_dt * w_dt;
     const double w_dt3 = w_dt2 * w_dt;
-    J_r_tau1 = eye3_ - ((1.0 - cos_wt) / w_dt2) * w_tx + ((w_dt - sin_wt) / w_dt3) * w_tx * w_tx;
+    J_r_tau1 = eye3_ - ((1.0 - cos_wt) / w_dt2) * w_tx +
+               ((w_dt - sin_wt) / w_dt3) * w_tx * w_tx;
   }
 
   J_q = R_tau2tau1 * J_q + J_r_tau1 * delta_t;
@@ -157,12 +161,27 @@ void CpiModel::FeedImu(double t_0, double t_1, const Vector3& w_m_0,
     const double mag_w5 = std::pow(mag_w, 5);
     const double mag_w6 = mag_w5 * mag_w;
     const double mag_w4 = std::pow(mag_w, 4);
-    df_1_dbw_1 = w_1 * (w_dt * w_dt * sin_wt - 3.0 * sin_wt + 3.0 * w_dt * cos_wt) / mag_w5;
-    df_1_dbw_2 = w_2 * (w_dt * w_dt * sin_wt - 3.0 * sin_wt + 3.0 * w_dt * cos_wt) / mag_w5;
-    df_1_dbw_3 = w_3 * (w_dt * w_dt * sin_wt - 3.0 * sin_wt + 3.0 * w_dt * cos_wt) / mag_w5;
-    df_2_dbw_1 = w_1 * (w_dt * w_dt - 4.0 * cos_wt - 4.0 * w_dt * sin_wt + w_dt * w_dt * cos_wt + 4.0) / mag_w6;
-    df_2_dbw_2 = w_2 * (w_dt * w_dt - 4.0 * cos_wt - 4.0 * w_dt * sin_wt + w_dt * w_dt * cos_wt + 4.0) / mag_w6;
-    df_2_dbw_3 = w_3 * (w_dt * w_dt - 4.0 * cos_wt - 4.0 * w_dt * sin_wt + w_dt * w_dt * cos_wt + 4.0) / mag_w6;
+    df_1_dbw_1 = w_1 *
+                 (w_dt * w_dt * sin_wt - 3.0 * sin_wt + 3.0 * w_dt * cos_wt) /
+                 mag_w5;
+    df_1_dbw_2 = w_2 *
+                 (w_dt * w_dt * sin_wt - 3.0 * sin_wt + 3.0 * w_dt * cos_wt) /
+                 mag_w5;
+    df_1_dbw_3 = w_3 *
+                 (w_dt * w_dt * sin_wt - 3.0 * sin_wt + 3.0 * w_dt * cos_wt) /
+                 mag_w5;
+    df_2_dbw_1 = w_1 *
+                 (w_dt * w_dt - 4.0 * cos_wt - 4.0 * w_dt * sin_wt +
+                  w_dt * w_dt * cos_wt + 4.0) /
+                 mag_w6;
+    df_2_dbw_2 = w_2 *
+                 (w_dt * w_dt - 4.0 * cos_wt - 4.0 * w_dt * sin_wt +
+                  w_dt * w_dt * cos_wt + 4.0) /
+                 mag_w6;
+    df_2_dbw_3 = w_3 *
+                 (w_dt * w_dt - 4.0 * cos_wt - 4.0 * w_dt * sin_wt +
+                  w_dt * w_dt * cos_wt + 4.0) /
+                 mag_w6;
     df_3_dbw_1 = w_1 * (2.0 * (cos_wt - 1.0) + w_dt * sin_wt) / mag_w4;
     df_3_dbw_2 = w_2 * (2.0 * (cos_wt - 1.0) + w_dt * sin_wt) / mag_w4;
     df_3_dbw_3 = w_3 * (2.0 * (cos_wt - 1.0) + w_dt * sin_wt) / mag_w4;
@@ -172,12 +191,36 @@ void CpiModel::FeedImu(double t_0, double t_1, const Vector3& w_m_0,
   }
 
   J_a += J_b * delta_t;
-  J_a.col(0) += (d_R_bw_1 * alpha_arg + R_tau12k * (df_1_dbw_1 * w_x - f_1 * e_1x_ + df_2_dbw_1 * w_x_2 - f_2 * (e_1x_ * w_x + w_x * e_1x_))) * a_hat;
-  J_a.col(1) += (d_R_bw_2 * alpha_arg + R_tau12k * (df_1_dbw_2 * w_x - f_1 * e_2x_ + df_2_dbw_2 * w_x_2 - f_2 * (e_2x_ * w_x + w_x * e_2x_))) * a_hat;
-  J_a.col(2) += (d_R_bw_3 * alpha_arg + R_tau12k * (df_1_dbw_3 * w_x - f_1 * e_3x_ + df_2_dbw_3 * w_x_2 - f_2 * (e_3x_ * w_x + w_x * e_3x_))) * a_hat;
-  J_b.col(0) += (d_R_bw_1 * Beta_arg + R_tau12k * (df_3_dbw_1 * w_x - f_3 * e_1x_ + df_4_dbw_1 * w_x_2 - f_4 * (e_1x_ * w_x + w_x * e_1x_))) * a_hat;
-  J_b.col(1) += (d_R_bw_2 * Beta_arg + R_tau12k * (df_3_dbw_2 * w_x - f_3 * e_2x_ + df_4_dbw_2 * w_x_2 - f_4 * (e_2x_ * w_x + w_x * e_2x_))) * a_hat;
-  J_b.col(2) += (d_R_bw_3 * Beta_arg + R_tau12k * (df_3_dbw_3 * w_x - f_3 * e_3x_ + df_4_dbw_3 * w_x_2 - f_4 * (e_3x_ * w_x + w_x * e_3x_))) * a_hat;
+  J_a.col(0) +=
+      (d_R_bw_1 * alpha_arg +
+       R_tau12k * (df_1_dbw_1 * w_x - f_1 * e_1x_ + df_2_dbw_1 * w_x_2 -
+                   f_2 * (e_1x_ * w_x + w_x * e_1x_))) *
+      a_hat;
+  J_a.col(1) +=
+      (d_R_bw_2 * alpha_arg +
+       R_tau12k * (df_1_dbw_2 * w_x - f_1 * e_2x_ + df_2_dbw_2 * w_x_2 -
+                   f_2 * (e_2x_ * w_x + w_x * e_2x_))) *
+      a_hat;
+  J_a.col(2) +=
+      (d_R_bw_3 * alpha_arg +
+       R_tau12k * (df_1_dbw_3 * w_x - f_1 * e_3x_ + df_2_dbw_3 * w_x_2 -
+                   f_2 * (e_3x_ * w_x + w_x * e_3x_))) *
+      a_hat;
+  J_b.col(0) +=
+      (d_R_bw_1 * Beta_arg +
+       R_tau12k * (df_3_dbw_1 * w_x - f_3 * e_1x_ + df_4_dbw_1 * w_x_2 -
+                   f_4 * (e_1x_ * w_x + w_x * e_1x_))) *
+      a_hat;
+  J_b.col(1) +=
+      (d_R_bw_2 * Beta_arg +
+       R_tau12k * (df_3_dbw_2 * w_x - f_3 * e_2x_ + df_4_dbw_2 * w_x_2 -
+                   f_4 * (e_2x_ * w_x + w_x * e_2x_))) *
+      a_hat;
+  J_b.col(2) +=
+      (d_R_bw_3 * Beta_arg +
+       R_tau12k * (df_3_dbw_3 * w_x - f_3 * e_3x_ + df_4_dbw_3 * w_x_2 -
+                   f_4 * (e_3x_ * w_x + w_x * e_3x_))) *
+      a_hat;
 
   // 测量协方差（RK4 积分 Lyapunov）
   Matrix3 R_mid;
@@ -186,7 +229,8 @@ void CpiModel::FeedImu(double t_0, double t_1, const Vector3& w_m_0,
     R_mid = eye3_ - half_dt * w_x + (half_dt * half_dt / 2.0) * w_x_2;
   } else {
     const double half_wt = mag_w * 0.5 * delta_t;
-    R_mid = eye3_ - (std::sin(half_wt) / mag_w) * w_x + ((1.0 - std::cos(half_wt)) / (mag_w * mag_w)) * w_x_2;
+    R_mid = eye3_ - (std::sin(half_wt) / mag_w) * w_x +
+            ((1.0 - std::cos(half_wt)) / (mag_w * mag_w)) * w_x_2;
   }
   R_mid = R_mid * R_k2tau;
 
@@ -202,7 +246,9 @@ void CpiModel::FeedImu(double t_0, double t_1, const Vector3& w_m_0,
     return F;
   };
 
-  auto cov_dot = [this](const Matrix15& F, const Eigen::Matrix<double, 15, 12>& Gk, const Matrix15& P) -> Matrix15 {
+  auto cov_dot = [this](const Matrix15& F,
+                        const Eigen::Matrix<double, 15, 12>& Gk,
+                        const Matrix15& P) -> Matrix15 {
     return F * P + P * F.transpose() + Gk * Q_c_ * Gk.transpose();
   };
 
@@ -239,7 +285,8 @@ void CpiModel::FeedImu(double t_0, double t_1, const Vector3& w_m_0,
   Matrix15 P_k4 = P_meas_ + P_dot_k3 * delta_t;
   Matrix15 P_dot_k4 = cov_dot(F_k4, G_k4, P_k4);
 
-  P_meas_ += (delta_t / 6.0) * (P_dot_k1 + 2.0 * P_dot_k2 + 2.0 * P_dot_k3 + P_dot_k4);
+  P_meas_ +=
+      (delta_t / 6.0) * (P_dot_k1 + 2.0 * P_dot_k2 + 2.0 * P_dot_k3 + P_dot_k4);
   P_meas_ = 0.5 * (P_meas_ + P_meas_.transpose());
 
   R_k2tau = R_k2tau1;

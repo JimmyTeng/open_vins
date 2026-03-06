@@ -19,14 +19,14 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include <unistd.h>
+
 #include <cmath>
 #include <csignal>
 #include <deque>
 #include <iomanip>
 #include <sstream>
-#include <unistd.h>
 #include <vector>
-
 
 #if ROS_AVAILABLE == 1
 #include <ros/ros.h>
@@ -42,7 +42,6 @@ void signal_callback_handler(int signum) { std::exit(signum); }
 
 // Main function
 int main(int argc, char **argv) {
-
   // Ensure we have a path, if the user passes it then we should use it
   std::string config_path = "unset_path_to_config.yaml";
   if (argc > 1) {
@@ -76,13 +75,13 @@ int main(int argc, char **argv) {
   // Continue to simulate until we have processed all the measurements
   signal(SIGINT, signal_callback_handler);
   while (sim.ok()) {
-
     // IMU: get the next simulated IMU measurement if we have it
     double time_imu;
     Eigen::Vector3d wm, am;
     bool hasimu = sim.get_next_imu(time_imu, wm, am);
     if (hasimu) {
-      PRINT_DEBUG("new imu measurement = %0.15g | w = %0.3g | a = %0.3g\n", time_imu, wm.norm(), am.norm());
+      PRINT_DEBUG("new imu measurement = %0.15g | w = %0.3g | a = %0.3g\n",
+                  time_imu, wm.norm(), am.norm());
     }
 
     // CAM: get the next simulated camera uv measurements if we have them
@@ -91,7 +90,8 @@ int main(int argc, char **argv) {
     std::vector<std::vector<std::pair<size_t, Eigen::VectorXf>>> feats;
     bool hascam = sim.get_next_cam(time_cam, camids, feats);
     if (hascam) {
-      PRINT_DEBUG("new cam measurement = %0.15g | %u cameras | uvs(0) = %u \n", time_cam, camids.size(), feats.at(0).size());
+      PRINT_DEBUG("new cam measurement = %0.15g | %u cameras | uvs(0) = %u \n",
+                  time_cam, camids.size(), feats.at(0).size());
     }
   }
 
