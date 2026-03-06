@@ -10,8 +10,8 @@
 
 #include "yuv_parser.h"
 #include "imu_parser.h"
-#include "vio_interface.h"
-#include "data_bridge.h"
+#include "system/vio_interface.h"
+#include "system/data_bridge.h"
 #include <iostream>
 #include <iomanip>
 #include <vector>
@@ -93,7 +93,7 @@ int main(int argc, char* argv[]) {
     vio_imu.gyro.data[1] = imu_data[0].gyroY;
     vio_imu.gyro.data[2] = imu_data[0].gyroZ;
 
-    ov_core::ImuData ov_imu = ToImuData(vio_imu);
+    ov_core::ImuData ov_imu = ov_core::ToImuData(vio_imu);
 
     std::cout << "--- 示例 1: ToImuData ---" << std::endl;
     std::cout << std::fixed << std::setprecision(6);
@@ -122,7 +122,7 @@ int main(int argc, char* argv[]) {
       vio_imus[i].gyro.data[2] = imu_data[i].gyroZ;
     }
 
-    auto ov_imus = ToImuDataBatch(vio_imus.data(), vio_imus.size());
+    auto ov_imus = ov_core::ToImuDataBatch(vio_imus.data(), vio_imus.size());
 
     std::cout << "--- 示例 2: ToImuDataBatch ---" << std::endl;
     std::cout << "  转换了 " << ov_imus.size() << " 条 IMU" << std::endl;
@@ -149,14 +149,14 @@ int main(int argc, char* argv[]) {
       vio_img.buffer = gray.data;
 
       // 3a: ToCvMat
-      cv::Mat mat_clone = ToCvMat(vio_img, true);
+      cv::Mat mat_clone = ov_core::ToCvMat(vio_img, true);
       std::cout << "--- 示例 3a: ToCvMat ---" << std::endl;
       std::cout << "  cv::Mat size: " << mat_clone.cols << "x" << mat_clone.rows
                 << ", type: CV_8UC" << mat_clone.channels() << std::endl;
       std::cout << std::endl;
 
       // 3b: ToCameraData (OpenVINS 可直接使用)
-      ov_core::CameraData cam_data = ToCameraData(vio_img, true);
+      ov_core::CameraData cam_data = ov_core::ToCameraData(vio_img, true);
 
       std::cout << "--- 示例 3b: ToCameraData ---" << std::endl;
       std::cout << std::fixed << std::setprecision(6);

@@ -10,7 +10,9 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <opencv2/core.hpp>
+#if OPENVINS_HAVE_OPENCV_HIGHGUI
 #include <opencv2/highgui.hpp>
+#endif
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 
@@ -399,8 +401,11 @@ int YUVParser::playFramesStepByStep(const std::string& dump_yuv_dir, const std::
         std::cout << "时间范围: " << merged_data[0].timestamp 
                   << " 到 " << merged_data.back().timestamp << std::endl;
     }
+#if OPENVINS_HAVE_OPENCV_HIGHGUI
     std::cout << "\n按任意键继续播放下一帧，按 'q' 键退出\n" << std::endl;
-    
+#else
+    std::cout << "\n(本构建未启用 highgui，仅打印帧/IMU 信息)\n" << std::endl;
+#endif
     // 统计信息
     int frame_count = 0;
     int imu_count = 0;
@@ -411,49 +416,39 @@ int YUVParser::playFramesStepByStep(const std::string& dump_yuv_dir, const std::
         
         if (data.type == TimestampedData::FRAME) {
             frame_count++;
-            
+#if OPENVINS_HAVE_OPENCV_HIGHGUI
             // 转换为OpenCV Mat并显示
             cv::Mat frame_mat = frameToMat(data.frame_data.frame_data);
             if (frame_mat.empty()) {
                 std::cerr << "Warning: 无法转换第 " << frame_count << " 帧图像" << std::endl;
                 continue;
             }
-            
-            // 在图像上添加信息文本
             cv::Mat display_frame = frame_mat.clone();
             std::stringstream ss;
             ss << "Frame #" << frame_count 
                << " | Timestamp: " << data.timestamp
                << " | Total: " << i + 1 << "/" << merged_data.size();
-            
-            // 先画黑色轮廓，再画白色文本，使文本更清晰
             cv::putText(display_frame, ss.str(), cv::Point(10, 30),
                        cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(0, 0, 0), 3);
             cv::putText(display_frame, ss.str(), cv::Point(10, 30),
                        cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(255, 255, 255), 1);
-            
-            // 显示图像
             cv::imshow("YUV Frame Player", display_frame);
-            
-            // 等待按键
             std::cout << "[" << i + 1 << "/" << merged_data.size() << "] "
                       << "图像帧 #" << frame_count 
                       << " | 时间戳: " << data.timestamp
                       << " | 按任意键继续 (q退出)..." << std::flush;
-            
             int key = cv::waitKey(0) & 0xFF;
             std::cout << std::endl;
-            
-            // 如果按了 'q' 键，退出
-            if (key == 'q' || key == 'Q' || key == 27) {  // 27 is ESC
+            if (key == 'q' || key == 'Q' || key == 27) {
                 std::cout << "用户退出播放" << std::endl;
                 break;
             }
-            
+#else
+            std::cout << "[" << i + 1 << "/" << merged_data.size() << "] "
+                      << "图像帧 #" << frame_count << " | 时间戳: " << data.timestamp << std::endl;
+#endif
         } else if (data.type == TimestampedData::IMU) {
             imu_count++;
-            
-            // 打印IMU信息（不暂停，只打印信息）
             std::cout << "[" << i + 1 << "/" << merged_data.size() << "] "
                       << "IMU数据 #" << imu_count 
                       << " | 时间戳: " << data.timestamp
@@ -468,9 +463,9 @@ int YUVParser::playFramesStepByStep(const std::string& dump_yuv_dir, const std::
                       << std::endl;
         }
     }
-    
-    // 关闭窗口
+#if OPENVINS_HAVE_OPENCV_HIGHGUI
     cv::destroyAllWindows();
+#endif
     
     std::cout << "\n播放完成!" << std::endl;
     std::cout << "总共播放: " << frame_count << " 帧图像, " << imu_count << " 条IMU数据" << std::endl;

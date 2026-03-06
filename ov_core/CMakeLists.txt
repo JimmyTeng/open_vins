@@ -99,12 +99,14 @@ file(GLOB_RECURSE SRC_LIST_CPP
         "${PROJECT_SOURCE_DIR}/src/cpi/*.cpp"
         "${PROJECT_SOURCE_DIR}/src/data_preprocessing/*.cpp"
         "${PROJECT_SOURCE_DIR}/src/dynamic/*.cpp"
+        "${PROJECT_SOURCE_DIR}/src/ext/*.cpp"
         "${PROJECT_SOURCE_DIR}/src/feat/*.cpp"
         "${PROJECT_SOURCE_DIR}/src/init/*.cpp"
         "${PROJECT_SOURCE_DIR}/src/plot/*.cpp"
         "${PROJECT_SOURCE_DIR}/src/sim/*.cpp"
         "${PROJECT_SOURCE_DIR}/src/state/*.cpp"
         "${PROJECT_SOURCE_DIR}/src/static/*.cpp"
+        "${PROJECT_SOURCE_DIR}/src/system/*.cpp"
         "${PROJECT_SOURCE_DIR}/src/types/*.cpp"
         "${PROJECT_SOURCE_DIR}/src/track/*.cpp"
         "${PROJECT_SOURCE_DIR}/src/update/*.cpp"
@@ -118,12 +120,14 @@ file(GLOB_RECURSE SRC_LIST_H
         "${PROJECT_SOURCE_DIR}/src/cpi/*.h"
         "${PROJECT_SOURCE_DIR}/src/data_preprocessing/*.h"
         "${PROJECT_SOURCE_DIR}/src/dynamic/*.h"
+        "${PROJECT_SOURCE_DIR}/src/ext/*.h"
         "${PROJECT_SOURCE_DIR}/src/feat/*.h"
         "${PROJECT_SOURCE_DIR}/src/init/*.h"
         "${PROJECT_SOURCE_DIR}/src/plot/*.h"
         "${PROJECT_SOURCE_DIR}/src/sim/*.h"
         "${PROJECT_SOURCE_DIR}/src/state/*.h"
         "${PROJECT_SOURCE_DIR}/src/static/*.h"
+        "${PROJECT_SOURCE_DIR}/src/system/*.h"
         "${PROJECT_SOURCE_DIR}/src/types/*.h"
         "${PROJECT_SOURCE_DIR}/src/track/*.h"
         "${PROJECT_SOURCE_DIR}/src/update/*.h"
@@ -143,6 +147,8 @@ target_include_directories(${PROJECT_NAME}_lib
 
 target_link_libraries(${PROJECT_NAME}_lib PUBLIC ${thirdparty_libraries})
 
+# 按段编译与 --gc-sections 已由根 CMakeLists.txt 在 Release 下全局启用，所有构建方式（x64/arm64/Docker）均生效
+
 # GCC 7/8 的 std::filesystem 在 libstdc++fs 中，GCC 9+ 已并入 libstdc++
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS "9")
   target_link_libraries(${PROJECT_NAME}_lib PRIVATE stdc++fs)
@@ -161,33 +167,33 @@ install(TARGETS ${PROJECT_NAME}_lib
 )
 
 ##################################################
-# Make binary files!
+# Make binary files! (tests: controlled by BUILD_TESTS from root)
 ##################################################
+if(BUILD_TESTS)
+  add_executable(test_webcam src/test_webcam.cpp)
+  target_link_libraries(test_webcam ${PROJECT_NAME}_lib ${thirdparty_libraries})
+  install(TARGETS test_webcam
+          ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+          LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+          RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+  )
 
+  add_executable(test_profile src/test_profile.cpp)
+  target_link_libraries(test_profile ${PROJECT_NAME}_lib ${thirdparty_libraries})
+  install(TARGETS test_profile
+          ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+          LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+          RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+  )
 
-add_executable(test_webcam src/test_webcam.cpp)
-target_link_libraries(test_webcam ${PROJECT_NAME}_lib ${thirdparty_libraries})
-install(TARGETS test_webcam
-        ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-        LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-        RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
-)
-
-add_executable(test_profile src/test_profile.cpp)
-target_link_libraries(test_profile ${PROJECT_NAME}_lib ${thirdparty_libraries})
-install(TARGETS test_profile
-        ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-        LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-        RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
-)
-
-add_executable(test_cpi_consistency src/test_cpi_consistency.cpp)
-target_link_libraries(test_cpi_consistency ${PROJECT_NAME}_lib ${thirdparty_libraries})
-install(TARGETS test_cpi_consistency
-        ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-        LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-        RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
-)
+  add_executable(test_cpi_consistency src/test_cpi_consistency.cpp)
+  target_link_libraries(test_cpi_consistency ${PROJECT_NAME}_lib ${thirdparty_libraries})
+  install(TARGETS test_cpi_consistency
+          ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+          LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+          RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+  )
+endif()
 
 
 

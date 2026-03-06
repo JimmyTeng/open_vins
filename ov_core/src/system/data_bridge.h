@@ -2,15 +2,15 @@
 // Data Bridge: vio_interface.h 数据类型 <-> ov_core sensor_data.h 互转
 //
 
-#ifndef OV_YUV_PARSER_DATA_BRIDGE_H
-#define OV_YUV_PARSER_DATA_BRIDGE_H
+#ifndef OV_CORE_DATA_BRIDGE_H
+#define OV_CORE_DATA_BRIDGE_H
 
-#include "vio_interface.h"
+#include "system/vio_interface.h"
 #include "utils/sensor_data.h"
 #include <opencv2/core.hpp>
 #include <opencv2/imgproc.hpp>
 
-namespace ov_yuv_parser {
+namespace ov_core {
 
 namespace {
 
@@ -22,8 +22,8 @@ constexpr double NS_TO_SEC = 1e-9;
 /**
  * @brief 将 vio_imu_msg_t 转换为 ov_core::ImuData
  */
-inline ov_core::ImuData ToImuData(const vio_imu_msg_t& imu) {
-  ov_core::ImuData out;
+inline ImuData ToImuData(const vio_imu_msg_t& imu) {
+  ImuData out;
   out.timestamp = static_cast<double>(imu.timestamp) * NS_TO_SEC;
   out.wm = Eigen::Vector3d(imu.gyro.data[0], imu.gyro.data[1], imu.gyro.data[2]);
   out.am = Eigen::Vector3d(imu.acc.data[0], imu.acc.data[1], imu.acc.data[2]);
@@ -71,9 +71,9 @@ inline cv::Mat ToCvMat(const vio_image_msg_t& img, bool clone_data = true) {
  * @param img 图像消息
  * @param to_grayscale 若为 true 且格式为 RGB/RGBA，则转换为灰度图（推荐用于 OpenVINS）
  */
-inline ov_core::CameraData ToCameraData(const vio_image_msg_t& img,
-                                        bool to_grayscale = true) {
-  ov_core::CameraData out;
+inline CameraData ToCameraData(const vio_image_msg_t& img,
+                               bool to_grayscale = true) {
+  CameraData out;
   out.timestamp = static_cast<double>(img.timestamp) * NS_TO_SEC;
   out.sensor_ids.push_back(img.camera_id);
 
@@ -101,9 +101,9 @@ inline ov_core::CameraData ToCameraData(const vio_image_msg_t& img,
 /**
  * @brief 批量 IMU 消息转换（用于队列场景）
  */
-inline std::vector<ov_core::ImuData> ToImuDataBatch(
+inline std::vector<ImuData> ToImuDataBatch(
     const vio_imu_msg_t* imus, size_t count) {
-  std::vector<ov_core::ImuData> out;
+  std::vector<ImuData> out;
   out.reserve(count);
   for (size_t i = 0; i < count; ++i) {
     out.push_back(ToImuData(imus[i]));
@@ -111,6 +111,6 @@ inline std::vector<ov_core::ImuData> ToImuDataBatch(
   return out;
 }
 
-} // namespace ov_yuv_parser
+} // namespace ov_core
 
-#endif // OV_YUV_PARSER_DATA_BRIDGE_H
+#endif // OV_CORE_DATA_BRIDGE_H

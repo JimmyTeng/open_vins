@@ -6,7 +6,7 @@
 #include "yuv_parser.h"
 #include "imu_parser.h"
 #include "stream_data_loader.h"
-#include "vio_interface.h"
+#include "system/vio_interface.h"
 #include <opencv2/core.hpp>
 #include <opencv2/imgproc.hpp>
 #include <iostream>
