@@ -29,7 +29,7 @@
 #include <map>
 #include <sstream>
 #include <vector>
-
+#include "opencv2/highgui.hpp"
 #include "feat/Feature.h"
 #include "feat/FeatureDatabase.h"
 #include "feat/FeatureInitializer.h"

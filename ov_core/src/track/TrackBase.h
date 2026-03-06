@@ -30,7 +30,6 @@
 
 #include "utils/timing.h"
 #include <opencv2/core.hpp>
-#include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
 
 #include "utils/colors.h"

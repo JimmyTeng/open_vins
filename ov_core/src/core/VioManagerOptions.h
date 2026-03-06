@@ -29,7 +29,7 @@
 #include <sstream>
 #include <string>
 #include <vector>
-
+#include "opencv2/highgui.hpp"
 #include "state/StateOptions.h"
 #include "update/UpdaterOptions.h"
 #include "utils/NoiseManager.h"
