@@ -94,14 +94,12 @@ int main(int argc, char* argv[]) {
 
     std::string imu_file = dump_yuv_dir + "/../imu.txt";
 
-    std::cout << "=== VIO YUV Runner (ss_vio ext) ===" << std::endl;
-    std::cout << "Input directory: " << input_dir << std::endl;
-    std::cout << "Dump YUV directory: " << dump_yuv_dir << std::endl;
-    std::cout << "IMU file: " << imu_file << std::endl;
-    if (!config_file.empty()) {
-        std::cout << "Config file: " << config_file << std::endl;
-    }
-    std::cout << std::endl;
+    std::cout << "\n========== Run Config ==========\n";
+    std::cout << "  Input dir:     " << input_dir << "\n";
+    std::cout << "  Dump YUV dir:  " << dump_yuv_dir << "\n";
+    std::cout << "  IMU file:      " << imu_file << "\n";
+    std::cout << "  Config file:   " << (config_file.empty() ? "(default)" : config_file) << "\n";
+    std::cout << "=================================\n\n";
 
     YUVParser yuv_parser(640, 480);
     StreamDataLoader loader(&yuv_parser, dump_yuv_dir, imu_file, max_frame_cache);

@@ -129,6 +129,10 @@ struct VioManagerOptions {
   /// If we should print per-stage timing (track, prop, msckf/slam update, marg, etc.)
   bool print_timing = false;
 
+  /// 是否打印跟踪统计（[VM] 帧 #N 与 [跟踪] 更新 #N 的周期日志）
+  /// If we should print tracking stats (periodic [VM] frame and [跟踪] update logs)
+  bool print_tracking_stats = true;
+
   /**
    * @brief 加载并打印所有估计器设置
    * 这允许直观检查是否从ROS/CMD解析器正确加载了所有内容。
@@ -155,6 +159,7 @@ struct VioManagerOptions {
       parser->parse_config("record_timing_filepath", record_timing_filepath);
       parser->parse_config("print_state_calib", print_state_calib);
       parser->parse_config("print_timing", print_timing);
+      parser->parse_config("print_tracking_stats", print_tracking_stats);
     }
     PRINT_DEBUG("  - SLAM延迟时间: %.1f\n", dt_slam_delay);
     PRINT_DEBUG("  - 零速度更新: %d\n", try_zupt);
@@ -166,6 +171,7 @@ struct VioManagerOptions {
     PRINT_DEBUG("  - 记录时间信息文件路径: %s\n", record_timing_filepath.c_str());
     PRINT_DEBUG("  - 打印状态与标定?: %d\n", (int)print_state_calib);
     PRINT_DEBUG("  - 打印各阶段耗时?: %d\n", (int)print_timing);
+    PRINT_DEBUG("  - 打印跟踪统计([VM]帧/[跟踪]更新)?: %d\n", (int)print_tracking_stats);
   }
 
   // NOISE / CHI2 ============================

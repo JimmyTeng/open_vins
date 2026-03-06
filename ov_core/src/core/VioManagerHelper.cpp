@@ -165,17 +165,14 @@ bool VioManager::try_to_initialize(const ov_core::CameraData &message) {
 
       // Else we are good to go, print out our stats
       auto init_rT2 = rtime_now();
-      PRINT_INFO(BLUE "========================================\n" RESET);
-
-      PRINT_INFO(GREEN "[VMH]: 成功初始化，耗时 %.2f ms\n" RESET, rtime_ms(init_rT1, init_rT2));
-      PRINT_INFO(GREEN "[VMH]: 姿态 = %.4f, %.4f, %.4f, %.4f\n" RESET, state->_imu->quat()(0), state->_imu->quat()(1),
-                 state->_imu->quat()(2), state->_imu->quat()(3));
-      PRINT_INFO(GREEN "[VMH]: GYO偏差 = %.4f, %.4f, %.4f\n" RESET, state->_imu->bias_g()(0), state->_imu->bias_g()(1),
-                 state->_imu->bias_g()(2));
-      PRINT_INFO(GREEN "[VMH]: 速度 = %.4f, %.4f, %.4f\n" RESET, state->_imu->vel()(0), state->_imu->vel()(1), state->_imu->vel()(2));
-      PRINT_INFO(GREEN "[VMH]: ACC偏差 = %.4f, %.4f, %.4f\n" RESET, state->_imu->bias_a()(0), state->_imu->bias_a()(1),
-                 state->_imu->bias_a()(2));
-      PRINT_INFO(GREEN "[VMH]: 位置 = %.4f, %.4f, %.4f\n" RESET, state->_imu->pos()(0), state->_imu->pos()(1), state->_imu->pos()(2));
+      PRINT_INFO(GREEN "========================================\n" RESET);
+      PRINT_INFO(GREEN "[VMH] 动态初始化完成，耗时 %.2f ms\n" RESET, rtime_ms(init_rT1, init_rT2));
+      PRINT_INFO(GREEN "  姿态(quat) = (%.4f, %.4f, %.4f, %.4f)  速度 = (%.4f, %.4f, %.4f)  GYO = (%.4f, %.4f, %.4f)  ACC = (%.4f, %.4f, %.4f)  位置 = (%.4f, %.4f, %.4f)\n" RESET,
+                 state->_imu->quat()(0), state->_imu->quat()(1), state->_imu->quat()(2), state->_imu->quat()(3),
+                 state->_imu->vel()(0), state->_imu->vel()(1), state->_imu->vel()(2),
+                 state->_imu->bias_g()(0), state->_imu->bias_g()(1), state->_imu->bias_g()(2),
+                 state->_imu->bias_a()(0), state->_imu->bias_a()(1), state->_imu->bias_a()(2),
+                 state->_imu->pos()(0), state->_imu->pos()(1), state->_imu->pos()(2));
       PRINT_INFO(GREEN "========================================\n" RESET);
 
       // 移除早于初始化时间的相机时间戳

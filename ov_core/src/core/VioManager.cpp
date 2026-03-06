@@ -515,9 +515,8 @@ void VioManager::track_image_and_update(const ov_core::CameraData &message_const
   long num_features_new = (long)num_features_after_tracking - (long)num_features_before_tracking;
   long net_change = (long)num_features_after_tracking - (long)num_features_before_tracking;
   
-  // 在初始化阶段或每200帧打印一次：时间戳/间隔/Hz/Init + 跟踪统计
-  // Print during initialization phase or every 200th frame: timestamp/interval/Hz/Init + tracking stats
-  bool should_print_tracking = (!is_initialized_vio) || (tracking_frame_count % 200 == 0);
+  // 在初始化阶段或每200帧打印一次：时间戳/间隔/Hz/Init + 跟踪统计（由配置 print_tracking_stats 控制）
+  bool should_print_tracking = params.print_tracking_stats && ((!is_initialized_vio) || (tracking_frame_count % 200 == 0));
   if (should_print_tracking) {
     PRINT_INFO(CYAN "[VM] 帧 #%d : %.6f s, 间隔: %.3f ms (%.2f Hz), Init: %d | 总数: %zu, 丢失: %zu, 新增: %ld, 净变化: %ld\n" RESET,
                tracking_frame_count, message.timestamp, time_interval * 1000.0,
@@ -652,11 +651,10 @@ void VioManager::do_feature_propagate_update(const ov_core::CameraData &message)
   long num_features_new = (long)num_features_after_tracking - (long)num_features_before_tracking;
   long net_change = (long)num_features_after_tracking - (long)num_features_before_tracking;
   
-  // 在初始化阶段或每20帧打印一次
-  // Print during initialization phase or every 20th frame
-  bool should_print_tracking = (!is_initialized_vio) || (tracking_update_count % 200 == 0);
+  // 在初始化阶段或每200次更新打印一次（由配置 print_tracking_stats 控制）
+  bool should_print_tracking = params.print_tracking_stats && ((!is_initialized_vio) || (tracking_update_count % 200 == 0));
   if (should_print_tracking) {
-    PRINT_INFO(CYAN "[跟踪] 更新 #%d - 总特征数: %zu, 丢失: %zu, 新增: %ld, 净变化: %ld\n" RESET,
+    PRINT_INFO(CYAN "[VM] 更新 #%d - 总特征数: %zu, 丢失: %zu, 新增: %ld, 净变化: %ld\n" RESET,
                tracking_update_count, num_features_current, num_features_lost, num_features_new, net_change);
   }
 

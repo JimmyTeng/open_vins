@@ -312,14 +312,6 @@ bool DynamicInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarian
   int system_size = size_feature * num_features + 3 + 3;
 
   // 确保我们有足够的测量数据来完全约束系统
-  PRINT_INFO(CYAN "[DynamicInitializer] 系统大小检查 - 测量: %d, 系统大小: %d, 特征: %d%s\n" RESET,
-             num_measurements, system_size, num_features,
-#ifdef EIGEN_USE_BLAS
-             " | Eigen+BLAS/LAPACK"
-#else
-             ""
-#endif
-  );
   if (num_measurements < system_size) {
     PRINT_INFO(YELLOW "[DynamicInitializer] 失败: 测量约束失败 - 需要 %d 测量 for %d 状态\n" RESET, 
                system_size, system_size);
@@ -412,9 +404,6 @@ bool DynamicInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarian
     buf_A1A1_inv_A1T.resize(buf_cap_n1, buf_cap_meas);
   }
   auto t_buf_end = rtime_now();
-  double t_buf_ms = rtime_ms(t_buf_start, t_buf_end);
-  PRINT_INFO(CYAN "[DynamicInitializer] 缓冲区: %s (ensure %.4f ms)\n" RESET,
-             buf_reused ? "复用" : "扩容", t_buf_ms);
   auto A = buf_A.block(0, 0, num_measurements, system_size);
   auto b = buf_b.head(num_measurements);
   auto AtA1_accum = buf_AtA1.block(0, 0, n1, n1);
@@ -600,7 +589,6 @@ bool DynamicInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarian
   x_hat.block(0, 0, size_feature * num_features + 3, 1) = state_feat_vel;
   x_hat.block(size_feature * num_features + 3, 0, 3, 1) = state_grav;
   Eigen::Vector3d v_I0inI0 = x_hat.block(size_feature * num_features + 0, 0, 3, 1);
-  PRINT_INFO("[DynamicInitializer] 速度在 I0 为 %.3f,%.3f,%.3f 和 |v| = %.4f\n", v_I0inI0(0), v_I0inI0(1), v_I0inI0(2), v_I0inI0.norm());
 
   // 检查重力幅值以查看是否收敛
   Eigen::Vector3d gravity_inI0 = x_hat.block(size_feature * num_features + 3, 0, 3, 1);
@@ -610,10 +598,6 @@ bool DynamicInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarian
                   init_max_grav_difference);
     return false;
   }
-  PRINT_INFO("[DynamicInitializer] 重力在 I0 为 %.3f,%.3f,%.3f 和 |g| = %.4f\n", gravity_inI0(0), gravity_inI0(1), gravity_inI0(2),
-             gravity_inI0.norm());
-  PRINT_INFO(CYAN "[DynamicInitializer] MLE 优化完成 - 速度: |v|=%.4f, 重力: |g|=%.4f\n" RESET,
-             v_I0inI0.norm(), gravity_inI0.norm());
   auto rT4 = rtime_now();
 
   // ======================================================
@@ -655,9 +639,7 @@ bool DynamicInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarian
   int total_features_checked = 0;
   int features_behind_camera = 0;
   int features_with_insufficient_meas = 0;
-  
-  PRINT_INFO(CYAN "[DynamicInitializer] 开始特征恢复 after MLE - 检查 %zu 特征\n" RESET, features.size());
-  
+
   for (auto const &feat : features) {
     if (map_features_num_meas[feat.first] < min_num_meas_to_optimize) {
       features_with_insufficient_meas++;
@@ -706,14 +688,7 @@ bool DynamicInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarian
       // }
     }
   }
-  
-  PRINT_INFO(YELLOW "[DynamicInitializer] 特征恢复总结:\n" RESET);
-  PRINT_INFO(YELLOW "  - 总特征: %zu\n" RESET, features.size());
-  PRINT_INFO(YELLOW "  - 测量不足的特征: %d\n" RESET, features_with_insufficient_meas);
-  PRINT_INFO(YELLOW "  - 检查的特征: %d\n" RESET, total_features_checked);
-  PRINT_INFO(YELLOW "  - 在相机后面的特征: %d\n" RESET, features_behind_camera);
-  PRINT_INFO(YELLOW "  - 有效特征: %d (需要: %d)\n" RESET, count_valid_features, min_valid_features);
-  
+
   if (count_valid_features < min_valid_features) {
     PRINT_ERROR(YELLOW "[DynamicInitializer] 动态初始化失败: 特征不足 (%zu < %d)!\n" RESET, count_valid_features, min_valid_features);
     // 打印相机外参用于调试
@@ -1071,9 +1046,6 @@ bool DynamicInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarian
   // 优化ceres图
   ceres::Solver::Summary summary;
   ceres::Solve(options, &problem, &summary);
-  PRINT_INFO("[DynamicInitializer] %d 迭代 | %zu 状态, %zu 特征 (%zu 有效) | %d 参数和 %d 残差 | cost %.4e => %.4e\n",
-             (int)summary.iterations.size(), map_states.size(), map_features.size(), count_valid_features, summary.num_parameters,
-             summary.num_residuals, summary.initial_cost, summary.final_cost);
   auto rT6 = rtime_now();
 
   // 如果失败则返回！
@@ -1094,7 +1066,6 @@ bool DynamicInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarian
     free_state_memory();
     return false;
   }
-  PRINT_INFO("[DynamicInitializer] %s\n", summary.message.c_str());
 
   //======================================================
   //======================================================
@@ -1297,22 +1268,20 @@ bool DynamicInitializer::initialize(double &timestamp, Eigen::MatrixXd &covarian
   _imu->set_value(x);
   _imu->set_fej(x);
 
-  // 动态初始化各模块耗时（始终打印）
-  PRINT_INFO(CYAN "[DynamicInitializer] 各模块耗时:\n" RESET);
-  PRINT_INFO("  预检查与数据准备:   %.2f ms\n", rtime_ms(rT1, rT2));
-  PRINT_INFO("  IMU预积分:         %.2f ms\n", rtime_ms(rT2, rT2a));
-  PRINT_INFO("  线性系统构建:      %.2f ms\n", rtime_ms(rT2a, rT3));
-  PRINT_INFO("  线性系统求解:      %.2f ms\n", rtime_ms(rT3, rT4));
-  PRINT_INFO("  特征恢复与坐标变换: %.2f ms\n", rtime_ms(rT4, rT4a));
-  PRINT_INFO("  Ceres问题构建:     %.2f ms\n", rtime_ms(rT4a, rT5));
-  PRINT_INFO("  Ceres优化:         %.2f ms\n", rtime_ms(rT5, rT6));
-  PRINT_INFO("  协方差恢复:        %.2f ms\n", rtime_ms(rT6, rT7));
-  PRINT_INFO("  总耗时:            %.2f ms\n", rtime_ms(rT1, rT7));
-
   free_state_memory();
-  
+
+  // 汇总输出：规模、迭代与 cost、各模块耗时
   PRINT_INFO(CYAN "========================================\n" RESET);
   PRINT_INFO(CYAN "[DynamicInitializer] 动态初始化成功\n" RESET);
+  PRINT_INFO(CYAN "----------------------------------------\n" RESET);
+  PRINT_INFO("  规模: 测量 %d, 状态 %zu 帧, 特征 %zu (有效 %zu)\n",
+             num_measurements, map_states.size(), map_features.size(), count_valid_features);
+  PRINT_INFO("  优化: %d 迭代, %d 参数, %d 残差 | cost %.4e -> %.4e\n",
+             (int)summary.iterations.size(), summary.num_parameters, summary.num_residuals,
+             summary.initial_cost, summary.final_cost);
+  PRINT_INFO("  耗时(ms): 预检查 %.2f | IMU预积分 %.2f | 线性系统 %.2f | 特征恢复 %.2f | Ceres %.2f | 协方差 %.2f | 总 %.2f\n",
+             rtime_ms(rT1, rT2), rtime_ms(rT2, rT2a), rtime_ms(rT2a, rT3), rtime_ms(rT3, rT4),
+             rtime_ms(rT4, rT4a), rtime_ms(rT4a, rT6), rtime_ms(rT6, rT7), rtime_ms(rT1, rT7));
   PRINT_INFO(CYAN "========================================\n" RESET);
   return true;
 }
