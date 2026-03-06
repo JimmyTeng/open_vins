@@ -9,6 +9,8 @@
 #include <stddef.h>
 #include <stdbool.h>
 
+#include "ov_core_export.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -124,17 +126,17 @@ typedef struct {
 typedef struct vio_instance_t* vio_handle_t;
 typedef void (*vio_state_callback_t)(const vio_state_t* state, void* user_data);
 
-vio_handle_t vio_create(const char* yaml_path);
-int          vio_init(vio_handle_t handle);
-void         vio_reset(vio_handle_t handle);
-void         vio_destroy(vio_handle_t handle);
+VIO_API vio_handle_t vio_create(const char* yaml_path);
+VIO_API int          vio_init(vio_handle_t handle);
+VIO_API void         vio_reset(vio_handle_t handle);
+VIO_API void         vio_destroy(vio_handle_t handle);
 
-void vio_push_imu(vio_handle_t handle, const vio_imu_msg_t* imu);
-void vio_push_image(vio_handle_t handle, const vio_image_msg_t* img);
+VIO_API void vio_push_imu(vio_handle_t handle, const vio_imu_msg_t* imu);
+VIO_API void vio_push_image(vio_handle_t handle, const vio_image_msg_t* img);
 
-void vio_register_state_callback(vio_handle_t handle,
-                                 vio_state_callback_t callback,
-                                 void* user_data);
+VIO_API void vio_register_state_callback(vio_handle_t handle,
+                                         vio_state_callback_t callback,
+                                         void* user_data);
 
 #ifdef __cplusplus
 }

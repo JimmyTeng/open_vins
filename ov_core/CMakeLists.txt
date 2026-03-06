@@ -137,6 +137,14 @@ file(GLOB_RECURSE SRC_LIST_H
 # Add the library
 add_library(${PROJECT_NAME}_lib SHARED ${SRC_LIST_CPP} ${SRC_LIST_H})
 
+# Build-time symbol export marker (for Windows dllexport, and harmless on Linux)
+target_compile_definitions(${PROJECT_NAME}_lib PRIVATE OV_CORE_BUILD=1)
+
+# 默认隐藏所有符号，仅通过 OV_CORE_API/VIO_API/SS_VIO_API 显式导出的 C 接口对外可见
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(${PROJECT_NAME}_lib PRIVATE -fvisibility=hidden)
+endif()
+
 # Add include directories
 target_include_directories(${PROJECT_NAME}_lib
         PUBLIC

@@ -1,18 +1,19 @@
 /*
- * SS_VIO 接口实现 - 基于 vio_interface_api.h
+ * SS_VIO 接口实现 - 直接调用 VioInterface (C++ 实现)
  */
 #include "ext/ss_vio.h"
 #include "ext/ss_vio_err.h"
-#include "system/vio_interface_api.h"
+#include "system/vio_interface.h"
 
 #include <mutex>
+#include <new>
 
 namespace {
 
 constexpr double SEC_TO_NS = 1e9;
 constexpr double NS_TO_SEC = 1e-9;
 
-vio_handle_t g_handle = nullptr;
+VioInterface* g_handle = nullptr;
 std::mutex g_state_mtx;
 
 // 最新状态缓存（回调内指针仅短期有效，故缓存标量）
@@ -66,14 +67,14 @@ int SS_VIO_Init(const OT_VIO_Param* param) {
     if (g_handle) {
         SS_VIO_DeInit();
     }
-    g_handle = vio_create(param->calibParamPath);
-    if (!g_handle) {
+    g_handle = new (std::nothrow) VioInterface(param->calibParamPath);
+    if (g_handle == nullptr) {
         return OT_VIOALG_ERR_INIT;
     }
-    vio_register_state_callback(g_handle, state_callback, nullptr);
-    int ret = vio_init(g_handle);
+    g_handle->RegisterStateCallback(state_callback, nullptr);
+    int ret = g_handle->init();
     if (ret != 0) {
-        vio_destroy(g_handle);
+        delete g_handle;
         g_handle = nullptr;
         return OT_VIOALG_ERR_INIT_START;
     }
@@ -117,7 +118,7 @@ int SS_VIO_GetData(const double /*timestamp*/, OT_VIO_PoseData* data) {
 
 int SS_VIO_DeInit(void) {
     if (g_handle) {
-        vio_destroy(g_handle);
+        delete g_handle;
         g_handle = nullptr;
     }
     return 0;
@@ -148,7 +149,7 @@ int SS_VIO_PushImageData(const OT_VIO_CameraData* camData) {
     vio_img.stride = static_cast<int32_t>(img->stride);
     vio_img.format = VIO_PIXEL_FMT_GRAY8;
     vio_img.buffer = img->virtAddr;
-    vio_push_image(g_handle, &vio_img);
+    g_handle->OnImage(vio_img);
     return 0;
 }
 
@@ -172,7 +173,7 @@ int SS_VIO_PushImuData(const OT_VIO_ImuDataInfo* imuDataInfo) {
         vio_imu.gyro.data[0] = static_cast<double>(src->gyroX);
         vio_imu.gyro.data[1] = static_cast<double>(src->gyroY);
         vio_imu.gyro.data[2] = static_cast<double>(src->gyroZ);
-        vio_push_imu(g_handle, &vio_imu);
+        g_handle->OnIMU(vio_imu);
     }
     return 0;
 }

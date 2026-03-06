@@ -8,6 +8,7 @@
 #define SSVIOEXT_H
 
 #include "stdbool.h"
+#include "../system/ov_core_export.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -100,11 +101,11 @@ typedef struct {
     OT_VIO_3DPoint* pointSets;
 } OT_VIO_3DPointSets;
 
-int SS_VIO_Init(const OT_VIO_Param* param);
-int SS_VIO_GetData(const double timestamp, OT_VIO_PoseData* data);
-int SS_VIO_DeInit();
-int SS_VIO_PushImageData(const OT_VIO_CameraData* camData);
-int SS_VIO_PushImuData(const OT_VIO_ImuDataInfo* imuDataInfo);
+SS_VIO_API int SS_VIO_Init(const OT_VIO_Param* param);
+SS_VIO_API int SS_VIO_GetData(const double timestamp, OT_VIO_PoseData* data);
+SS_VIO_API int SS_VIO_DeInit();
+SS_VIO_API int SS_VIO_PushImageData(const OT_VIO_CameraData* camData);
+SS_VIO_API int SS_VIO_PushImuData(const OT_VIO_ImuDataInfo* imuDataInfo);
 
 #ifdef __cplusplus
 }

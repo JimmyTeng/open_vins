@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.16)
 project(open_vins)
 
+# 生成 compile_commands.json，方便 Cursor / LSP 做语义解析
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 # C++17 for std::filesystem (replacing Boost.Filesystem)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

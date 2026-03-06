@@ -1,9 +1,6 @@
 cmake_minimum_required(VERSION 3.5)
 project(ov_yuv_parser)
 
-# 配置时生成构建时间戳，供可执行文件显示（避免 __DATE__/__TIME__ 在增量编译时仍为旧值）
-string(TIMESTAMP BUILD_TIMESTAMP "%b %d %Y %H:%M:%S" UTC)
-
 # =============================================================================
 # Dependencies
 # =============================================================================
@@ -58,10 +55,19 @@ set_target_properties(data_bridge_example PROPERTIES INSTALL_RPATH "${OV_YUV_PAR
 install(TARGETS data_bridge_example RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 # =============================================================================
-# Executable: vio_yuv_runner (vio_interface API 测试：YUV+IMU 跑 VIO)
+# Executable: vio_yuv_runner (ss_vio ext 接口测试：YUV+IMU 跑 VIO)
 # =============================================================================
+# 编译时生成 build_info.h（构建时间、Git 版本/分支/标签/用户等）
+set(VIO_YUV_RUNNER_BUILD_INFO_H "${CMAKE_CURRENT_BINARY_DIR}/build_info.h")
+add_custom_target(vio_yuv_runner_build_info ALL
+  COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}"
+  COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen_build_info.sh "${VIO_YUV_RUNNER_BUILD_INFO_H}" "${CMAKE_SOURCE_DIR}"
+  BYPRODUCTS "${VIO_YUV_RUNNER_BUILD_INFO_H}"
+  COMMENT "Generating build info (timestamp + git) for vio_yuv_runner"
+)
 add_executable(vio_yuv_runner src/app/vio_yuv_runner.cpp)
-target_compile_definitions(vio_yuv_runner PRIVATE "BUILD_TIMESTAMP=\"${BUILD_TIMESTAMP}\"")
+add_dependencies(vio_yuv_runner vio_yuv_runner_build_info)
+target_include_directories(vio_yuv_runner PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 target_link_libraries(vio_yuv_runner PRIVATE ov_yuv_parser_lib ov_core_lib)
 target_compile_options(vio_yuv_runner PRIVATE -Wall -Wextra)
 set_target_properties(vio_yuv_runner PROPERTIES INSTALL_RPATH "${OV_YUV_PARSER_INSTALL_RPATH}")
