@@ -134,8 +134,19 @@ file(GLOB_RECURSE SRC_LIST_H
         "${PROJECT_SOURCE_DIR}/src/utils/*.h"
 )
 
+# 编译时生成 build_info.h（构建时间、Git 版本/分支/标签/用户等，供 ss_vio debug 接口导出）
+set(OV_CORE_BUILD_INFO_H "${CMAKE_CURRENT_BINARY_DIR}/build_info.h")
+set(OV_CORE_REPO_ROOT "${CMAKE_SOURCE_DIR}")
+add_custom_target(ov_core_build_info ALL
+  COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}"
+  COMMAND "${PROJECT_SOURCE_DIR}/scripts/gen_build_info.sh" "${OV_CORE_BUILD_INFO_H}" "${OV_CORE_REPO_ROOT}"
+  BYPRODUCTS "${OV_CORE_BUILD_INFO_H}"
+  COMMENT "Generating build info for ov_core (ss_vio debug)"
+)
+
 # Add the library
 add_library(${PROJECT_NAME}_lib SHARED ${SRC_LIST_CPP} ${SRC_LIST_H})
+add_dependencies(${PROJECT_NAME}_lib ov_core_build_info)
 
 # Build-time symbol export marker (for Windows dllexport, and harmless on Linux)
 target_compile_definitions(${PROJECT_NAME}_lib PRIVATE OV_CORE_BUILD=1)
@@ -150,7 +161,8 @@ target_include_directories(${PROJECT_NAME}_lib
         PUBLIC
         $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include>
-        PRIVATE src)
+        PRIVATE src
+        PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 
 
 target_link_libraries(${PROJECT_NAME}_lib PUBLIC ${thirdparty_libraries})
