@@ -1,16 +1,45 @@
 /*
- * 编译信息导出接口（Build Info）
- * 与终端打印的 Build Time / Git Commit / Branch / Tag / Status / User 一致
+ * Debug 扩展：编译信息导出（Build Info）、SLAM 回调
+ * 命名与数据结构参考 ss_vio_err.h / ss_vio.h
  */
 #ifndef SS_VIO_DEBUG_H
 #define SS_VIO_DEBUG_H
 
 #include "stddef.h"
+#include "ss_vio.h"
 #include "../system/ov_core_export.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/* ========== SLAM 回调 ========== */
+/** 单次回调中 SLAM 3D 点数量上限 */
+#define OT_VIO_SLAM_POINTS_MAX 512
+
+/** SLAM 回调数据：当前帧位姿 + SLAM 特征点集（指针仅在回调内有效，不得保存） */
+typedef struct {
+  double timestamp;                    /**< 时间戳（秒） */
+  OT_VIO_PoseData pose;                /**< 当前位姿 */
+  int pointNum;                        /**< SLAM 3D 点数量，0 表示无或未初始化 */
+  const OT_VIO_3DPoint* pointSets;     /**< 3D 点数组，仅回调内有效 */
+} OT_VIO_SlamCallbackData_t;
+
+/** SLAM 回调函数类型 */
+typedef void (*OT_VIO_SlamCallback_t)(const OT_VIO_SlamCallbackData_t* data, void* user_data);
+
+/**
+ * 注册 SLAM 回调（每帧状态更新时在内部 state 回调之后调用）
+ * @param callback 回调函数，传 NULL 表示仅注销
+ * @param user_data 透传给 callback 的 user_data
+ * @return 0 成功，OT_VIOALG_ERR_CALLBACK_NULL 表示 callback 为 NULL 且未注销
+ */
+SS_VIO_API int SS_VIO_RegisterSlamCallback(OT_VIO_SlamCallback_t callback, void* user_data);
+
+/** 注销 SLAM 回调 */
+SS_VIO_API void SS_VIO_UnregisterSlamCallback(void);
+
+/* ========== Build Info ========== */
 
 /** 单条编译信息字段长度上限 */
 #define SS_VIO_BUILD_INFO_STR_MAX 128

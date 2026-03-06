@@ -7,8 +7,8 @@
 #include "imu_parser.h"
 #include "stream_data_loader.h"
 #include "ext/ss_vio.h"
+#include "ext/ss_vio debug.h"
 #include "ext/ss_vio_err.h"
-#include "build_info.h"  // 编译时生成：构建时间、Git 版本/分支/用户等
 #include <opencv2/core.hpp>
 #include <opencv2/imgproc.hpp>
 #include <iostream>
@@ -27,16 +27,11 @@ static double timestamp_to_sec(long long ts) {
     return static_cast<double>(ts) * 1e-6;
 }
 
-// 格式化输出编译时生成的构建信息
+// 使用 ov_core 导出的 SS_VIO_FormatBuildInfo 打印编译信息
 static void print_build_info() {
-    std::cout << "\n========== Build Info ==========\n";
-    std::cout << "  Build Time:   " << BUILD_TIMESTAMP << " " << BUILD_TIMEZONE << "\n";
-    std::cout << "  Git Commit:   " << BUILD_GIT_COMMIT << " (" << BUILD_GIT_HASH << ")\n";
-    std::cout << "  Git Branch:   " << BUILD_GIT_BRANCH << "\n";
-    std::cout << "  Git Tag:      " << BUILD_GIT_TAG << "\n";
-    std::cout << "  Git Status:   " << BUILD_GIT_DIRTY << "\n";
-    std::cout << "  Git User:     " << BUILD_GIT_USER << " <" << BUILD_GIT_EMAIL << ">\n";
-    std::cout << "=================================\n\n";
+    char buf[512];
+    SS_VIO_FormatBuildInfo(buf, sizeof(buf));
+    std::cout << buf << "\n";
 }
 
 int main(int argc, char* argv[]) {
