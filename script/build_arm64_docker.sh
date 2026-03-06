@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # 在 Ubuntu 18.04 + ROS Melodic 感知版 Docker 中交叉编译 ARM64，生成兼容 glibc 2.29 设备的安装包
+# 依赖已静态链接进 libov_core_lib.so，运行时仅需系统库（如 libgfortran），thirdparty 体积很小。
 # 用法：在项目根目录执行  ./script/build_arm64_docker.sh
+# 若 .so 体积仍很大：CLEAN_CONFIGURE=1 并删除 .vcpkg-docker-cache-arm64 后重跑，让 vcpkg 用 toolchain 内的 -ffunction-sections 重新编译依赖。
 # 从国内源拉取基础镜像；换源示例：MIRROR=docker.1ms.run ./script/build_arm64_docker.sh
 # 代理：宿主机设置 http_proxy/https_proxy 会自动传入容器，例如：
 #   export https_proxy=http://127.0.0.1:7890 http_proxy=http://127.0.0.1:7890
@@ -43,6 +45,7 @@ if [ ! -d script/vcpkg-downloads ] || [ -z "$(ls -A script/vcpkg-downloads 2>/de
 fi
 [ -n "${SKIP_CONFIGURE}" ] && echo "SKIP_CONFIGURE=1：不清空构建目录，不重新配置，只执行编译与安装"
 [ -z "${CLEAN_CONFIGURE}" ] && [ -d "build/aarch64/Release-docker/arm64-release-vcpkg-docker" ] && echo "复用已有构建目录与 .vcpkg-docker-cache-arm64（不重新下载/编译依赖）"
+# 若 libov_core_lib.so 体积仍很大，请执行：./script/rebuild_for_size.sh arm64-release-vcpkg-docker（会清空 build 与 .vcpkg-docker-cache-arm64 后重建）
 echo ""
 
 # 构建镜像（若不存在）
@@ -162,13 +165,13 @@ echo "[3/3] 安装..."
 $DOCKER_CMD run "${RUN_ARGS[@]}" "$IMAGE_NAME" bash -c "$RUN_INSTALL"
 
 echo ""
-echo "[4/4] 同步 thirdparty（vcpkg + 系统库如 libgfortran，FAT32 兼容）..."
+echo "[4/4] 同步 thirdparty（静态链接后仅含系统库如 libgfortran，FAT32 兼容）..."
 if [ -d "${BUILD_DIR}/vcpkg_installed/arm64-linux-custom/lib" ]; then
   $DOCKER_CMD run "${RUN_ARGS[@]}" "$IMAGE_NAME" ./script/sync_thirdparty_from_vcpkg.sh arm64-release-vcpkg-docker
 else
-  echo "提示：vcpkg_installed 不在预期路径，跳过 thirdparty 同步。若需部署，请手动执行："
+  echo "提示：vcpkg_installed 不在预期路径，跳过 thirdparty 同步。若设备缺 libgfortran 等，可手动执行："
   echo "  ./script/sync_thirdparty_from_vcpkg.sh arm64-release-vcpkg-docker"
 fi
 
 echo ""
-echo "完成。install/aarch64/Release-docker 已生成，可部署到 glibc 2.29 设备（容器以当前用户运行，无需 chown/sudo）。"
+echo "完成。install/aarch64/Release-docker 已生成（lib/ 内为单 so + 少量系统库），可部署到 glibc 2.29 设备（容器以当前用户运行，无需 chown/sudo）。"

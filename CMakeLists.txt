@@ -30,6 +30,12 @@ endif()
 
 # 通过编译器强制包含 <cassert>，解决部分 .cpp 使用 assert 但未包含头文件的问题（不修改源码）
 add_compile_options(-include cassert)
+# arm64 通常无显示器，不依赖 OpenCV highgui，可减小 vcpkg 中 opencv 的 features
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64|armv[0-9]")
+  add_compile_definitions(OPENVINS_HAVE_OPENCV_HIGHGUI=0)
+else()
+  add_compile_definitions(OPENVINS_HAVE_OPENCV_HIGHGUI=1)
+endif()
 # ARM 目标默认关闭 ROS（嵌入式部署无 ROS）；x86_64 默认开启
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64|armv[0-9]")
   set(ENABLE_ROS_DEFAULT OFF)
@@ -37,6 +43,15 @@ else()
   set(ENABLE_ROS_DEFAULT ON)
 endif()
 option(ENABLE_ROS "Enable or disable building with ROS (if it is found)" ${ENABLE_ROS_DEFAULT})
+option(BUILD_TESTS "Build test executables (test_webcam, test_profile, test_cpi_consistency, stress_test_stream_loader)" OFF)
+
+# Release/RelWithDebInfo：全局按段编译 + 链接时回收未使用段，减小所有构建方式（x64/arm64/本机/Docker）的 .so 与可执行文件体积
+if(CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
+  add_compile_options(-ffunction-sections -fdata-sections)
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--gc-sections")
+  set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--gc-sections")
+  set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} -Wl,--gc-sections")
+endif()
 
 # 将 RPATH 写入二进制，使 bin/ 与 lib/ 能从 ../lib 与 ../thirdparty/lib 加载依赖，无需 run.sh
 set(CMAKE_INSTALL_RPATH "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}:$ORIGIN:$ORIGIN/../thirdparty/lib")

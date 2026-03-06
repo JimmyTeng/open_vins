@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 从 vcpkg_installed 同步依赖库到 install/.../thirdparty/lib，供 run.sh 运行时加载
-# 含 BLAS/LAPACK、OpenCV、Ceres、Boost 等；部署到设备时需随 install 一并拷贝。
+# 静态链接构建时：vcpkg 仅含 .a，无 .so，故只同步系统库（如 libgfortran）；动态链接时则含 OpenCV/Ceres 等。
 # 使用 -L 解引用符号链接，拷贝实体文件，便于通过 FAT32 的 SD 卡转存（FAT32 不支持符号链接）。
 #
 # 用法：
@@ -98,14 +98,14 @@ fi
 rm -rf "${THIRDPARTY}"
 mkdir -p "${THIRDPARTY}"
 
-# 根据 triplet 选择 readelf 与系统库搜索路径（LAPACK 依赖 libgfortran，位于 gcc 目录）
-READELF="readelf"
+# 根据 triplet 选择 readelf 与系统库搜索路径（LAPACK 依赖 libgfortran）
+# 使用 LC_ALL=C 保证 readelf 输出英文 "Shared library: [...]"，避免中文 locale 下解析失败
+READELF="env LC_ALL=C readelf"
 SYSROOT_LIBS=("/lib/x86_64-linux-gnu" "/usr/lib/x86_64-linux-gnu" "/lib" "/usr/lib")
 if [[ "${TRIPLET}" == "arm64-linux-custom" ]]; then
-  READELF="aarch64-linux-gnu-readelf"
+  READELF="env LC_ALL=C aarch64-linux-gnu-readelf"
   SYSROOT_LIBS=("/usr/aarch64-linux-gnu/lib" "/lib/aarch64-linux-gnu" "/usr/lib/aarch64-linux-gnu")
-  # libgfortran.so.4 在 gfortran-aarch64-linux-gnu 包中，路径为 /usr/lib/gcc/aarch64-linux-gnu/<ver>/
-  for gccdir in /usr/lib/gcc/aarch64-linux-gnu/*/; do
+  for gccdir in /usr/lib/gcc/aarch64-linux-gnu/*/ /usr/lib/gcc-cross/aarch64-linux-gnu/*/; do
     [[ -d "$gccdir" ]] && SYSROOT_LIBS+=("$gccdir")
   done
 fi
@@ -200,6 +200,28 @@ collect_system_libs() {
   done
 }
 for _ in 1 2 3 4 5; do collect_system_libs; done
+
+# arm64：若仍缺少 libgfortran / libgcc_s，显式从常见路径拷贝（Ubuntu 多在 /usr/aarch64-linux-gnu/lib 或 gcc-cross）
+if [[ "${TRIPLET}" == "arm64-linux-custom" ]]; then
+  for libbase in libgfortran libgcc_s; do
+    if compgen -G "${THIRDPARTY}/${libbase}.so*" >/dev/null 2>&1; then continue; fi
+    found=""
+    for searchdir in /usr/aarch64-linux-gnu/lib /usr/lib/gcc/aarch64-linux-gnu/*/ /usr/lib/gcc-cross/aarch64-linux-gnu/*/; do
+      [[ -d "$searchdir" ]] || continue
+      for f in "${searchdir}"${libbase}.so*; do
+        [[ -f "$f" ]] || continue
+        cp -fL "$f" "${THIRDPARTY}/$(basename "$f")"
+        found=1
+      done
+      [[ -n "$found" ]] && break
+    done
+    if [[ -z "$found" ]]; then
+      echo "错误：未找到 ${libbase}.so*，无法拷贝到 ${THIRDPARTY}。请安装 aarch64 交叉编译 Fortran 运行时后重试：" >&2
+      echo "  sudo apt install gfortran-aarch64-linux-gnu" >&2
+      exit 1
+    fi
+  done
+fi
 
 # 3. 将 lib/ 与 thirdparty/lib 中的符号链接替换为实体文件
 flatten_symlinks() {

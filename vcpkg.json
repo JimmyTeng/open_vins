@@ -9,7 +9,7 @@
       "name": "opencv4",
       "platform": "arm64",
       "default-features": false,
-      "features": ["intrinsics", "carotene", "eigen", "contrib", "calib3d", "fs", "highgui", "thread", "jpeg", "png"]
+      "features": ["intrinsics", "carotene", "contrib", "calib3d", "fs", "highgui", "thread", "jpeg", "png"]
     },
     {
       "name": "opencv4",
