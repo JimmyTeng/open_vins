@@ -390,6 +390,11 @@ if [[ "${BUILD_ONLY}" != "true" ]]; then
     (list_presets || true) >&2
     exit 3
   fi
+  # 便于 IDE（Cursor/VSCode/clangd）解析：将 compile_commands.json 链到项目根
+  if [[ -f "${BUILD_DIR}/compile_commands.json" ]]; then
+    ln -sf "${BUILD_DIR}/compile_commands.json" "${PROJECT_ROOT}/compile_commands.json"
+    echo "已链接 compile_commands.json 到项目根目录，便于 IDE 解析"
+  fi
 fi
 
 if [[ "${CONFIGURE_ONLY}" == "true" ]]; then
