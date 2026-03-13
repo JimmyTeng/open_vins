@@ -54,8 +54,9 @@ init_dyn_inflation_bg: 10 # what to inflate the recovered bias_g covariance by
 init_dyn_inflation_ba: 100 # what to inflate the recovered bias_a covariance by
 init_dyn_min_rec_cond: 1e-12 # reciprocal condition number thresh for info inversion
 
-init_dyn_bias_g: [0.0, 0.0, 0.0] # initial gyroscope bias guess
-init_dyn_bias_a: [0.0, 0.0, 0.0] # initial accelerometer bias guess
+# Initial bias from vio_calib_param.ini (gyroBias, accelBias)
+init_dyn_bias_g: [-0.0011146074690264833, -0.011300524581876343, 0.008723352067730063]
+init_dyn_bias_a: [-0.053302996178729294, -0.015902613210897493, 0.07961711223434825]
 
 # ==================================================================
 # ==================================================================

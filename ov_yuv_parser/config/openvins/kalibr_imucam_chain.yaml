@@ -1,22 +1,22 @@
 %YAML:1.0
 
+# Source: vio_calib_param.ini (DefaultCamera-s001)
 cam0:
-  # T_imu_cam: Transformation from camera to IMU (T_ic from Kalibr report)
+  # T_imu_cam: Transformation from camera to IMU (Camera_Tbc from vio_calib_param.ini)
   # Format: [R_CtoI | p_CinI] where R_CtoI is rotation from camera to IMU, p_CinI is position of camera in IMU frame
-  # Source: Kalibr calibration report - T_ic (cam0 to imu0)
   T_imu_cam:
-    - [-0.00017035, 0.99990801, -0.01356275, 0.0321261]
-    - [-0.99998097, -0.00008668, 0.00616916, 0.00027049]
-    - [0.00616741, 0.01356354, 0.99988899, -0.01402547]
+    - [-0.05291333985169139, 0.9982643375959365, 0.025855188065177052, -0.0151749274153402]
+    - [-0.9985583051798127, -0.0526593856298036, -0.010406741157139392, 0.00194442849771282]
+    - [-0.009027160248908872, -0.026368568206064816, 0.9996115290394578, 0.00613469697429818]
     - [0.0, 0.0, 0.0, 1.0]
   cam_overlaps: [0]
   camera_model: pinhole
-  # Distortion coefficients from Kalibr report
-  distortion_coeffs: [0.03675021364713247, -0.02208596823383546, 0.0005854623186039546, -0.0005832183314942078]
+  # Distortion coefficients: [k1, k2, p1, p2] from Camera_k1, Camera_k2, Camera_p1, Camera_p2
+  distortion_coeffs: [0.442466519325429, -0.0294091742063911, -0.134413435707937, 0.0631235969275636]
   distortion_model: radtan
-  # Intrinsics from Kalibr report: [fx, fy, cx, cy]
-  intrinsics: [310.117568360288, 310.41144074844027, 323.6989895914584, 249.77699073048154]
+  # Intrinsics: [fx, fy, cx, cy] from Camera_fx, Camera_fy, Camera_cx, Camera_cy
+  intrinsics: [237.040830200417, 237.587338240781, 321.942590007647, 245.954439489218]
   resolution: [640, 480]
   rostopic: /cam0/image_raw
-  # Time offset from Kalibr report: t_imu = t_cam + timeshift_cam_imu
-  timeshift_cam_imu: 0.0004526049510845013
+  # Time offset: t_imu = t_cam + timeshift_cam_imu (delayCam2IMU from ini)
+  timeshift_cam_imu: 0.00189024
