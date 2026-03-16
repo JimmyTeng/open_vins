@@ -11,9 +11,9 @@ cam0:
     - [0.0, 0.0, 0.0, 1.0]
   cam_overlaps: [0]
   camera_model: pinhole
-  # Distortion coefficients: [k1, k2, p1, p2] from Camera_k1, Camera_k2, Camera_p1, Camera_p2
-  distortion_coeffs: [0.442466519325429, -0.0294091742063911, -0.134413435707937, 0.0631235969275636]
-  distortion_model: radtan
+  # 鱼眼/广角：equidistant 模型使用 [k1, k2, k3, k4]（OpenCV fisheye）；ini 仅提供 k1,k2,k3=0，k4 填 0；原 radtan 的 p1,p2 在 equidistant 中不使用
+  distortion_coeffs: [0.442466519325429, -0.0294091742063911, 0.0, 0.0]
+  distortion_model: equidistant
   # Intrinsics: [fx, fy, cx, cy] from Camera_fx, Camera_fy, Camera_cx, Camera_cy
   intrinsics: [237.040830200417, 237.587338240781, 321.942590007647, 245.954439489218]
   resolution: [640, 480]
