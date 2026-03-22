@@ -120,6 +120,15 @@ sim_traj_path: ""
 verbosity: "INFO" # ALL, DEBUG, INFO, WARNING, ERROR, SILENT
 record_timing_information: true # 数据集结束后输出帧率分析
 record_timing_filepath: "/tmp/traj_timing.txt" # https://docs.openvins.com/eval-timing.html#eval-ov-timing-flame
+
+# VIO 原始数据落盘（imu.csv + camera_index.csv + mosaics/*.png），见 ov_core VioDataRecorder
+record_vio_dataset: false
+# 仅写数据集，不跑 SLAM/跟踪/传播（须与 record_vio_dataset 同时为 true）
+record_vio_dataset_record_only: false
+# 记录根目录（须绝对路径）；每次运行在其下新建子目录 yyyymmddhhmmss（冲突则秒+1）
+record_vio_dataset_root: "/home/jimmy/data"
+record_vio_mosaic_cols: 1
+record_vio_mosaic_rows: 15
 print_state_calib: true # 每次更新后打印状态与标定 (debug)
 print_timing: true # 各阶段耗时 (track, prop, msckf, slam, marg)
 print_tracking_stats: true # [VM] 帧与 [跟踪] 更新日志 (初始化阶段或每 200)

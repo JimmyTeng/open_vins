@@ -121,6 +121,25 @@ struct VioManagerOptions {
   /// The path to the file we will record the timing information into
   std::string record_timing_filepath = "ov_msckf_timing.txt";
 
+  /// 是否将输入的 IMU / 相机数据记录为数据集（imu.csv、camera_index.csv、mosaic PNG）
+  /// If true, log incoming IMU and camera measurements (see VioDataRecorder)
+  bool record_vio_dataset = false;
+
+  /// 为 true 时仅入队写盘，不执行 SLAM/跟踪/传播（须同时 record_vio_dataset）
+  bool record_vio_dataset_record_only = false;
+
+  /// 数据集记录根目录（须为绝对路径）；其下每次运行会再建子目录（见 record_vio_dataset_run_path）
+  std::string record_vio_dataset_root;
+
+  /// 本次运行实际写入目录（VioManager 构造时生成：根目录 / yyyymmddhhmmss，冲突则秒 +1）
+  std::string record_vio_dataset_run_path;
+
+  /// 大图水平方向格子数（默认 15，与 VioDataRecorder 一致）
+  int record_vio_mosaic_cols = 1;
+
+  /// 竖直条带行数（默认 15，即一包 15 张图）
+  int record_vio_mosaic_rows = 15;
+
   /// 是否在每次更新后打印状态与标定信息（调试用）
   /// If we should print state and calibration info after each update (for debugging)
   bool print_state_calib = false;
@@ -157,6 +176,28 @@ struct VioManagerOptions {
       parser->parse_config("zupt_only_at_beginning", zupt_only_at_beginning);
       parser->parse_config("record_timing_information", record_timing_information);
       parser->parse_config("record_timing_filepath", record_timing_filepath);
+      parser->parse_config("record_vio_dataset", record_vio_dataset, false);
+      parser->parse_config("record_vio_dataset_record_only", record_vio_dataset_record_only, false);
+      parser->parse_config("record_vio_dataset_root", record_vio_dataset_root, false);
+      {
+        std::string legacy_path;
+        parser->parse_config("record_vio_dataset_path", legacy_path, false);
+        if (!legacy_path.empty())
+          record_vio_dataset_root = legacy_path;
+      }
+      parser->parse_config("record_vio_mosaic_cols", record_vio_mosaic_cols, false);
+      parser->parse_config("record_vio_mosaic_rows", record_vio_mosaic_rows, false);
+      if (record_vio_dataset_record_only && !record_vio_dataset) {
+        PRINT_ERROR(RED "record_vio_dataset_record_only 为 true 时必须启用 record_vio_dataset。\n" RESET);
+        std::exit(EXIT_FAILURE);
+      }
+      if (record_vio_dataset) {
+        const std::filesystem::path rd_path(record_vio_dataset_root);
+        if (record_vio_dataset_root.empty() || !rd_path.is_absolute()) {
+          PRINT_ERROR(RED "启用 record_vio_dataset 时，record_vio_dataset_root 必须为非空绝对路径。\n" RESET);
+          std::exit(EXIT_FAILURE);
+        }
+      }
       parser->parse_config("print_state_calib", print_state_calib);
       parser->parse_config("print_timing", print_timing);
       parser->parse_config("print_tracking_stats", print_tracking_stats);
@@ -169,6 +210,12 @@ struct VioManagerOptions {
     PRINT_DEBUG("  - 仅在开始时使用零速度更新?: %d\n", zupt_only_at_beginning);
     PRINT_DEBUG("  - 记录时间信息?: %d\n", (int)record_timing_information);
     PRINT_DEBUG("  - 记录时间信息文件路径: %s\n", record_timing_filepath.c_str());
+    PRINT_DEBUG("  - 记录VIO数据集?: %d\n", (int)record_vio_dataset);
+    PRINT_DEBUG("  - 记录VIO仅记录不跑SLAM?: %d\n", (int)record_vio_dataset_record_only);
+    PRINT_DEBUG("  - 记录VIO数据集根目录: %s\n", record_vio_dataset_root.c_str());
+    if (!record_vio_dataset_run_path.empty())
+      PRINT_DEBUG("  - 记录VIO本次运行目录: %s\n", record_vio_dataset_run_path.c_str());
+    PRINT_DEBUG("  - 记录VIO mosaic 列x行: %d x %d\n", record_vio_mosaic_cols, record_vio_mosaic_rows);
     PRINT_DEBUG("  - 打印状态与标定?: %d\n", (int)print_state_calib);
     PRINT_DEBUG("  - 打印各阶段耗时?: %d\n", (int)print_timing);
     PRINT_DEBUG("  - 打印跟踪统计([VM]帧/[跟踪]更新)?: %d\n", (int)print_tracking_stats);

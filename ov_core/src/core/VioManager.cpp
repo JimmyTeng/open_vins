@@ -22,7 +22,9 @@
 #include "VioManager.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <ctime>
 #include <fstream>
 #include <iomanip>
 #include <limits>
@@ -50,10 +52,44 @@
 #include "utils/opencv_lambda_body.h"
 #include "utils/print.h"
 #include "utils/sensor_data.h"
+#include "utils/vio_data_record_play.h"
 
 using namespace ov_core;
 using namespace ov_type;
 using namespace ov_msckf;
+
+namespace {
+
+/// 在 root 下创建子目录 yyyymmddhhmmss（本地时间）；若已存在则秒 +1 直到可用
+std::string allocate_vio_dataset_session_dir(const std::string &root_abs) {
+  namespace fs = std::filesystem;
+  const fs::path root(root_abs);
+  fs::create_directories(root);
+
+  auto tp = std::chrono::system_clock::now();
+  for (int n = 0; n < 86400 * 366; ++n) {
+    const std::time_t tt = std::chrono::system_clock::to_time_t(tp);
+    std::tm tm_buf{};
+#if defined(_WIN32)
+    if (localtime_s(&tm_buf, &tt) != 0)
+      throw std::runtime_error("allocate_vio_dataset_session_dir: localtime_s failed");
+#else
+    if (localtime_r(&tt, &tm_buf) == nullptr)
+      throw std::runtime_error("allocate_vio_dataset_session_dir: localtime_r failed");
+#endif
+    std::ostringstream os;
+    os << std::put_time(&tm_buf, "%Y%m%d%H%M%S");
+    const fs::path session = root / os.str();
+    if (!fs::exists(session)) {
+      fs::create_directories(session);
+      return session.string();
+    }
+    tp += std::chrono::seconds(1);
+  }
+  throw std::runtime_error("allocate_vio_dataset_session_dir: no free timestamp directory name");
+}
+
+} // namespace
 
 // 用于跟踪统计的静态变量
 // Static variables for tracking statistics
@@ -156,6 +192,29 @@ VioManager::VioManager(VioManagerOptions &params_)
     of_statistics << "re-tri & marg,total" << std::endl;
   }
 
+  if (params.record_vio_dataset) {
+    try {
+      const std::string session_dir = allocate_vio_dataset_session_dir(params.record_vio_dataset_root);
+      params.record_vio_dataset_run_path = session_dir;
+      params_.record_vio_dataset_run_path = session_dir;
+
+      const int tw = (int)params.camera_intrinsics.at(0)->w();
+      const int th = (int)params.camera_intrinsics.at(0)->h();
+      auto rec = std::make_unique<VioDataRecorder>(session_dir, params.record_vio_mosaic_cols,
+                                                     params.record_vio_mosaic_rows, tw, th);
+      vio_dataset_writer_ = std::make_unique<VioDatasetWriter>(std::move(rec));
+      PRINT_INFO(GREEN "[VioManager] 数据集记录已启用\n" RESET);
+      PRINT_INFO("  根目录: %s\n", params.record_vio_dataset_root.c_str());
+      PRINT_INFO("  本次目录: %s\n", session_dir.c_str());
+      PRINT_INFO("  仅记录不跑SLAM: %d\n", (int)params.record_vio_dataset_record_only);
+      PRINT_INFO("  mosaic %d x %d, tile %d x %d\n", params.record_vio_mosaic_cols,
+                 params.record_vio_mosaic_rows, tw, th);
+    } catch (const std::exception &e) {
+      PRINT_ERROR(RED "[VioManager] 数据集记录初始化失败: %s\n" RESET, e.what());
+      std::exit(EXIT_FAILURE);
+    }
+  }
+
   //===================================================================================
   //===================================================================================
   //===================================================================================
@@ -224,6 +283,11 @@ VioManager::VioManager(VioManagerOptions &params_)
 }
 
 VioManager::~VioManager() {
+  try {
+    vio_dataset_writer_.reset();
+  } catch (...) {
+  }
+
   if (!params.record_timing_information) return;
   if (!of_statistics.is_open()) return;
 
@@ -322,6 +386,11 @@ VioManager::~VioManager() {
  * @param message IMU数据消息
  */
 void VioManager::feed_measurement_imu(const ov_core::ImuData &message) {
+  if (vio_dataset_writer_)
+    vio_dataset_writer_->push_imu(message);
+  if (params.record_vio_dataset_record_only)
+    return;
+
   // 我们需要的最旧IMU时间是最后一个克隆状态的时间
   // 我们不应该需要整个窗口，但如果时间倒退，我们就会需要
   // The oldest time we need IMU with is the last clone
@@ -365,6 +434,9 @@ void VioManager::feed_measurement_imu(const ov_core::ImuData &message) {
 void VioManager::feed_measurement_simulation(
     double timestamp, const std::vector<int> &camids,
     const std::vector<std::vector<std::pair<size_t, Eigen::VectorXf>>> &feats) {
+  if (params.record_vio_dataset_record_only)
+    return;
+
   // 开始计时
   // Start timing
   rT1 = rtime_now();
@@ -495,6 +567,11 @@ void VioManager::track_image_and_update(
     cv::pyrDown(mask, mask_temp, cv::Size(mask.cols / 2.0, mask.rows / 2.0));
     message.masks.at(i) = mask_temp;
   }
+
+  if (vio_dataset_writer_)
+    vio_dataset_writer_->push_camera(message);
+  if (params.record_vio_dataset_record_only)
+    return;
 
   // 执行特征跟踪！
   // 获取跟踪前的特征数量（用于跟踪统计）

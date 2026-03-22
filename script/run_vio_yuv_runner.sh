@@ -1,7 +1,8 @@
 #!/bin/sh
 # 设置依赖库路径并运行 vio_yuv_runner（与 bin 同级的 lib 目录）
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
-ROOT="${SCRIPT_DIR}/.."
+ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
+WS_ROOT=$(cd "$ROOT/.." && pwd)
 export LD_LIBRARY_PATH="${ROOT}/lib:${ROOT}/thirdparty/lib:${LD_LIBRARY_PATH}"
 
 # 查找可执行文件：script 同目录 > install > build
@@ -22,5 +23,14 @@ if [ -z "$BIN" ]; then
   exit 1
 fi
 
-[ $# -eq 0 ] && set -- "data/yuv_data/init/outdoor/stone_brick/move" "ov_yuv_parser/config/openvins/estimator_config.yaml"
+DEFAULT_SCENE_REL="data/yuv_data/init/outdoor/stone_brick/move"
+if [ -d "$WS_ROOT/$DEFAULT_SCENE_REL" ]; then
+  DEFAULT_DATA="$WS_ROOT/$DEFAULT_SCENE_REL"
+elif [ -d "$ROOT/$DEFAULT_SCENE_REL" ]; then
+  DEFAULT_DATA="$ROOT/$DEFAULT_SCENE_REL"
+else
+  DEFAULT_DATA="$WS_ROOT/$DEFAULT_SCENE_REL"
+fi
+DEFAULT_CONFIG="$ROOT/ov_yuv_parser/config/openvins/estimator_config.yaml"
+[ $# -eq 0 ] && set -- "$DEFAULT_DATA" "$DEFAULT_CONFIG"
 exec "$BIN" "$@"

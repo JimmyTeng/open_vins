@@ -39,6 +39,7 @@ struct ImuData;
 struct CameraData;
 class TrackBase;
 class FeatureInitializer;
+class VioDatasetWriter;
 } // namespace ov_core
 namespace ov_init {
 class InertialInitializer;
@@ -96,6 +97,9 @@ public:
    * @param message Contains our timestamp, images, and camera ids
    */
   void feed_measurement_camera(const ov_core::CameraData &message) { track_image_and_update(message); }
+
+  /// 是否正在将测量写入数据集（由配置 record_vio_dataset 决定）
+  bool recording_vio_dataset() const { return vio_dataset_writer_ != nullptr; }
 
   /**
    * @brief 输入同步仿真相机的测量数据
@@ -296,6 +300,9 @@ protected:
   // Timing statistic file and variables
   std::ofstream of_statistics;
   ov_core::rtime_t rT1, rT2, rT3, rT4, rT5, rT6, rT7;
+
+  /// 数据集写盘（后台线程异步队列）
+  std::unique_ptr<ov_core::VioDatasetWriter> vio_dataset_writer_;
 
   // 跟踪已行驶的距离
   // Track how much distance we have traveled
