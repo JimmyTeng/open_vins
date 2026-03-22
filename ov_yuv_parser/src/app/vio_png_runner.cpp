@@ -11,7 +11,13 @@
 #include <algorithm>
 #include <cstdlib>
 #include <cstring>
+#if defined(__GNUC__) && __GNUC__ < 8 && !defined(__clang__)
+#include <experimental/filesystem>
+namespace fs = std::experimental::filesystem;
+#else
 #include <filesystem>
+namespace fs = std::filesystem;
+#endif
 #include <fstream>
 #include <iostream>
 #include <opencv2/core.hpp>
@@ -25,8 +31,6 @@
 #include "png_stream_data_loader.h"
 #include "utils/vio_data_record_play.h"
 #include "yuv_parser.h"
-
-namespace fs = std::filesystem;
 
 static double timestamp_to_sec(long long ts) {
   if (ts >= 1e12) {
