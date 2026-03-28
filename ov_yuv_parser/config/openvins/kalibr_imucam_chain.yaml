@@ -1,22 +1,19 @@
 %YAML:1.0
 
-# Source: vio_calib_param.ini (DefaultCamera-s001)
+# Source: imucamera-report-imucam(1).pdf — cam0 pinhole + radtan, T_ic (cam0 to imu0)
 cam0:
-  # T_imu_cam: Transformation from camera to IMU (Camera_Tbc from vio_calib_param.ini)
-  # Format: [R_CtoI | p_CinI] where R_CtoI is rotation from camera to IMU, p_CinI is position of camera in IMU frame
+  # T_imu_cam: camera → IMU（与 Kalibr 报告中的 T_ic 一致）
   T_imu_cam:
-    - [-0.05291333985169139, 0.9982643375959365, 0.025855188065177052, -0.0151749274153402]
-    - [-0.9985583051798127, -0.0526593856298036, -0.010406741157139392, 0.00194442849771282]
-    - [-0.009027160248908872, -0.026368568206064816, 0.9996115290394578, 0.00613469697429818]
+    - [0.00242928, 0.99996311, -0.00823899, 0.02576154]
+    - [-0.99998117, 0.00247559, 0.00561539, 0.00104526]
+    - [0.00563558, 0.00822519, 0.99995029, -0.01744056]
     - [0.0, 0.0, 0.0, 1.0]
   cam_overlaps: [0]
   camera_model: pinhole
-  # 鱼眼/广角：equidistant 模型使用 [k1, k2, k3, k4]（OpenCV fisheye）；ini 仅提供 k1,k2,k3=0，k4 填 0；原 radtan 的 p1,p2 在 equidistant 中不使用
-  distortion_coeffs: [0.442466519325429, -0.0294091742063911, 0.0, 0.0]
-  distortion_model: equidistant
-  # Intrinsics: [fx, fy, cx, cy] from Camera_fx, Camera_fy, Camera_cx, Camera_cy
-  intrinsics: [237.040830200417, 237.587338240781, 321.942590007647, 245.954439489218]
+  distortion_coeffs: [0.032786057021661395, -0.017834482749019928, 0.0008203482266216394, -0.0009940151400078087]
+  distortion_model: radtan
+  intrinsics: [309.9192125309255, 310.0011784556613, 323.15889745531484, 250.50858240531576]
   resolution: [640, 480]
   rostopic: /cam0/image_raw
-  # Time offset: t_imu = t_cam + timeshift_cam_imu (delayCam2IMU from ini)
-  timeshift_cam_imu: 0.00189024
+  # timeshift cam0 to imu0: t_imu = t_cam + shift [s]
+  timeshift_cam_imu: 0.002116458780350451

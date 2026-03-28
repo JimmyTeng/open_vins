@@ -17,7 +17,8 @@ max_slam_in_update: 25 # update can be split into sequential updates of batches,
 max_msckf_in_update: 40 # how many MSCKF features to use in the update
 dt_slam_delay: 3 # delay before initializing (helps with stability from bad initialization...)
 
-gravity_mag: 9.81 # magnitude of gravity in this location
+# 与 Kalibr 报告中 Gravity vector in target coords 模长一致 (~9.807 m/s^2)
+gravity_mag: 9.807
 
 feat_rep_msckf: "GLOBAL_3D"
 feat_rep_slam: "ANCHORED_MSCKF_INVERSE_DEPTH"
@@ -54,7 +55,7 @@ init_dyn_inflation_bg: 10 # what to inflate the recovered bias_g covariance by
 init_dyn_inflation_ba: 100 # what to inflate the recovered bias_a covariance by
 init_dyn_min_rec_cond: 1e-12 # reciprocal condition number thresh for info inversion
 
-# Initial bias from vio_calib_param.ini (gyroBias, accelBias)
+# PDF 未含 bias 初值；以下为原 vio 初值，可按需与在线估计对齐
 init_dyn_bias_g: [-0.0011146074690264833, -0.011300524581876343, 0.008723352067730063]
 init_dyn_bias_a: [-0.053302996178729294, -0.015902613210897493, 0.07961711223434825]
 
@@ -125,8 +126,9 @@ record_timing_filepath: "/tmp/traj_timing.txt" # https://docs.openvins.com/eval-
 record_vio_dataset: true
 # 仅写数据集，不跑 SLAM/跟踪/传播（须与 record_vio_dataset 同时为 true）
 record_vio_dataset_record_only: true
-# 记录根目录（须绝对路径）；每次运行在其下新建子目录 yyyymmddhhmmss（冲突则秒+1）
-record_vio_dataset_root: "/mnt/data"
+# 记录根目录（须绝对路径且可写）；每次运行在其下新建子目录 yyyymmddhhmmss（冲突则秒+1）
+# 只读挂载（如未正确 rw 的 /mnt/data）会导致初始化失败；需要时再改为你的可写目录
+record_vio_dataset_root: "/tmp/vio_dataset_log"
 record_vio_mosaic_cols: 1
 record_vio_mosaic_rows: 15
 print_state_calib: true # 每次更新后打印状态与标定 (debug)
