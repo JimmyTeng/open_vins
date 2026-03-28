@@ -8,8 +8,8 @@ imu0:
     - [0.0, 0.0, 1.0, 0.0]
     - [0.0, 0.0, 0.0, 1.0]
   # 连续时间噪声（与报告 IMU configuration 一致）
-  accelerometer_noise_density: 0.01 # [ m / s^2 / sqrt(Hz) ]
-  accelerometer_random_walk: 0.001 # [ m / s^3 / sqrt(Hz) ]
+  accelerometer_noise_density: 0.1 # [ m / s^2 / sqrt(Hz) ]
+  accelerometer_random_walk: 0.01 # [ m / s^3 / sqrt(Hz) ]
   gyroscope_noise_density: 0.0045 # [ rad / s / sqrt(Hz) ]
   gyroscope_random_walk: 0.00045 # [ rad / s^2 / sqrt(Hz) ]
   rostopic: /imu0
