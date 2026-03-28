@@ -123,9 +123,9 @@ record_timing_information: true # 数据集结束后输出帧率分析
 record_timing_filepath: "/tmp/traj_timing.txt" # https://docs.openvins.com/eval-timing.html#eval-ov-timing-flame
 
 # VIO 原始数据落盘（imu.csv + camera_index.csv + mosaics/*.png），见 ov_core VioDataRecorder
-record_vio_dataset: true
+record_vio_dataset: false
 # 仅写数据集，不跑 SLAM/跟踪/传播（须与 record_vio_dataset 同时为 true）
-record_vio_dataset_record_only: true
+record_vio_dataset_record_only: false
 # 记录根目录（须绝对路径且可写）；每次运行在其下新建子目录 yyyymmddhhmmss（冲突则秒+1）
 # 只读挂载（如未正确 rw 的 /mnt/data）会导致初始化失败；需要时再改为你的可写目录
 record_vio_dataset_root: "/tmp/vio_dataset_log"
