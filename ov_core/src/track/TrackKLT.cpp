@@ -998,7 +998,7 @@ void TrackKLT::perform_matching(const std::vector<cv::Mat> &img0pyr,
     return;
   }
 
-  // Now do KLT tracking to get the valid new points
+  // Now do KLT tracking to get the valid new points 
   std::vector<uchar> mask_klt;
   std::vector<float> error;
   cv::TermCriteria term_crit = cv::TermCriteria(
@@ -1006,7 +1006,7 @@ void TrackKLT::perform_matching(const std::vector<cv::Mat> &img0pyr,
   cv::calcOpticalFlowPyrLK(img0pyr, img1pyr, pts0, pts1, mask_klt, error,
                            win_size, pyr_levels, term_crit,
                            cv::OPTFLOW_USE_INITIAL_FLOW);
-
+  // TODO 优化KLT跟踪
   // Normalize these points, so we can then do ransac
   // We don't want to do ransac on distorted image uvs since the mapping is
   // nonlinear

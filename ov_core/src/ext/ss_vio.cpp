@@ -43,6 +43,16 @@ struct CachedState {
   double acc_bias[3] = {0, 0, 0};
 } g_cached;
 
+/** 在销毁 VioInterface 后清空模块级缓存，避免 DeInit/重入 Init 后残留旧位姿或 SLAM 缓冲。 */
+static void reset_module_globals_after_handle_destroyed() {
+  {
+    std::lock_guard<std::mutex> lk(g_state_mtx);
+    g_cached = CachedState{};
+  }
+  g_slam_pose = OT_VIO_PoseData{};
+  std::memset(g_slam_points, 0, sizeof(g_slam_points));
+}
+
 static OT_VIO_PoseValidStatus map_status(vio_system_status_e s) {
   switch (s) {
     case VIO_STATUS_NOT_READY:
@@ -132,9 +142,11 @@ int SS_VIO_Init(const OT_VIO_Param* param) {
   if (!param->calibParamPath[0]) {
     return OT_VIOALG_ERR_INIT_CHECK_CALIBPATH;
   }
+  /* 已成功初始化则禁止重复 Init，须先 SS_VIO_DeInit */
   if (g_handle) {
-    SS_VIO_DeInit();
+    return OT_VIOALG_ERR_INIT_ALREADY;
   }
+  reset_module_globals_after_handle_destroyed();
   g_handle = new (std::nothrow) VioInterface(param->calibParamPath);
   if (g_handle == nullptr) {
     return OT_VIOALG_ERR_INIT;
@@ -144,11 +156,8 @@ int SS_VIO_Init(const OT_VIO_Param* param) {
   if (ret != 0) {
     delete g_handle;
     g_handle = nullptr;
+    reset_module_globals_after_handle_destroyed();
     return OT_VIOALG_ERR_INIT_START;
-  }
-  {
-    std::lock_guard<std::mutex> lk(g_state_mtx);
-    g_cached.has_data = false;
   }
   return 0;
 }
@@ -190,6 +199,7 @@ int SS_VIO_DeInit(void) {
     delete g_handle;
     g_handle = nullptr;
   }
+  reset_module_globals_after_handle_destroyed();
   return 0;
 }
 
