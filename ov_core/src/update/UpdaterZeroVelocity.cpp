@@ -134,11 +134,29 @@ bool UpdaterZeroVelocity::try_update(std::shared_ptr<State> state,
     return false;
   }
 
-  // 是否应该积分加速度并说速度应该为零
-  // 以及是否应该根据随机游走噪声来膨胀偏置
-  bool integrated_accel_constraint = false;  // 未测试
+  // 以下为 try_update() 内局部开关：决定走哪段实现分支，不是外部配置项（yaml/ROS 读不到），
+  // 也不是传感器/中间观测量；改行为需改源码或后续接入 UpdaterOptions。
+
+  // false（默认）：第二路测量用「比力减重力」残差 (a_hat - R*g)≈0，对应惯性系线加速度≈0（匀速），
+  //   Hx 为 [q,bg,ba]，H 列宽 9；加计残差对 ba、q 有块，不含速度状态。
+  // true：第二路改为「速度积分一致性」残差（与 v、g*dt、R^T*a_hat*dt 组合），Hx 增加 v，H 列宽 12；
+  //   注释写明未充分验证，与默认 ZUPT 文献模型不同，慎用。
+  bool integrated_accel_constraint = false;
+
+  // true：把陀螺/加计偏置建模为「随机游走」——在 IMU 窗口长度 dt_summed 内协方差会增长 Q_bias。
+  //   (1) chi² 检验前：P_marg 的 bg/ba 块 += Q_bias，避免仍用「偏置完全已知」的 P 去做马氏距离（否则会过严）。
+  //   (2) 通过检验后、EKF 更新前：对 bg/ba 做一次 EKFPropagation(Q_bias)，与 (1) 一致。
+  // false：窗口内不把偏置不确定性随时间胀开（等价于更信当前偏置估计），chi² 与更新前都不加这段。
   bool model_time_varying_bias = true;
+
+  // true：算相邻帧特征平均视差 disp_avg；若 disp_avg < zupt_max_disparity 且特征数>20，则 disparity_passed=true。
+  //   此时「仅用 IMU」的拒绝条件不生效：即使 chi² 或速度超阈也可能通过（见 !disparity_passed && (...) ）。
+  // false：不计算视差，disparity_passed 恒为 false，静止判定完全依赖 chi² + |v| 门限；打印分支也不同。
   bool override_with_disparity_check = true;
+
+  // false（默认）：用上面堆叠的 IMU 残差 + EKFUpdate，state 时间戳推进到 timestamp。
+  // true：先 propagate_and_clone，再用「两克隆间相对姿态/位置 + 当前速度」构造 9 维残差与另一套 H/R，
+  //   EKFUpdate 后 marginalize 并删掉新克隆；与默认 IMU-ZUPT 是两套完全不同的更新语义，一般保持 false。
   bool explicitly_enforce_zero_motion = false;
 
   // 雅可比矩阵的顺序
@@ -268,10 +286,13 @@ bool UpdaterZeroVelocity::try_update(std::shared_ptr<State> state,
     disparity_passed = (disp_avg < _zupt_max_disparity && num_features > 20);
   }
 
-  // 检查我们当前是否为零速度
-  // 我们需要通过chi2检查且不超过速度阈值
-  if (!disparity_passed && (chi2 > _options.chi2_multipler * chi2_check ||
-                            state->_imu->vel().norm() > _zupt_max_velocity)) {
+  // 静止门：统一用「通过」语义，等价于旧写法
+  // !disparity_passed && (chi2>阈 || |v|>阈)
+  bool chi2_passed = chi2 <= _options.chi2_multipler * chi2_check;
+  bool vel_passed = state->_imu->vel().norm() <= _zupt_max_velocity;
+  bool stationary_gate_passed =
+      disparity_passed || (chi2_passed && vel_passed);
+  if (!stationary_gate_passed) {
     last_zupt_state_timestamp = 0.0;
     last_zupt_count = 0;
     return false;

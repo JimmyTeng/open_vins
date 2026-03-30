@@ -11,6 +11,27 @@ One problem that both of these don't solve is the issue of dynamic environmental
 In a typical autonomous car scenario the sensor system will become stationary at stop lights in which dynamic objects, such as other cars crossing the intersection, can quickly corrupt the system.
 A zero velocity update and skipping feature tracking can address these issues if we are able to classify the cases where the sensor system is at rest.
 
+In code, ZUPT is split into two sequential stages: (i) zero velocity detection, which classifies rest using the synthetic measurement residual, chi-squared / Mahalanobis distance, optional disparity, and velocity checks; (ii) zero velocity update, which applies the EKF correction with the same stacked residual and Jacobians only after detection succeeds.
+
+@section update-zerovelocity-hover Multirotor hover is not ``classical'' rest
+
+The synthetic measurement assumes (approximately) zero true angular rate and zero proper acceleration (up to gravity), i.e. a rigid body that is truly still in the inertial sense.
+A hovering multirotor often violates this: the flight controller continuously changes attitude to reject wind and regulate position, so \f$\boldsymbol{\omega}\f$ is frequently non-zero, and motor vibrations add structured noise.
+Treating hover like a ground vehicle stopped at a traffic light can therefore mis-trigger or mis-inform ZUPT; prefer looser gating, higher noise inflation, disabling ZUPT in hover, or relying more on vision.
+See repository file \c docs/零速度更新公式推导.md (section on hover vs classical ZUPT).
+
+For requirements and documentation, it is often clearer to distinguish zero angular rate (\f$\boldsymbol{\omega}\approx\mathbf{0}\f$) from zero linear velocity (\f$\mathbf{v}_{IinG}\approx\mathbf{0}\f$) instead of a single vague ``zero velocity''.
+They are independent: e.g. multirotor hover may be close to zero linear velocity while attitude control keeps \f$\boldsymbol{\omega}\f$ non-zero.
+This repository's default ZUPT stacks gyro and accelerometer residuals together; a separate explicit velocity constraint exists only in an optional code path (\c integrated_accel_constraint).
+See the same Chinese markdown file (section on splitting angular vs linear constraints).
+
+@section update-zerovelocity-vio Relation to image-based updates
+
+In \c VioManager::track_image_and_update, feature tracking (\c feed_new_camera) runs first, then \c UpdaterZeroVelocity::try_update.
+If ZUPT succeeds, the function returns immediately and does not call \c do_feature_propagate_update (so no \c propagate_and_clone or standard visual EKF update for that frame).
+Disparity-based detection still uses feature tracks from the shared \c FeatureDatabase, so images still inform the detection stage even when the visual update path is skipped.
+See also repository file \c docs/零速度更新公式推导.md (section on the relationship to image updates).
+
 
 @section update-zerovelocity-meas Constant Velocity Synthetic Measurement
 
@@ -86,5 +107,8 @@ We additionally have a detection method which leverages the visual feature track
 \f}
 
 This seems to work reasonably well, but can fail if the environment is dynamic in nature, thus it can be useful to use both the inertial and disparity-based methods together in very dynamic environments.
+
+
+@note Repository file `docs/零速度更新公式推导.md` (Chinese) collects the same measurement model with whitening, Jacobians, and up-to-date line references into `ov_core/src/update/UpdaterZeroVelocity.cpp`.
 
 */

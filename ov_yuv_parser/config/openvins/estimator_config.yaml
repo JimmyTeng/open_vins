@@ -24,13 +24,17 @@ feat_rep_msckf: "GLOBAL_3D"
 feat_rep_slam: "ANCHORED_MSCKF_INVERSE_DEPTH"
 feat_rep_aruco: "ANCHORED_MSCKF_INVERSE_DEPTH"
 
-# zero velocity update parameters we can use
-# we support either IMU-based or disparity detection.
-try_zupt: true # if true, try to use ZUPT to initialize the system
-zupt_chi2_multipler: 1 # set to 0 for only disp-based
-zupt_max_velocity: 0.2 # maximum velocity to consider the platform stationary
-zupt_noise_multiplier: 0.01 # noise multiplier for the ZUPT
-zupt_max_disparity: 0.3 # set to 0 for only imu-based
+# Zero velocity update (ZUPT)：VIO 已初始化后，静止段用 IMU 合成测量 + 可选视差门控（非 init 专用）
+try_zupt: false
+# chi² 门限倍率：chi2_passed 用 chi2 <= multipler * chi2_check；越大越易通过 IMU 门。0 时 IMU 马氏门几乎恒假，多依赖视差/速度
+zupt_chi2_multipler: 1
+# 滤波速度 |v| 上限 (m/s 量级，与状态一致)；超过则静止门不通过（与 disparity 组合见文档 zupt-logic-flow.md）
+zupt_max_velocity: 0.2
+# 堆叠残差上 R 的乘数：放大测量噪声、减轻过信 IMU/振动；常见 1～100 量级试标定
+zupt_noise_multiplier: 50
+# 相邻帧平均视差阈值（与 FeatureHelper 一致，多为像素）；小于且特征数>20 则 disparity_passed
+zupt_max_disparity: 0.3
+# true：仅初期静止阶段用 ZUPT；false：全程可触发
 zupt_only_at_beginning: false
 
 # ==================================================================
