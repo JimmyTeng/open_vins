@@ -277,8 +277,10 @@ VioManager::VioManager(VioManagerOptions &params_)
     updaterZUPT = std::make_shared<UpdaterZeroVelocity>(
         params.zupt_options, params.imu_noises,
         trackFEATS->get_feature_database(), propagator, params.gravity_mag,
-        params.zupt_max_velocity, params.zupt_noise_multiplier,
-        params.zupt_max_disparity);
+        params.zupt_or_max_velocity, params.zupt_noise_multiplier,
+        params.zupt_or_max_disparity, params.zupt_or_chi2_multipler,
+        params.zupt_and_max_velocity, params.zupt_and_max_disparity,
+        params.zupt_and_chi2_multipler);
   }
 }
 
@@ -462,8 +464,10 @@ void VioManager::feed_measurement_simulation(
       updaterZUPT = std::make_shared<UpdaterZeroVelocity>(
           params.zupt_options, params.imu_noises,
           trackFEATS->get_feature_database(), propagator, params.gravity_mag,
-          params.zupt_max_velocity, params.zupt_noise_multiplier,
-          params.zupt_max_disparity);
+          params.zupt_or_max_velocity, params.zupt_noise_multiplier,
+          params.zupt_or_max_disparity, params.zupt_or_chi2_multipler,
+          params.zupt_and_max_velocity, params.zupt_and_max_disparity,
+          params.zupt_and_chi2_multipler);
     }
     PRINT_WARNING(RED "[仿真]: 将跟踪器转换为TrackSIM对象！\n" RESET);
   }
@@ -1284,15 +1288,10 @@ void VioManager::do_feature_propagate_update(
        << "," << state->_imu->bias_g()(1) << "," << state->_imu->bias_g()(2)
        << " | ba = " << state->_imu->bias_a()(0) << ","
        << state->_imu->bias_a()(1) << "," << state->_imu->bias_a()(2);
-
-    if (state->_options.do_calib_camera_timeoffset) {
-      ss << " | 相机-IMU时间偏移 = " << std::setprecision(5)
-         << state->_calib_dt_CAMtoIMU->value()(0);
-    }
     if (state->_options.do_calib_camera_intrinsics) {
       for (int i = 0; i < state->_options.num_cameras; i++) {
-        std::shared_ptr<Vec> calib = state->_cam_intrinsics.at(i);
-        ss << " | 相机" << i << "内参 = " << std::setprecision(3)
+        std::shared_ptr<ov_type::Vec> calib = state->_cam_intrinsics.at(i);
+        ss << " | cam" << i << " intr = " << std::setprecision(3)
            << calib->value()(0) << "," << calib->value()(1) << ","
            << calib->value()(2) << "," << calib->value()(3) << " | "
            << calib->value()(4) << "," << calib->value()(5) << ","

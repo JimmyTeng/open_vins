@@ -22,6 +22,7 @@
 #ifndef OV_MSCKF_VIOMANAGEROPTIONS_H
 #define OV_MSCKF_VIOMANAGEROPTIONS_H
 
+#include <algorithm>
 #include <Eigen/Eigen>
 #include "utils/fs_compat.h"
 #include <iostream>
@@ -101,8 +102,8 @@ struct VioManagerOptions {
   /// Max velocity we will consider to try to do a zupt (i.e. if above this, don't do zupt)
   double zupt_max_velocity = 1.0;
 
-  /// 零速度更新测量IMU噪声矩阵的乘数（默认应为1.0）
-  /// Multiplier of our zupt measurement IMU noise matrix (default should be 1.0)
+  /// ZUPT 测量噪声 R 的标量倍率（马氏 χ² 与 EKF 更新共用，非 OR/AND 分支各自一份）
+  /// Scalar on ZUPT measurement noise R (shared for χ² innovation and EKF update)
   double zupt_noise_multiplier = 1.0;
 
   /// 尝试执行零速度更新的最大视差（如果超过此值，则不执行零速度更新）
@@ -112,6 +113,15 @@ struct VioManagerOptions {
   /// 是否仅在初始静态初始化阶段使用零速度更新
   /// If we should only use the zupt at the very beginning static initialization phase
   bool zupt_only_at_beginning = false;
+
+  /// OR 静止门分支（缺省 1.0；可选 legacy zupt_* 先填两路，再由 zupt_or_* / zupt_and_* 覆盖）
+  double zupt_or_max_velocity = 1.0;
+  double zupt_or_max_disparity = 1.0;
+  double zupt_or_chi2_multipler = 1.0;
+  /// AND 静止门分支
+  double zupt_and_max_velocity = 1.0;
+  double zupt_and_max_disparity = 1.0;
+  double zupt_and_chi2_multipler = 1.0;
 
   /// 是否将时间性能记录到文件
   /// If we should record the timing performance to file
@@ -170,9 +180,18 @@ struct VioManagerOptions {
     if (parser != nullptr) {
       parser->parse_config("dt_slam_delay", dt_slam_delay);
       parser->parse_config("try_zupt", try_zupt);
-      parser->parse_config("zupt_max_velocity", zupt_max_velocity);
-      parser->parse_config("zupt_noise_multiplier", zupt_noise_multiplier);
-      parser->parse_config("zupt_max_disparity", zupt_max_disparity);
+      // 可选 legacy：仅写 zupt_max_velocity 等时，先赋给两路，再由 zupt_or_* / zupt_and_* 覆盖
+      parser->parse_config("zupt_max_velocity", zupt_or_max_velocity, false);
+      zupt_and_max_velocity = zupt_or_max_velocity;
+      parser->parse_config("zupt_noise_multiplier", zupt_noise_multiplier, false);
+      parser->parse_config("zupt_or_noise_multiplier", zupt_noise_multiplier,
+                           false); // 废弃别名，与 zupt_noise_multiplier 同义
+      parser->parse_config("zupt_max_disparity", zupt_or_max_disparity, false);
+      zupt_and_max_disparity = zupt_or_max_disparity;
+      parser->parse_config("zupt_or_max_velocity", zupt_or_max_velocity, false);
+      parser->parse_config("zupt_or_max_disparity", zupt_or_max_disparity, false);
+      parser->parse_config("zupt_and_max_velocity", zupt_and_max_velocity, false);
+      parser->parse_config("zupt_and_max_disparity", zupt_and_max_disparity, false);
       parser->parse_config("zupt_only_at_beginning", zupt_only_at_beginning);
       parser->parse_config("record_timing_information", record_timing_information);
       parser->parse_config("record_timing_filepath", record_timing_filepath);
@@ -203,11 +222,16 @@ struct VioManagerOptions {
       parser->parse_config("print_tracking_stats", print_tracking_stats);
     }
     PRINT_DEBUG("  - SLAM延迟时间: %.1f\n", dt_slam_delay);
-    PRINT_DEBUG("  - 零速度更新: %d\n", try_zupt);
-    PRINT_DEBUG("  - 零速度更新最大速度: %.2f\n", zupt_max_velocity);
-    PRINT_DEBUG("  - 零速度更新噪声乘数: %.2f\n", zupt_noise_multiplier);
-    PRINT_DEBUG("  - 零速度更新最大视差: %.4f\n", zupt_max_disparity);
-    PRINT_DEBUG("  - 仅在开始时使用零速度更新?: %d\n", zupt_only_at_beginning);
+    PRINT_DEBUG("  - 零速度更新 try_zupt: %d\n", try_zupt);
+    PRINT_DEBUG("  - 仅在开始时使用零速度更新 zupt_only_at_beginning: %d\n",
+                zupt_only_at_beginning);
+    PRINT_DEBUG("  - ZUPT 静止门 = gate_or || gate_and（χ² 倍率见「噪声参数」段）\n");
+    PRINT_DEBUG("    OR ： |v|≤%.3f m/s  disp≤%.4f px\n",
+                zupt_or_max_velocity, zupt_or_max_disparity);
+    PRINT_DEBUG("    AND： |v|≤%.3f m/s  disp≤%.4f px\n",
+                zupt_and_max_velocity, zupt_and_max_disparity);
+    PRINT_DEBUG("    ZUPT 测量噪声 R 标量倍率（χ² 与 EKF 共用）: %.3f\n",
+                zupt_noise_multiplier);
     PRINT_DEBUG("  - 记录时间信息?: %d\n", (int)record_timing_information);
     PRINT_DEBUG("  - 记录时间信息文件路径: %s\n", record_timing_filepath.c_str());
     PRINT_DEBUG("  - 记录VIO数据集?: %d\n", (int)record_vio_dataset);
@@ -244,6 +268,15 @@ struct VioManagerOptions {
   /// Update options for zero velocity (chi2 multiplier)
   UpdaterOptions zupt_options;
 
+  /// 静止门恒为 gate_or||gate_and；将辅助量写回 zupt_*（须在解析完 chi² 后调用）
+  void apply_zupt_active_branch() {
+    zupt_max_velocity =
+        std::min(zupt_or_max_velocity, zupt_and_max_velocity);
+    zupt_max_disparity =
+        std::min(zupt_or_max_disparity, zupt_and_max_disparity);
+    zupt_options.chi2_multipler = zupt_or_chi2_multipler;
+  }
+
   /**
    * @brief 加载并打印所有噪声参数
    * 这允许直观检查是否从ROS/CMD解析器正确加载了所有内容。
@@ -274,16 +307,36 @@ struct VioManagerOptions {
       msckf_options.sigma_pix_sq = std::pow(msckf_options.sigma_pix, 2);
       slam_options.sigma_pix_sq = std::pow(slam_options.sigma_pix, 2);
       aruco_options.sigma_pix_sq = std::pow(aruco_options.sigma_pix, 2);
-      parser->parse_config("zupt_chi2_multipler", zupt_options.chi2_multipler);
+      // 可选 legacy zupt_chi2_multipler：同时赋两路；再由 zupt_or_* / zupt_and_* 覆盖
+      parser->parse_config("zupt_chi2_multipler", zupt_or_chi2_multipler, false);
+      zupt_and_chi2_multipler = zupt_or_chi2_multipler;
+      parser->parse_config("zupt_or_chi2_multipler", zupt_or_chi2_multipler,
+                           false);
+      parser->parse_config("zupt_and_chi2_multipler", zupt_and_chi2_multipler,
+                           false);
+    } else {
+      zupt_or_chi2_multipler = zupt_options.chi2_multipler;
+      zupt_and_chi2_multipler = zupt_options.chi2_multipler;
     }
+    apply_zupt_active_branch();
     PRINT_DEBUG("  MSCKF特征更新器:\n");
     msckf_options.print();
     PRINT_DEBUG("  SLAM特征更新器:\n");
     slam_options.print();
     PRINT_DEBUG("  ARUCO标签更新器:\n");
     aruco_options.print();
-    PRINT_DEBUG("  零速度更新器:\n");
-    zupt_options.print();
+    PRINT_DEBUG("  零速度更新器 (ZUPT):\n");
+    PRINT_DEBUG("    - 门限：chi2 ≤ mult × χ²_0.95(残差维)；OR/AND 各用各自 mult 得到 gate_or / gate_and\n");
+    PRINT_DEBUG("    - 马氏 χ² 中 S 与 EKF 更新 R 共用 zupt_noise_multiplier\n");
+    PRINT_DEBUG("    - OR  chi2_mult: %.4f\n", zupt_or_chi2_multipler);
+    PRINT_DEBUG("    - AND chi2_mult: %.4f\n", zupt_and_chi2_multipler);
+    PRINT_DEBUG("    - EKF 测量噪声 R 与 χ² 中 R 相同（gate_or||gate_and 为真才进入更新）\n");
+    PRINT_DEBUG("    - 兼容字段：zupt_options.chi2_multipler=%.4f（=OR，供内部一致性）\n",
+                zupt_options.chi2_multipler);
+    PRINT_DEBUG("    - 辅助量：zupt_max_velocity=%.3f (=min(OR,AND)，如 has_moved)；"
+                "zupt_max_disparity=%.4f (=min(OR,AND))；"
+                "zupt_noise_multiplier=%.3f\n",
+                zupt_max_velocity, zupt_max_disparity, zupt_noise_multiplier);
   }
 
   // STATE DEFAULTS ==========================

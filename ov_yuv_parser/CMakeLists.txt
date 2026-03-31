@@ -4,7 +4,7 @@ project(ov_yuv_parser)
 # =============================================================================
 # Dependencies
 # =============================================================================
-find_package(OpenCV 4 QUIET)
+find_package(OpenCV 4 REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(Ceres REQUIRED)
 

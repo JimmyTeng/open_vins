@@ -8,7 +8,7 @@
 #   ./script/build_preset.sh --completion-bash
 #
 # 示例：
-#   ./script/build_preset.sh x64-debug-vcpkg --clean -j 8
+#   ./script/build_preset.sh x64-debug --clean -j 8
 #   ./script/build_preset.sh arm64-release-vcpkg --install
 #   ./script/build_preset.sh x64-release --clean -j 8
 

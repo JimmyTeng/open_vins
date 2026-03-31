@@ -7,7 +7,7 @@
 #   ./script/sync_thirdparty_from_vcpkg.sh [preset]
 #   ./script/sync_thirdparty_from_vcpkg.sh arm64-release-vcpkg-docker
 #   ./script/sync_thirdparty_from_vcpkg.sh arm64-release-vcpkg
-#   ./script/sync_thirdparty_from_vcpkg.sh x64-release-vcpkg
+#   （x64 本机若用系统依赖 preset，无 vcpkg_installed，请勿用本脚本）
 # 若不传 preset，则根据 install 目录推断（仅支持单一 vcpkg install 目录存在时）
 
 set -euo pipefail
@@ -31,23 +31,12 @@ case "${1:-}" in
     INSTALL_PREFIX="${ROOT}/install/x86_64/Release-docker"
     TRIPLET="x64-linux-custom-release"
     ;;
-  x64-release-vcpkg)
-    BUILD_DIR="${ROOT}/build/x86_64/Release/x64-release-vcpkg"
-    INSTALL_PREFIX="${ROOT}/install/x86_64/Release"
-    TRIPLET="x64-linux-custom"
-    ;;
-  x64-debug-vcpkg)
-    BUILD_DIR="${ROOT}/build/x86_64/Debug/x64-debug-vcpkg"
-    INSTALL_PREFIX="${ROOT}/install/x86_64/Debug"
-    TRIPLET="x64-linux-custom"
-    ;;
   "")
     # 自动推断：查找最近有 vcpkg_installed 的 build 目录
     for cand in \
       "${ROOT}/build/aarch64/Release-docker/arm64-release-vcpkg-docker" \
       "${ROOT}/build/aarch64/Release/arm64-release-vcpkg" \
-      "${ROOT}/build/x86_64/Release-docker/x64-release-vcpkg-docker" \
-      "${ROOT}/build/x86_64/Release/x64-release-vcpkg"; do
+      "${ROOT}/build/x86_64/Release-docker/x64-release-vcpkg-docker"; do
       if [[ -d "${cand}/vcpkg_installed" ]]; then
         BUILD_DIR="$cand"
         if [[ "$cand" == *arm64-release-vcpkg-docker* ]]; then
@@ -59,9 +48,6 @@ case "${1:-}" in
         elif [[ "$cand" == *x64-release-vcpkg-docker* ]]; then
           INSTALL_PREFIX="${ROOT}/install/x86_64/Release-docker"
           TRIPLET="x64-linux-custom-release"
-        else
-          INSTALL_PREFIX="${ROOT}/install/x86_64/Release"
-          TRIPLET="x64-linux-custom"
         fi
         break
       fi
@@ -75,7 +61,7 @@ case "${1:-}" in
     ;;
   -h|--help)
     echo "用法: $0 [preset] [--full]"
-    echo "preset: arm64-release-vcpkg-docker | arm64-release-vcpkg | x64-release-vcpkg-docker | x64-release-vcpkg | x64-debug-vcpkg"
+    echo "preset: arm64-release-vcpkg-docker | arm64-release-vcpkg | x64-release-vcpkg-docker"
     echo "--full: 拷贝 vcpkg 全部 .so（默认仅拷贝 bin/lib 的传递依赖闭包以精简 thirdparty）"
     exit 0
     ;;

@@ -127,7 +127,7 @@ bool DynamicInitializer::initialize(
   // 设置参数
   const int min_num_meas_to_optimize =
       (int)params.init_window_time;  // 优化所需的最小测量数量
-  const int min_valid_features = 8;  // 最小有效特征点数量
+  const int min_valid_features = 12;  // 最小有效特征点数量
 
   // 可用于优化的特征点验证信息
   bool have_stereo = false;
@@ -735,6 +735,9 @@ bool DynamicInitializer::initialize(
   int total_features_checked = 0;
   int features_behind_camera = 0;
   int features_with_insufficient_meas = 0;
+  int features_too_close_to_lens = 0;
+  /// 三角化点距光心须严格大于该值（米）才计为有效特征
+  constexpr double kMinTriangDistFromLensM = 0.8;
 
   for (auto const &feat : features) {
     if (map_features_num_meas[feat.first] < min_num_meas_to_optimize) {
@@ -755,7 +758,6 @@ bool DynamicInitializer::initialize(
     }
 
     bool is_behind = false;
-    Eigen::Vector3d p_FinC0_last{};
     for (auto const &camtime : feat.second->timestamps) {
       size_t cam_id = camtime.first;
       Eigen::Vector4d q_ItoC =
@@ -764,7 +766,6 @@ bool DynamicInitializer::initialize(
           params.camera_extrinsics.at(cam_id).block(4, 0, 3, 1);
       Eigen::Matrix3d R_ItoC = quat_2_Rot(q_ItoC);
       Eigen::Vector3d p_FinC0 = R_ItoC * p_FinI0 + p_IinC;
-      p_FinC0_last = p_FinC0;
 
       if (p_FinC0(2) < 0) {
         is_behind = true;
@@ -782,15 +783,88 @@ bool DynamicInitializer::initialize(
     if (is_behind) {
       features_behind_camera++;
     } else {
-      features_inI0.insert({feat.first, p_FinI0});
-      count_valid_features++;
-      // if (count_valid_features <= 3) {  // 打印前3个有效特征点
-      //   PRINT_INFO(GREEN "[init-d-debug]: Valid feature %zu -
-      //   p_FinI0=(%.3f,%.3f,%.3f), p_FinC0=(%.3f,%.3f,%.3f)\n" RESET,
-      //              feat.first, p_FinI0(0), p_FinI0(1), p_FinI0(2),
-      //              p_FinC0_last(0), p_FinC0_last(1), p_FinC0_last(2));
-      // }
+      const size_t cam_id0 = feat.second->timestamps.begin()->first;
+      Eigen::Vector4d q0_ItoC =
+          params.camera_extrinsics.at(cam_id0).block(0, 0, 4, 1);
+      Eigen::Vector3d p0_IinC =
+          params.camera_extrinsics.at(cam_id0).block(4, 0, 3, 1);
+      Eigen::Matrix3d R0_ItoC = quat_2_Rot(q0_ItoC);
+      const Eigen::Vector3d p_FinC0 = R0_ItoC * p_FinI0 + p0_IinC;
+      const double dist_lens = p_FinC0.norm();
+      if (dist_lens <= kMinTriangDistFromLensM) {
+        features_too_close_to_lens++;
+        if (features_too_close_to_lens <= 5) {
+          PRINT_INFO(YELLOW
+                     "[DynamicInitializer] 特征 %zu 距镜头 %.4f m ≤ %.2f m，不作为有效点\n"
+                     RESET,
+                     feat.first, dist_lens, kMinTriangDistFromLensM);
+        }
+      } else {
+        features_inI0.insert({feat.first, p_FinI0});
+        count_valid_features++;
+      }
     }
+  }
+
+  // 三角化结果：各特征在首观测相机坐标系下与光心的距离（米）
+  if (!features_inI0.empty()) {
+    PRINT_INFO(CYAN
+               "[DynamicInitializer] 三角化特征距镜头(光心)距离 (首观测相机 C, "
+               "单位 m)\n" RESET);
+    std::vector<double> dists;
+    dists.reserve(features_inI0.size());
+    constexpr size_t kMaxLines = 48;
+    size_t printed = 0;
+    for (auto const &fin : features_inI0) {
+      const size_t fid = fin.first;
+      const Eigen::Vector3d &p_FinI0 = fin.second;
+      auto itf = features.find(fid);
+      if (itf == features.end() || itf->second->timestamps.empty()) {
+        continue;
+      }
+      const size_t cam_id = itf->second->timestamps.begin()->first;
+      Eigen::Vector4d q_ItoC =
+          params.camera_extrinsics.at(cam_id).block(0, 0, 4, 1);
+      Eigen::Vector3d p_IinC =
+          params.camera_extrinsics.at(cam_id).block(4, 0, 3, 1);
+      Eigen::Matrix3d R_ItoC = quat_2_Rot(q_ItoC);
+      const Eigen::Vector3d p_FinC = R_ItoC * p_FinI0 + p_IinC;
+      const double dist = p_FinC.norm();
+      dists.push_back(dist);
+      if (printed < kMaxLines) {
+        PRINT_INFO(
+            "  feat_id=%zu  dist=%.4f  p_FinC=(%.3f, %.3f, %.3f)  z=%.3f\n",
+            fid, dist, p_FinC(0), p_FinC(1), p_FinC(2), p_FinC(2));
+        printed++;
+      }
+    }
+    if (features_inI0.size() > kMaxLines) {
+      PRINT_INFO("  ... 仅列出前 %zu 条，共 %zu 个特征\n", kMaxLines,
+                 features_inI0.size());
+    }
+    if (!dists.empty()) {
+      const auto mm = std::minmax_element(dists.begin(), dists.end());
+      double sum = 0.0;
+      for (double d : dists) {
+        sum += d;
+      }
+      PRINT_INFO(
+          "  统计(仅有效点, 距光心 >%.2f m): min=%.4f m, max=%.4f m, "
+          "mean=%.4f m (N=%zu)\n",
+          kMinTriangDistFromLensM, *mm.first, *mm.second,
+          sum / static_cast<double>(dists.size()), dists.size());
+    }
+  }
+  if (features_inI0.empty() && features_too_close_to_lens > 0) {
+    PRINT_INFO(YELLOW
+               "[DynamicInitializer] 有效点 0：%d 个三角化点因距镜头 ≤%.2f m "
+               "未计入有效特征\n" RESET,
+               features_too_close_to_lens, kMinTriangDistFromLensM);
+  } else if (features_too_close_to_lens > 5) {
+    PRINT_INFO(YELLOW
+               "[DynamicInitializer] 另有 %d 个点因距镜头 ≤%.2f m 已剔除（上表已列 "
+               "前 5 个）\n" RESET,
+               features_too_close_to_lens - 5, kMinTriangDistFromLensM);
   }
 
   if (count_valid_features < min_valid_features) {

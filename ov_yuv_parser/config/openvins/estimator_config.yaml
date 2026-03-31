@@ -1,140 +1,142 @@
-%YAML:1.0 # need to specify the file type at the top!
+%YAML:1.0 # 文件顶部需声明 YAML 版本
 ---
-use_fej: true # if first-estimate Jacobians should be used (enable for good consistency)
-integration: "rk4" # discrete, rk4, analytical (if rk4 or analytical used then analytical covariance propagation is used)
-use_stereo: false # if we have more than 1 camera, if we should try to track stereo constraints between pairs
-max_cameras: 1 # how many cameras we have 1 = mono, 2 = stereo, >2 = binocular (all mono tracking)
+# ---------- 状态估计 / 标定开关 ----------
+use_fej: true # 是否使用一阶估计雅可比（FEJ），建议开启以利一致性
+# 主滤波器 IMU 状态传播（Propagator 预测/克隆）：discrete | rk4 | analytical；rk4/analytical 用解析 F、G 与协方差相关量
+# 不影响静态/动态初始化内部优化；亦非仓库内 CPI 连续预积分（CpiSequence）的开关
+integration: "rk4"
+use_stereo: false # 多相机时是否启用双目立体约束（单目式跟踪时每相机仍独立提特征）
+max_cameras: 1 # 相机路数：1 单目，2 立体，>2 多目
 
-calib_cam_extrinsics: true # if the transform between camera and IMU should be optimized R_ItoC, p_CinI
-calib_cam_intrinsics: true # if camera intrinsics should be optimized (focal, center, distortion)
-calib_cam_timeoffset: true # if timeoffset between camera and IMU should be optimized
-calib_imu_intrinsics: false # if imu intrinsics should be calibrated (rotation and skew-scale matrix)
-calib_imu_g_sensitivity: false # if gyroscope gravity sensitivity (Tg) should be calibrated
+calib_cam_extrinsics: true # 是否在线优化相机–IMU 外参（R_ItoC、p_CinI）
+calib_cam_intrinsics: true # 是否在线优化内参（fx,fy,cx,cy 与畸变）
+calib_cam_timeoffset: true # 是否在线优化 cam–IMU 时间偏移
+calib_imu_intrinsics: false # 是否在线标定 IMU 内参（尺度/轴间耦合矩阵）
+calib_imu_g_sensitivity: false # 是否在线标定陀螺重力灵敏度 Tg
 
-max_clones: 10 # how many clones in the sliding window
-max_slam: 50 # number of features in our state vector
-max_slam_in_update: 25 # update can be split into sequential updates of batches, how many in a batch
-max_msckf_in_update: 40 # how many MSCKF features to use in the update
-dt_slam_delay: 3 # delay before initializing (helps with stability from bad initialization...)
+max_clones: 10 # 滑动窗口克隆位姿个数；越大计算越重、越平滑滞后
+max_slam: 50 # 状态中 SLAM 路标个数上限
+max_slam_in_update: 25 # 单次更新一批 SLAM 特征数上限（可分批）
+max_msckf_in_update: 40 # 单次 MSCKF 特征更新数上限
+dt_slam_delay: 1 # 初始化后延迟多少秒再启用 SLAM 更新（初值不稳时增大）
 
-# 与 Kalibr 报告中 Gravity vector in target coords 模长一致 (~9.807 m/s^2)
+# 与 Kalibr「目标系重力」模长一致，约 9.807 m/s²
 gravity_mag: 9.807
 
-feat_rep_msckf: "GLOBAL_3D"
-feat_rep_slam: "ANCHORED_MSCKF_INVERSE_DEPTH"
-feat_rep_aruco: "ANCHORED_MSCKF_INVERSE_DEPTH"
+# ---------- 特征参数化（勿随意改，需与前端/后端一致）----------
+feat_rep_msckf: "GLOBAL_3D" # MSCKF 特征表示方式
+feat_rep_slam: "ANCHORED_MSCKF_INVERSE_DEPTH" # SLAM 路标表示
+feat_rep_aruco: "ANCHORED_MSCKF_INVERSE_DEPTH" # ArUco 表示
 
-# Zero velocity update (ZUPT)：VIO 已初始化后，静止段用 IMU 合成测量 + 可选视差门控（非 init 专用）
-try_zupt: false
-# chi² 门限倍率：chi2_passed 用 chi2 <= multipler * chi2_check；越大越易通过 IMU 门。0 时 IMU 马氏门几乎恒假，多依赖视差/速度
-zupt_chi2_multipler: 1
-# 滤波速度 |v| 上限 (m/s 量级，与状态一致)；超过则静止门不通过（与 disparity 组合见文档 zupt-logic-flow.md）
-zupt_max_velocity: 0.2
-# 堆叠残差上 R 的乘数：放大测量噪声、减轻过信 IMU/振动；常见 1～100 量级试标定
-zupt_noise_multiplier: 50
-# 相邻帧平均视差阈值（与 FeatureHelper 一致，多为像素）；小于且特征数>20 则 disparity_passed
-zupt_max_disparity: 0.3
-# true：仅初期静止阶段用 ZUPT；false：全程可触发
-zupt_only_at_beginning: false
+# ---------- 零速更新 ZUPT（初始化完成后静止段）----------
+# 静止门恒为 gate_or || gate_and：两路并行，任一通过即可触发 ZUPT
+try_zupt: true # 是否启用 ZUPT
+zupt_only_at_beginning: false # true：仅初期静止阶段用 ZUPT；false：全程可触发
+zupt_noise_multiplier: 1 # 测量噪声 R 标量倍率；χ² 门限与 EKF 的 R 共用；>1 更不信 ZUPT、抑制振动过信
+
+# OR 支路（gate_or：视差模式为 disp||(chi2∧|v|)）
+zupt_or_chi2_multipler: 1 # OR 支路 χ² 门限倍率：chi2 ≤ mult×χ²_0.95；越大越易通过 IMU 门
+zupt_or_max_velocity: 0.2 # OR 支路 |v| 上限（m/s）；超过则 OR 支路速度判据不成立
+zupt_or_max_disparity: 2 # OR 支路平均视差阈值（px）；视差门开启且特征>20 时参与判据
+
+# AND 支路（gate_and：需 disp∧chi2∧|v| 同时满足，视差模式）
+zupt_and_chi2_multipler: 3 # AND 支路 χ² 门限倍率：通常可设 ≥ OR，使“严格静止”更难
+zupt_and_max_velocity: 0.4 # AND 支路 |v| 上限（m/s）
+zupt_and_max_disparity: 3 # AND 支路视差阈值（px）
 
 # ==================================================================
 # ==================================================================
 
-init_window_time: 3 # how many seconds to collect initialization information (increased for better gravity estimation)
-init_imu_thresh: 0.0 # threshold for variance of the accelerometer to detect a "jerk" in motion (set to 0.0 to disable static initialization)
-init_max_disparity: 12.0 # max disparity to consider the platform stationary (dependent on resolution)
-init_max_features: 25 # how many features to track during initialization (saves on computation)
+# ---------- 初始化 ----------
+init_window_time: 3 # 收集初始化信息的时长（秒，加长利于重力估计）
+init_imu_thresh: 0.0 # 加速度计方差阈值，检测「急动」；0.0 关闭静态初始化分支（配合动态 init）
+init_max_disparity: 10.0 # 判定静止的最大视差（与分辨率相关）
+init_max_features: 20 # 初始化阶段跟踪特征数上限
 
-init_dyn_use: true # if dynamic initialization should be used
-init_dyn_mle_opt_calib: false # if we should optimize calibration during intialization (not recommended)
-init_dyn_mle_max_iter: 50 # how many iterations the MLE refinement should use (zero to skip the MLE)
-init_dyn_mle_max_time: 0.5 # how many seconds the MLE should be completed in (0.05 易在 12 姿态+多特征时超时)
-init_dyn_mle_max_threads: 2 # how many threads the MLE should use
-init_dyn_num_pose: 12 # number of poses to use within our window time (evenly spaced) - reduced from 6 to lower pose_dt_avg threshold
-init_dyn_min_deg: 5.0 # orientation change needed to try to init
+init_dyn_use: true # 是否使用动态初始化（运动段）
+init_dyn_mle_opt_calib: false # 动态 MLE 是否同时优化标定（一般关）
+init_dyn_mle_max_iter: 50 # MLE 最大迭代；0 跳过 MLE
+init_dyn_mle_max_time: 0.5 # MLE 时限（秒）；过小易超时
+init_dyn_mle_max_threads: 2 # MLE 线程数
+init_dyn_num_pose: 6 # 窗口内位姿个数（均匀采样）
+init_dyn_min_deg: 5.0 # 初始化所需最小朝向变化（度）
 
-init_dyn_inflation_ori: 10 # what to inflate the recovered q_GtoI covariance by
-init_dyn_inflation_vel: 100 # what to inflate the recovered v_IinG covariance by
-init_dyn_inflation_bg: 10 # what to inflate the recovered bias_g covariance by
-init_dyn_inflation_ba: 100 # what to inflate the recovered bias_a covariance by
-init_dyn_min_rec_cond: 1e-12 # reciprocal condition number thresh for info inversion
+init_dyn_inflation_ori: 10 # 动态初始化后 q_GtoI 协方差放大倍数
+init_dyn_inflation_vel: 300 # 动态初始化后 v 协方差放大倍数
+init_dyn_inflation_bg: 10 # 动态初始化后陀螺偏置协方差放大倍数
+init_dyn_inflation_ba: 200 # 动态初始化后加计偏置协方差放大倍数
+init_dyn_min_rec_cond: 1e-12 # 信息矩阵求逆最小允许倒数条件数；过小可能拒绝病态解
 
-# PDF 未含 bias 初值；以下为原 vio 初值，可按需与在线估计对齐
+# 动态初始化 bias 初值（PDF 未给 bias 时作起点；可与在线估计对齐）
 init_dyn_bias_g: [-0.0011146074690264833, -0.011300524581876343, 0.008723352067730063]
 init_dyn_bias_a: [-0.053302996178729294, -0.015902613210897493, 0.07961711223434825]
 
 # ==================================================================
 # ==================================================================
 
-# if we want to save the simulation state and its diagional covariance
-# use this with rosrun ov_eval error_simulation
-save_total_state: false
-filepath_est: "/tmp/ov_estimate.txt"
-filepath_std: "/tmp/ov_estimate_std.txt"
-filepath_gt: "/tmp/ov_groundtruth.txt"
+# ---------- 仿真/评测（ROS 等可能用；纯离线可忽略）----------
+save_total_state: false # 是否保存状态与对角标准差到文件；配合 ov_eval 等
+filepath_est: "/tmp/ov_estimate.txt" # 估计轨迹输出路径
+filepath_std: "/tmp/ov_estimate_std.txt" # 标准差输出路径
+filepath_gt: "/tmp/ov_groundtruth.txt" # 真值输出路径（仿真）
 
 # ==================================================================
 # ==================================================================
 
-# our front-end feature tracking parameters
-# we have a KLT and descriptor based (KLT is better implemented...)
-use_klt: true # if true we will use KLT, otherwise use a ORB descriptor + robust matching
-num_pts: 80 # number of points (per camera) we will extract and try to track
-fast_threshold: 25 # threshold for fast extraction (warning: lower threshs can be expensive)
-grid_x: 8 # extraction sub-grid count for horizontal direction (uniform tracking)
-grid_y: 6 # extraction sub-grid count for vertical direction (uniform tracking)
-min_px_dist: 10 # distance between features (features near each other provide less information)
-knn_ratio: 0.5 # descriptor knn threshold for the top two descriptor matches
-track_frequency: 15.0 # frequency we will perform feature tracking at (in frames per second / hertz)
+# ---------- 前端跟踪 ----------
+use_klt: true # true：KLT；false：ORB 描述子 + 匹配
+num_pts: 80 # 每相机每帧目标特征数（影响算力与鲁棒性）
+fast_threshold: 25 # FAST 角点阈值；越小点越多、越慢
+grid_x: 8 # 特征网格列数（均匀撒点）
+grid_y: 6 # 特征网格行数
+min_px_dist: 10 # 特征间最小像素距（过小则冗余）
+knn_ratio: 0.5 # 描述子匹配 KNN 比值（仅非 KLT 时）
+track_frequency: 15.0 # 期望跟踪帧率（Hz）；更高频率的帧会被丢弃
 
-downsample_cameras: false # will downsample image in half if true
-num_opencv_threads: 1 # -1: auto, 0-1: serial, >1: number of threads
-histogram_method: "CLAHE" # NONE, HISTOGRAM, CLAHE
+downsample_cameras: false # true：图像长宽各减半（内参在加载逻辑中已配合缩放）
+num_opencv_threads: 1 # OpenCV 线程：-1 默认，0–1 串行，>1 多线程
+histogram_method: "CLAHE" # 直方图均衡：NONE / HISTOGRAM / CLAHE
 
-# aruco tag tracker for the system
-# DICT_6X6_1000 from https://chev.me/arucogen/
-use_aruco: false
-num_aruco: 1024
-downsize_aruco: true
+# ArUco（字典见 https://chev.me/arucogen/）
+use_aruco: false # 是否检测 ArUco 标记
+num_aruco: 1024 # 字典中 ID 上限相关
+downsize_aruco: true # 是否将 ArUco 图像减半以加速
 
 # ==================================================================
 # ==================================================================
 
-# camera noises and chi-squared threshold multipliers
-up_msckf_sigma_px: 1
-up_msckf_chi2_multipler: 1
-up_slam_sigma_px: 1
-up_slam_chi2_multipler: 1
-up_aruco_sigma_px: 1
-up_aruco_chi2_multipler: 1
+# ---------- 更新器噪声与 χ²（像素标准差、chi² 乘子）----------
+up_msckf_sigma_px: 1 # MSCKF 像素观测噪声 σ（px）
+up_msckf_chi2_multipler: 1 # MSCKF 马氏 χ² 门限倍率
+up_slam_sigma_px: 1 # SLAM 像素 σ（px）
+up_slam_chi2_multipler: 1 # SLAM χ² 倍率
+up_aruco_sigma_px: 1 # ArUco 像素 σ（px）
+up_aruco_chi2_multipler: 1 # ArUco χ² 倍率
 
-# masks for our images
-use_mask: false
+# 图像掩膜
+use_mask: false # true 时需在配置目录提供 mask0.png 等（与分辨率一致）
 
-# imu and camera spacial-temporal
-# imu config should also have the correct noise values
-relative_config_imu: "kalibr_imu_chain.yaml"
-relative_config_imucam: "kalibr_imucam_chain.yaml"
+# 外参/IMU 噪声链（相对主 YAML 的相对路径）
+relative_config_imu: "kalibr_imu_chain.yaml" # IMU 噪声密度、随机游走、内参矩阵等
+relative_config_imucam: "kalibr_imucam_chain.yaml" # 相机内参、畸变、T_imu_cam、timeshift
 
-# 实机/离线运行可不加载仿真轨迹，留空即可；仿真时填写轨迹文件路径
-sim_traj_path: ""
+# 仿真
+sim_traj_path: "" # 仿真轨迹文件；实机/离线留空
 
 # ==================================================================
-# 打印 / 日志 / 计时 参数（放最后便于调整）
+# 打印 / 日志 / 计时
 # ==================================================================
-verbosity: "INFO" # ALL, DEBUG, INFO, WARNING, ERROR, SILENT
-record_timing_information: true # 数据集结束后输出帧率分析
-record_timing_filepath: "/tmp/traj_timing.txt" # https://docs.openvins.com/eval-timing.html#eval-ov-timing-flame
+verbosity: "INFO" # 日志级别：ALL, DEBUG, INFO, WARNING, ERROR, SILENT
+record_timing_information: true # 是否在结束时写计时统计
+record_timing_filepath: "/tmp/traj_timing.txt" # 计时输出路径
 
-# VIO 原始数据落盘（imu.csv + camera_index.csv + mosaics/*.png），见 ov_core VioDataRecorder
-record_vio_dataset: false
-# 仅写数据集，不跑 SLAM/跟踪/传播（须与 record_vio_dataset 同时为 true）
-record_vio_dataset_record_only: false
-# 记录根目录（须绝对路径且可写）；每次运行在其下新建子目录 yyyymmddhhmmss（冲突则秒+1）
-# 只读挂载（如未正确 rw 的 /mnt/data）会导致初始化失败；需要时再改为你的可写目录
-record_vio_dataset_root: "/tmp/vio_dataset_log"
-record_vio_mosaic_cols: 1
-record_vio_mosaic_rows: 15
-print_state_calib: true # 每次更新后打印状态与标定 (debug)
-print_timing: true # 各阶段耗时 (track, prop, msckf, slam, marg)
-print_tracking_stats: true # [VM] 帧与 [跟踪] 更新日志 (初始化阶段或每 200)
+# VIO 原始数据落盘（imu.csv、camera_index.csv、mosaics）；见 ov_core VioDataRecorder
+record_vio_dataset: false # 是否记录数据集
+record_vio_dataset_record_only: false # 仅记录不写 SLAM（须与上项同时为 true）
+record_vio_dataset_root: "/tmp/vio_dataset_log" # 记录根目录（须可写绝对路径）
+record_vio_mosaic_cols: 1 # 拼图列数
+record_vio_mosaic_rows: 15 # 拼图行数（每包行数）
+
+print_state_calib: true # 每次更新后是否打印状态与标定
+print_timing: true # 是否打印各阶段耗时
+print_tracking_stats: true # 是否打印 [VM] 帧与 [跟踪] 周期日志

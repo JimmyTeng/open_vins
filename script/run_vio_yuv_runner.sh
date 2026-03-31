@@ -12,14 +12,14 @@ if [ -x "${SCRIPT_DIR}/vio_yuv_runner" ]; then
 elif [ -x "${ROOT}/install/x86_64/Release/bin/vio_yuv_runner" ]; then
   BIN="${ROOT}/install/x86_64/Release/bin/vio_yuv_runner"
   export LD_LIBRARY_PATH="${ROOT}/install/x86_64/Release/lib:${ROOT}/install/x86_64/Release/thirdparty/lib:${LD_LIBRARY_PATH}"
-elif [ -x "${ROOT}/build/x86_64/Release/x64-release-vcpkg/ov_yuv_parser/vio_yuv_runner" ]; then
-  BIN="${ROOT}/build/x86_64/Release/x64-release-vcpkg/ov_yuv_parser/vio_yuv_runner"
-  BUILD_DIR="${ROOT}/build/x86_64/Release/x64-release-vcpkg"
-  export LD_LIBRARY_PATH="${BUILD_DIR}/ov_core:${BUILD_DIR}/ov_yuv_parser:${BUILD_DIR}/vcpkg_installed/x64-linux-custom/lib:${LD_LIBRARY_PATH}"
+elif [ -x "${ROOT}/build/x86_64/Release/x64-release/ov_yuv_parser/vio_yuv_runner" ]; then
+  BIN="${ROOT}/build/x86_64/Release/x64-release/ov_yuv_parser/vio_yuv_runner"
+  BUILD_DIR="${ROOT}/build/x86_64/Release/x64-release"
+  export LD_LIBRARY_PATH="${BUILD_DIR}/ov_core:${BUILD_DIR}/ov_yuv_parser:${LD_LIBRARY_PATH}"
 fi
 
 if [ -z "$BIN" ]; then
-  echo "错误: 未找到 vio_yuv_runner，请先构建或安装（如 cmake --build --preset x64-release-vcpkg）" >&2
+  echo "错误: 未找到 vio_yuv_runner，请先构建或安装（如 cmake --build --preset x64-release）" >&2
   exit 1
 fi
 

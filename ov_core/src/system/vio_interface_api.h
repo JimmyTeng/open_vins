@@ -84,6 +84,12 @@ typedef struct {
     const double* points_msckf;
     const double* points_slam;
     const double* points_aruco;
+    /** 上一处理周期对应的灰度原图（当前帧处理完成时，指向上一帧送入 VIO 的图像） */
+    const uint8_t* prev_raw_image;
+    int32_t prev_raw_image_width;
+    int32_t prev_raw_image_height;
+    int32_t prev_raw_image_step;
+    int32_t prev_raw_image_channels;
     const uint8_t* track_image;
     int32_t track_image_width;
     int32_t track_image_height;

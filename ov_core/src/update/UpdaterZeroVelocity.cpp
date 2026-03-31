@@ -32,6 +32,9 @@
 #include "utils/print.h"
 #include "utils/quat_ops.h"
 
+#include <algorithm>
+#include <cmath>
+
 using namespace ov_core;
 using namespace ov_type;
 using namespace ov_msckf;
@@ -40,15 +43,27 @@ UpdaterZeroVelocity::UpdaterZeroVelocity(
     UpdaterOptions &options, NoiseManager &noises,
     std::shared_ptr<ov_core::FeatureDatabase> db,
     std::shared_ptr<Propagator> prop, double gravity_mag,
-    double zupt_max_velocity, double zupt_noise_multiplier,
-    double zupt_max_disparity)
+    double zupt_or_max_velocity, double zupt_noise_multiplier,
+    double zupt_or_max_disparity, double zupt_or_chi2_multipler,
+    double zupt_and_max_velocity, double zupt_and_max_disparity,
+    double zupt_and_chi2_multipler)
     : _options(options),
       _noises(noises),
       _db(db),
       _prop(prop),
-      _zupt_max_velocity(zupt_max_velocity),
-      _zupt_noise_multiplier(zupt_noise_multiplier),
-      _zupt_max_disparity(zupt_max_disparity) {
+      _or_max_velocity(zupt_or_max_velocity),
+      _or_noise_multiplier(zupt_noise_multiplier),
+      _or_max_disparity(zupt_or_max_disparity),
+      _or_chi2_multipler(zupt_or_chi2_multipler),
+      _and_max_velocity(zupt_and_max_velocity),
+      _and_max_disparity(zupt_and_max_disparity),
+      _and_chi2_multipler(zupt_and_chi2_multipler) {
+  _zupt_max_velocity =
+      std::min(zupt_or_max_velocity, zupt_and_max_velocity);
+  _zupt_noise_multiplier = zupt_noise_multiplier;
+  _zupt_max_disparity =
+      std::min(zupt_or_max_disparity, zupt_and_max_disparity);
+  _options.chi2_multipler = zupt_or_chi2_multipler;
   // 初始化重力向量
   _gravity << 0.0, 0.0, gravity_mag;
 
@@ -240,10 +255,11 @@ bool UpdaterZeroVelocity::try_update(std::shared_ptr<State> state,
     return false;
   }
 
-  // 将噪声矩阵乘以固定倍数
+  // 将噪声矩阵乘以固定倍数（马氏 χ² 与后续 EKF 的 R 共用 zupt_noise_multiplier）
   // 我们通常需要将IMU视为"最差"情况以进行检测/避免过度自信
-  Eigen::MatrixXd R = _zupt_noise_multiplier *
-                      Eigen::MatrixXd::Identity(res.rows(), res.rows());
+  Eigen::MatrixXd R =
+      _or_noise_multiplier *
+      Eigen::MatrixXd::Identity(res.rows(), res.rows());
 
   // 接下来将偏置向前传播
   // 注意: G*Qd*G^t = dt*Qd*dt = dt*(1/dt*Qc)*dt = dt*Qc
@@ -271,43 +287,64 @@ bool UpdaterZeroVelocity::try_update(std::shared_ptr<State> state,
   }
 
   // 检查图像视差
-  bool disparity_passed = false;
   double disp_avg = 0.0;
   int num_features = 0;
   if (override_with_disparity_check) {
-    // 获取从当前图像到前一图像的视差统计信息
     double time0_cam = state->_timestamp;
     double time1_cam = timestamp;
     double disp_var = 0.0;
     FeatureHelper::compute_disparity(_db, time0_cam, time1_cam, disp_avg,
                                      disp_var, num_features);
-
-    // 检查此视差是否足以被分类为运动
-    disparity_passed = (disp_avg < _zupt_max_disparity && num_features > 20);
   }
 
-  // 静止门：统一用「通过」语义，等价于旧写法
-  // !disparity_passed && (chi2>阈 || |v|>阈)
-  bool chi2_passed = chi2 <= _options.chi2_multipler * chi2_check;
-  bool vel_passed = state->_imu->vel().norm() <= _zupt_max_velocity;
-  bool stationary_gate_passed =
-      disparity_passed || (chi2_passed && vel_passed);
+  bool stationary_gate_passed = false;
+  bool gate_or = false;
+  bool gate_and = false;
+
+  if (override_with_disparity_check) {
+    bool disp_o =
+        (disp_avg < _or_max_disparity && num_features > 20);
+    bool chi2_o = chi2 <= _or_chi2_multipler * chi2_check;
+    bool vel_o = state->_imu->vel().norm() <= _or_max_velocity;
+    gate_or = disp_o || (chi2_o && vel_o);
+
+    bool disp_a =
+        (disp_avg < _and_max_disparity && num_features > 20);
+    bool chi2_a = chi2 <= _and_chi2_multipler * chi2_check;
+    bool vel_a = state->_imu->vel().norm() <= _and_max_velocity;
+    gate_and = disp_a && chi2_a && vel_a;
+  } else {
+    bool chi2_o = chi2 <= _or_chi2_multipler * chi2_check;
+    bool vel_o = state->_imu->vel().norm() <= _or_max_velocity;
+    gate_or = chi2_o && vel_o;
+    bool chi2_a = chi2 <= _and_chi2_multipler * chi2_check;
+    bool vel_a = state->_imu->vel().norm() <= _and_max_velocity;
+    gate_and = chi2_a && vel_a;
+  }
+  stationary_gate_passed = gate_or || gate_and;
+
+  // 静止门判定后每帧必打一行（通过/不通过均打印，便于对照日志）
+  {
+    const char *gate_res = stationary_gate_passed ? "PASS" : "FAIL";
+    if (override_with_disparity_check) {
+      PRINT_INFO(CYAN
+                 "[ZUPT]: gate %s gate_or=%d gate_and=%d | disp=%.3f | "
+                 "chi2=%.3f |v|=%.3f\n" RESET,
+                 gate_res, gate_or ? 1 : 0, gate_and ? 1 : 0, disp_avg, chi2,
+                 state->_imu->vel().norm());
+    } else {
+      PRINT_INFO(CYAN
+                 "[ZUPT]: gate %s gate_or=%d gate_and=%d | chi2=%.3f "
+                 "|v|=%.3f\n" RESET,
+                 gate_res, gate_or ? 1 : 0, gate_and ? 1 : 0, chi2,
+                 state->_imu->vel().norm());
+    }
+  }
+
   if (!stationary_gate_passed) {
     last_zupt_state_timestamp = 0.0;
     last_zupt_count = 0;
     return false;
-  }
-
-  // 成功进入 ZUPT，执行更新
-  if (override_with_disparity_check) {
-    PRINT_INFO(CYAN
-               "[ZUPT]: applied (disparity %.3f < %.3f, %d features) |v_IinG| "
-               "= %.3f chi2 = %.3f\n" RESET,
-               disp_avg, _zupt_max_disparity, num_features,
-               state->_imu->vel().norm(), chi2);
-  } else {
-    PRINT_INFO(CYAN "[ZUPT]: applied |v_IinG| = %.3f chi2 = %.3f\n" RESET,
-               state->_imu->vel().norm(), chi2);
   }
   // 只有在之前检测到的情况下才执行此更新
   // 如果成功，我们应该移除当前时间戳的特征轨迹
@@ -334,9 +371,20 @@ bool UpdaterZeroVelocity::try_update(std::shared_ptr<State> state,
                                   Q_bias);
     }
 
-    // 最后将状态时间向前推进
+    // 最后将状态时间向前推进（测量噪声 R 与 χ² 中 S 共用 zupt_noise_multiplier）
+    R = _or_noise_multiplier * Eigen::MatrixXd::Identity(res.rows(), res.rows());
     StateHelper::EKFUpdate(state, Hx_order, H, res, R);
     state->_timestamp = timestamp;
+    {
+      Eigen::Vector3d rpy_deg = rot2rpy(state->_imu->Rot()) * 180.0 / M_PI;
+      PRINT_INFO(
+          CYAN
+          "[ZUPT]: q_GtoI = %.4f,%.4f,%.4f,%.4f | RPY(deg) = %.2f,%.2f,%.2f | "
+          "p_IinG = %.3f,%.3f,%.3f\n" RESET,
+          state->_imu->quat()(0), state->_imu->quat()(1), state->_imu->quat()(2),
+          state->_imu->quat()(3), rpy_deg(0), rpy_deg(1), rpy_deg(2),
+          state->_imu->pos()(0), state->_imu->pos()(1), state->_imu->pos()(2));
+    }
 
   } else {
     // 将状态向前传播
@@ -382,6 +430,16 @@ bool UpdaterZeroVelocity::try_update(std::shared_ptr<State> state,
     StateHelper::EKFUpdate(state, Hx_order, H, res, R);
     StateHelper::marginalize(state, state->_clones_IMU.at(time1_cam));
     state->_clones_IMU.erase(time1_cam);
+    {
+      Eigen::Vector3d rpy_deg = rot2rpy(state->_imu->Rot()) * 180.0 / M_PI;
+      PRINT_INFO(
+          CYAN
+          "[ZUPT]: q_GtoI = %.4f,%.4f,%.4f,%.4f | RPY(deg) = %.2f,%.2f,%.2f | "
+          "p_IinG = %.3f,%.3f,%.3f\n" RESET,
+          state->_imu->quat()(0), state->_imu->quat()(1), state->_imu->quat()(2),
+          state->_imu->quat()(3), rpy_deg(0), rpy_deg(1), rpy_deg(2),
+          state->_imu->pos()(0), state->_imu->pos()(1), state->_imu->pos()(2));
+    }
   }
 
   // 最后返回

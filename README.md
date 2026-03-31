@@ -57,8 +57,8 @@ cd /mnt/VIO
 1. 安装扩展：**CMake Tools**、**clangd**
 2. 配置并生成 `compile_commands.json`：
    ```bash
-   cmake --preset x64-debug-vcpkg
-   cmake --build --preset x64-debug-vcpkg
+   cmake --preset x64-debug
+   cmake --build --preset x64-debug
    ```
 
 ---

@@ -3,7 +3,7 @@
 # 会清空 build 与 vcpkg 缓存，确保依赖用“按段编译”重新构建，链接时剔除未使用符号。
 #
 # 用法：
-#   ./script/rebuild_for_size.sh x64-release-vcpkg
+#   ./script/rebuild_for_size.sh x64-release
 #   ./script/rebuild_for_size.sh arm64-release-vcpkg
 #   ./script/rebuild_for_size.sh arm64-release-vcpkg-docker
 #   ./script/rebuild_for_size.sh x64-release-vcpkg-docker
@@ -14,15 +14,15 @@ cd "$(dirname "$0")/.."
 PRESET="${1:-}"
 if [[ -z "$PRESET" ]]; then
   echo "用法: $0 <preset>" >&2
-  echo "  x64-release-vcpkg | arm64-release-vcpkg | arm64-release-vcpkg-docker | x64-release-vcpkg-docker" >&2
+  echo "  x64-release | arm64-release-vcpkg | arm64-release-vcpkg-docker | x64-release-vcpkg-docker" >&2
   exit 1
 fi
 
 case "$PRESET" in
-  x64-release-vcpkg)
-    BUILD_DIR="build/x86_64/Release/x64-release-vcpkg"
+  x64-release)
+    BUILD_DIR="build/x86_64/Release/x64-release"
     CACHE_CLEAR=""
-    RBS_CACHE="${HOME}/.cache/vcpkg-rbs"
+    RBS_CACHE=""
     USE_PRESET=1
     ;;
   arm64-release-vcpkg)

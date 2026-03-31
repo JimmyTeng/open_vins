@@ -1,8 +1,8 @@
 %YAML:1.0
 
-# Source: imucamera-report-imucam(1).pdf — cam0 pinhole + radtan, T_ic (cam0 to imu0)
+# 来源：imucamera-report-imucam(1).pdf — cam0 针孔 + radtan 畸变，T_ic（cam0 相对 imu0）
 cam0:
-  # T_imu_cam: camera → IMU（与 Kalibr 报告中的 T_ic 一致）
+  # T_imu_cam：相机到 IMU 的变换（与 Kalibr 报告中的 T_ic 一致）
   T_imu_cam:
     - [0.00242928, 0.99996311, -0.00823899, 0.02576154]
     - [-0.99998117, 0.00247559, 0.00561539, 0.00104526]
@@ -14,6 +14,6 @@ cam0:
   distortion_model: radtan
   intrinsics: [309.9192125309255, 310.0011784556613, 323.15889745531484, 250.50858240531576]
   resolution: [640, 480]
-  rostopic: /cam0/image_raw
-  # timeshift cam0 to imu0: t_imu = t_cam + shift [s]
+  rostopic: /cam0/image_raw # ROS 图像话题（若不用 ROS 可忽略）
+  # cam0 相对 imu0 的时间偏移：t_imu = t_cam + shift [s]
   timeshift_cam_imu: 0.002116458780350451

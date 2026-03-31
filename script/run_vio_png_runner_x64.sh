@@ -16,17 +16,17 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # x64 Release 构建目录（与 run_vio_yuv_runner_x64.sh 一致）
-BUILD_DIR="${ROOT}/build/x86_64/Release/x64-release-vcpkg"
+BUILD_DIR="${ROOT}/build/x86_64/Release/x64-release"
 BIN="${BUILD_DIR}/ov_yuv_parser/vio_png_runner"
 if [ -x "${ROOT}/install/x86_64/Release/bin/vio_png_runner" ]; then
   BIN="${ROOT}/install/x86_64/Release/bin/vio_png_runner"
   export LD_LIBRARY_PATH="${ROOT}/install/x86_64/Release/lib:${ROOT}/install/x86_64/Release/thirdparty/lib:${LD_LIBRARY_PATH:-}"
 else
   [ ! -x "$BIN" ] && {
-    echo "错误: 未找到 vio_png_runner，请先构建: cmake --build --preset x64-release-vcpkg" >&2
+    echo "错误: 未找到 vio_png_runner，请先构建: cmake --build --preset x64-release" >&2
     exit 1
   }
-  export LD_LIBRARY_PATH="${BUILD_DIR}/ov_core:${BUILD_DIR}/ov_yuv_parser:${BUILD_DIR}/vcpkg_installed/x64-linux-custom/lib:${LD_LIBRARY_PATH:-}"
+  export LD_LIBRARY_PATH="${BUILD_DIR}/ov_core:${BUILD_DIR}/ov_yuv_parser:${LD_LIBRARY_PATH:-}"
 fi
 
 : "${VIO_DATASET_DIR:=/home/jimmy/data/20260321145202}"

@@ -4,7 +4,7 @@
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-BUILD_DIR="${PROJECT_ROOT}/build/x86_64/Release/x64-release-vcpkg"
+BUILD_DIR="${PROJECT_ROOT}/build/x86_64/Release/x64-release"
 EXE="${BUILD_DIR}/ov_yuv_parser/stress_test_stream_loader"
 
 if [ ! -f "$EXE" ]; then
@@ -19,7 +19,7 @@ fi
 
 if [ ! -f "$EXE" ]; then
     echo "错误: 未找到 stress_test_stream_loader，请先编译:"
-    echo "  cmake --preset x64-release-vcpkg && cmake --build build --target stress_test_stream_loader"
+    echo "  cmake --preset x64-release && cmake --build build --target stress_test_stream_loader"
     exit 1
 fi
 

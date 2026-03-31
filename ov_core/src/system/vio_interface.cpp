@@ -10,6 +10,15 @@
 #include "utils/opencv_yaml_parse.h"
 #include "utils/sensor_data.h"
 
+// 调试窗口（highgui）仅在 64 位 x86 上启用；ARM 等架构编译为无操作
+#if defined(__x86_64__) || defined(_M_X64) || defined(__amd64__)
+#define OV_VIO_DEBUG_DISPLAY_X64 1
+#include <opencv2/highgui.hpp>
+#include <opencv2/imgproc.hpp>
+#else
+#define OV_VIO_DEBUG_DISPLAY_X64 0
+#endif
+
 namespace {
 
 constexpr size_t kMaxCameraQueueSize = 30;
@@ -55,12 +64,28 @@ void VioInterface::OnIMU(const vio_imu_msg_t& imu) {
 
 void VioInterface::OnImage(const vio_image_msg_t& image) {
   auto camera_data = ov_core::ToCameraData(image);
-  std::lock_guard<std::mutex> lck(camera_queue_mtx_);
-  camera_queue_.push_back(std::move(camera_data));
-  if (camera_queue_.size() > kMaxCameraQueueSize) {
-    camera_queue_.pop_front();
+  {
+    std::lock_guard<std::mutex> lck(camera_queue_mtx_);
+    camera_queue_.push_back(std::move(camera_data));
+    if (camera_queue_.size() > kMaxCameraQueueSize) {
+      camera_queue_.pop_front();
+    }
+    camera_queue_cond_.notify_one();
   }
-  camera_queue_cond_.notify_one();
+  // OpenCV highgui：imshow/waitKey 须在主线程；由调用方保证 OnImage 在主线程执行
+#if OV_VIO_DEBUG_DISPLAY_X64
+  cv::Mat to_show;
+  {
+    std::lock_guard<std::mutex> lock(display_mtx_);
+    if (!debug_display_combo_.empty()) {
+      to_show = debug_display_combo_.clone();
+    }
+  }
+  if (!to_show.empty()) {
+    cv::imshow("VIO: prev raw | track", to_show);
+    cv::waitKey(0);
+  }
+#endif
 }
 
 int VioInterface::init() {
@@ -143,6 +168,11 @@ void VioInterface::FillDebugInfo(vio_debug_info_t& out) {
   out.points_msckf = nullptr;
   out.points_slam = nullptr;
   out.points_aruco = nullptr;
+  out.prev_raw_image = nullptr;
+  out.prev_raw_image_width = 0;
+  out.prev_raw_image_height = 0;
+  out.prev_raw_image_step = 0;
+  out.prev_raw_image_channels = 0;
   out.track_image = nullptr;
 
   auto vec_to_flat = [](const std::vector<Eigen::Vector3d>& pts,
@@ -172,6 +202,14 @@ void VioInterface::FillDebugInfo(vio_debug_info_t& out) {
   out.num_aruco = static_cast<int32_t>(debug_aruco_.size() / 3);
   out.points_aruco = debug_aruco_.empty() ? nullptr : debug_aruco_.data();
 
+  if (!prev_raw_gray_.empty()) {
+    out.prev_raw_image = prev_raw_gray_.data;
+    out.prev_raw_image_width = prev_raw_gray_.cols;
+    out.prev_raw_image_height = prev_raw_gray_.rows;
+    out.prev_raw_image_step = static_cast<int32_t>(prev_raw_gray_.step[0]);
+    out.prev_raw_image_channels = prev_raw_gray_.channels();
+  }
+
   debug_track_image_ = app_->get_historical_viz_image();
   if (!debug_track_image_.empty()) {
     out.track_image = debug_track_image_.data;
@@ -180,6 +218,54 @@ void VioInterface::FillDebugInfo(vio_debug_info_t& out) {
     out.track_image_step = static_cast<int32_t>(debug_track_image_.step[0]);
     out.track_image_channels = debug_track_image_.channels();
   }
+}
+
+void VioInterface::UpdateDebugDisplayBuffer() {
+#if OV_VIO_DEBUG_DISPLAY_X64
+  // 在 cb() 之后调用，可安全刷新；初始化阶段也需可视化时由此取图
+  debug_track_image_ = app_->get_historical_viz_image();
+  cv::Mat left_bgr;
+  cv::Mat right_bgr;
+  if (!prev_raw_gray_.empty()) {
+    if (prev_raw_gray_.channels() == 1) {
+      cv::cvtColor(prev_raw_gray_, left_bgr, cv::COLOR_GRAY2BGR);
+    } else {
+      left_bgr = prev_raw_gray_.clone();
+    }
+  }
+  if (!debug_track_image_.empty()) {
+    if (debug_track_image_.channels() == 1) {
+      cv::cvtColor(debug_track_image_, right_bgr, cv::COLOR_GRAY2BGR);
+    } else {
+      right_bgr = debug_track_image_.clone();
+    }
+  }
+  if (left_bgr.empty() && right_bgr.empty()) {
+    std::lock_guard<std::mutex> lock(display_mtx_);
+    debug_display_combo_.release();
+    return;
+  }
+  const int target_h = 480;
+  auto resize_to_height = [target_h](cv::Mat& m) {
+    if (m.empty() || m.rows == target_h) {
+      return;
+    }
+    const double s = static_cast<double>(target_h) / static_cast<double>(m.rows);
+    cv::resize(m, m, {}, s, s, cv::INTER_AREA);
+  };
+  resize_to_height(left_bgr);
+  resize_to_height(right_bgr);
+  cv::Mat combo;
+  if (!left_bgr.empty() && !right_bgr.empty()) {
+    cv::hconcat(left_bgr, right_bgr, combo);
+  } else if (!left_bgr.empty()) {
+    combo = std::move(left_bgr);
+  } else {
+    combo = std::move(right_bgr);
+  }
+  std::lock_guard<std::mutex> lock(display_mtx_);
+  debug_display_combo_ = std::move(combo);
+#endif
 }
 
 void VioInterface::Run() {
@@ -202,6 +288,12 @@ void VioInterface::Run() {
       std::lock_guard<std::mutex> lck(vio_mtx_);
       app_->feed_measurement_camera(cam_data);
       InvokeStateCallback(cam_data);
+#if OV_VIO_DEBUG_DISPLAY_X64
+      UpdateDebugDisplayBuffer();
+#endif
+      if (!cam_data.images.empty()) {
+        prev_raw_gray_ = cam_data.images[0].clone();
+      }
     }
   }
 }

@@ -1,7 +1,7 @@
 {
   "name": "open-vins",
   "version": "0.0.1",
-  "description": "Open VINS dependencies (minimal: only what code uses)",
+  "description": "x64 Linux: OpenCV 请用 apt 安装 libopencv-dev（HighGUI 一般为 GTK，imshow 可用）；vcpkg 不再拉 Qt/OpenCV。arm64/Windows/macOS 仍用 vcpkg opencv4。",
   "builtin-baseline": "774bdd067fa3a5a49e1e8eba5efc891b3092df9b",
   "dependencies": [
     "eigen3",
@@ -9,13 +9,19 @@
       "name": "opencv4",
       "platform": "arm64",
       "default-features": false,
-      "features": ["intrinsics", "carotene", "contrib", "calib3d", "fs", "highgui", "thread", "jpeg", "png"]
+      "features": ["intrinsics", "carotene", "calib3d", "fs", "highgui", "thread", "jpeg", "png"]
     },
     {
       "name": "opencv4",
-      "platform": "!arm64",
+      "platform": "x64 & windows",
       "default-features": false,
-      "features": ["contrib", "intrinsics", "ipp", "calib3d", "fs", "highgui", "thread", "jpeg", "png"]
+      "features": ["intrinsics", "ipp", "calib3d", "fs", "highgui", "thread", "jpeg", "png", "win32ui"]
+    },
+    {
+      "name": "opencv4",
+      "platform": "osx",
+      "default-features": false,
+      "features": ["intrinsics", "ipp", "calib3d", "fs", "highgui", "thread", "jpeg", "png", "qt"]
     },
     {
       "name": "ceres",

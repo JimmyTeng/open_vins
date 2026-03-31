@@ -4,7 +4,7 @@ project(ov_core)
 # Include libraries (prefer opencv 4 from vcpkg, fallback to opencv 3 for system/ROS)
 # The OpenCV version needs to match the one used by cv_bridge otherwise you will get a segmentation fault!
 find_package(Eigen3 REQUIRED)
-find_package(OpenCV 4 QUIET)
+find_package(OpenCV 4 REQUIRED)
 find_package(Ceres REQUIRED)
 message(STATUS "OPENCV: " ${OpenCV_VERSION})
 
