@@ -1,0 +1,13 @@
+---
+description: Git 提交说明优先使用简体中文（含一键生成 commit message）
+alwaysApply: true
+---
+
+# Git 提交说明
+
+- 编写或**生成** Git commit message 时，**主体说明使用简体中文**。
+- 可采用 Conventional Commits：**类型前缀保留英文**（如 `feat:`、`fix:`、`docs:`），**冒号后的摘要与正文用中文**。
+- 示例：`feat: 为 ZUPT 增加赞同/否决门限配置`；需要详情时用空行分段，条目仍用中文。
+- 避免整段英文描述；专有名词、符号、路径、类型名可保留英文。
+
+
