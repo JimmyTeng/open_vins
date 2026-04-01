@@ -11,13 +11,15 @@ message(STATUS "OPENCV: " ${OpenCV_VERSION})
 # By default we build with ROS, but you can disable this and just build as a library
 option(ENABLE_ROS "Enable or disable building with ROS (if it is found)" OFF)
 
-# If we will compile with aruco support
-option(ENABLE_ARUCO_TAGS "Enable or disable aruco tag (disable if no contrib modules)" ON)
-if (NOT ENABLE_ARUCO_TAGS)
-    add_definitions(-DENABLE_ARUCO_TAGS=0)
-    message(WARNING "DISABLING ARUCOTAG TRACKING!")
-else ()
+# ArUco 依赖 opencv_contrib 的 aruco 模块；默认关闭，无 contrib 的 OpenCV/vcpkg 也可直接编过。
+# 需要 ArUco 时：cmake -DENABLE_ARUCO_TAGS=ON（须已安装含 aruco 的 OpenCV）
+option(ENABLE_ARUCO_TAGS "Build with OpenCV ArUco tag tracking (requires opencv contrib aruco)" OFF)
+if (ENABLE_ARUCO_TAGS)
     add_definitions(-DENABLE_ARUCO_TAGS=1)
+    message(STATUS "ENABLE_ARUCO_TAGS: ON (opencv2/aruco.hpp required)")
+else ()
+    add_definitions(-DENABLE_ARUCO_TAGS=0)
+    message(STATUS "ENABLE_ARUCO_TAGS: OFF")
 endif ()
 
 # check if we have our python libs files (will search for python3 then python2 installs)

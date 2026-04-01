@@ -20,7 +20,7 @@ There are additional cmake options that users might be interested in.
 Configure these with `cmake -D<option_name>=ON ..` options.
 
 - `ENABLE_ROS` - (default ON) - Enable or disable building with ROS (ensure to disable this)
-- `ENABLE_ARUCO_TAGS` - (default ON) - Enable or disable aruco tag (disable if no contrib modules)
+- `ENABLE_ARUCO_TAGS` - (default OFF) - Enable ArUco tag tracking; requires OpenCV built with contrib `aruco` (`opencv2/aruco.hpp`). Pass `-DENABLE_ARUCO_TAGS=ON` if available.
 - `BUILD_OV_EVAL` - (default ON) - Enable or disable building of ov_eval (needs to be built separately)
 - `DISABLE_MATPLOTLIB` - (default OFF) - Disable or enable matplotlib plot scripts in ov_eval
 

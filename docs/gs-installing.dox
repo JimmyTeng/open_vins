@@ -119,7 +119,7 @@ There are additional options that users might be interested in.
 Configure these with `catkin build -D<option_name>=OFF` or `cmake -D<option_name>=ON ..` in the ROS free case.
 
 - `ENABLE_ROS` - (default ON) - Enable or disable building with ROS (see @ref gs-installing-free)
-- `ENABLE_ARUCO_TAGS` - (default ON) - Enable or disable aruco tag (disable if no contrib modules)
+- `ENABLE_ARUCO_TAGS` - (default OFF) - Enable ArUco tag tracking; requires OpenCV contrib `aruco`. Use `-DENABLE_ARUCO_TAGS=ON` when your OpenCV includes it.
 - `BUILD_OV_EVAL` - (default ON) - Enable or disable building of ov_eval
 - `DISABLE_MATPLOTLIB` - (default OFF) - Disable or enable matplotlib plot scripts in ov_eval
 
@@ -185,9 +185,8 @@ make -j8
 sudo make install
 @endcode
 
-If you do not want to build the modules, you should also be able to do this (while it is not as well tested).
-The ArucoTag tracker depends on a non-free module in the contrib repository, thus this will need to be disabled.
-You can disable this with `catkin build -DENABLE_ARUCO_TAGS=OFF` or `cmake -DENABLE_ARUCO_TAGS=OFF ..` in your build folder.
+If you do not want to build the contrib modules, the default build disables the ArucoTag tracker (`ENABLE_ARUCO_TAGS` defaults to OFF).
+If you build OpenCV with contrib and want ArUco, enable it with `catkin build -DENABLE_ARUCO_TAGS=ON` or `cmake -DENABLE_ARUCO_TAGS=ON ..`.
 
 
 

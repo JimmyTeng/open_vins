@@ -10,13 +10,14 @@ message(STATUS "OPENCV: " ${OpenCV_VERSION} " | CERES: " ${Ceres_VERSION})
 # By default we build with ROS, but you can disable this and just build as a library
 option(ENABLE_ROS "Enable or disable building with ROS (if it is found)" ON)
 
-# If we will compile with aruco support
-option(ENABLE_ARUCO_TAGS "Enable or disable aruco tag (disable if no contrib modules)" ON)
-if (NOT ENABLE_ARUCO_TAGS)
-    add_definitions(-DENABLE_ARUCO_TAGS=0)
-    message(WARNING "DISABLING ARUCOTAG TRACKING!")
-else ()
+# ArUco 依赖 opencv_contrib；默认关闭。需要时：-DENABLE_ARUCO_TAGS=ON
+option(ENABLE_ARUCO_TAGS "Build with OpenCV ArUco tag tracking (requires opencv contrib aruco)" OFF)
+if (ENABLE_ARUCO_TAGS)
     add_definitions(-DENABLE_ARUCO_TAGS=1)
+    message(STATUS "ENABLE_ARUCO_TAGS: ON (opencv2/aruco.hpp required)")
+else ()
+    add_definitions(-DENABLE_ARUCO_TAGS=0)
+    message(STATUS "ENABLE_ARUCO_TAGS: OFF")
 endif ()
 
 # C++17 for std::filesystem
