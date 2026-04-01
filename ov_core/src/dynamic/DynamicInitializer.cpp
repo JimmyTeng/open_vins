@@ -127,7 +127,7 @@ bool DynamicInitializer::initialize(
   // 设置参数
   const int min_num_meas_to_optimize =
       (int)params.init_window_time;  // 优化所需的最小测量数量
-  const int min_valid_features = 12;  // 最小有效特征点数量
+  const int min_valid_features = params.init_dyn_min_valid_features;
 
   // 可用于优化的特征点验证信息
   bool have_stereo = false;
@@ -736,8 +736,9 @@ bool DynamicInitializer::initialize(
   int features_behind_camera = 0;
   int features_with_insufficient_meas = 0;
   int features_too_close_to_lens = 0;
-  /// 三角化点距光心须严格大于该值（米）才计为有效特征
-  constexpr double kMinTriangDistFromLensM = 0.8;
+  int features_too_far_from_lens = 0;
+  const double kDepthMinM = params.init_dyn_triang_depth_min_m;
+  const double kDepthMaxM = params.init_dyn_triang_depth_max_m;
 
   for (auto const &feat : features) {
     if (map_features_num_meas[feat.first] < min_num_meas_to_optimize) {
@@ -791,13 +792,21 @@ bool DynamicInitializer::initialize(
       Eigen::Matrix3d R0_ItoC = quat_2_Rot(q0_ItoC);
       const Eigen::Vector3d p_FinC0 = R0_ItoC * p_FinI0 + p0_IinC;
       const double dist_lens = p_FinC0.norm();
-      if (dist_lens <= kMinTriangDistFromLensM) {
+      if (dist_lens < kDepthMinM) {
         features_too_close_to_lens++;
         if (features_too_close_to_lens <= 5) {
           PRINT_INFO(YELLOW
-                     "[DynamicInitializer] 特征 %zu 距镜头 %.4f m ≤ %.2f m，不作为有效点\n"
+                     "[DynamicInitializer] 特征 %zu 距光心 %.4f m < %.2f m，不作为有效点\n"
                      RESET,
-                     feat.first, dist_lens, kMinTriangDistFromLensM);
+                     feat.first, dist_lens, kDepthMinM);
+        }
+      } else if (dist_lens > kDepthMaxM) {
+        features_too_far_from_lens++;
+        if (features_too_far_from_lens <= 5) {
+          PRINT_INFO(YELLOW
+                     "[DynamicInitializer] 特征 %zu 距光心 %.4f m > %.2f m，不作为有效点\n"
+                     RESET,
+                     feat.first, dist_lens, kDepthMaxM);
         }
       } else {
         features_inI0.insert({feat.first, p_FinI0});
@@ -849,22 +858,29 @@ bool DynamicInitializer::initialize(
         sum += d;
       }
       PRINT_INFO(
-          "  统计(仅有效点, 距光心 >%.2f m): min=%.4f m, max=%.4f m, "
+          "  统计(仅有效点, 深度 ∈ [%.2f, %.2f] m): min=%.4f m, max=%.4f m, "
           "mean=%.4f m (N=%zu)\n",
-          kMinTriangDistFromLensM, *mm.first, *mm.second,
+          kDepthMinM, kDepthMaxM, *mm.first, *mm.second,
           sum / static_cast<double>(dists.size()), dists.size());
     }
   }
-  if (features_inI0.empty() && features_too_close_to_lens > 0) {
+  if (features_inI0.empty() &&
+      (features_too_close_to_lens > 0 || features_too_far_from_lens > 0)) {
     PRINT_INFO(YELLOW
-               "[DynamicInitializer] 有效点 0：%d 个三角化点因距镜头 ≤%.2f m "
-               "未计入有效特征\n" RESET,
-               features_too_close_to_lens, kMinTriangDistFromLensM);
+               "[DynamicInitializer] 有效点 0：%d 个过近, %d 个过远（深度须 ∈ "
+               "[%.2f, %.2f] m）\n" RESET,
+               features_too_close_to_lens, features_too_far_from_lens,
+               kDepthMinM, kDepthMaxM);
   } else if (features_too_close_to_lens > 5) {
     PRINT_INFO(YELLOW
-               "[DynamicInitializer] 另有 %d 个点因距镜头 ≤%.2f m 已剔除（上表已列 "
+               "[DynamicInitializer] 另有 %d 个点因距光心 < %.2f m 已剔除（上表已列 "
                "前 5 个）\n" RESET,
-               features_too_close_to_lens - 5, kMinTriangDistFromLensM);
+               features_too_close_to_lens - 5, kDepthMinM);
+  } else if (features_too_far_from_lens > 5) {
+    PRINT_INFO(YELLOW
+               "[DynamicInitializer] 另有 %d 个点因距光心 > %.2f m 已剔除（上表已列 "
+               "前 5 个）\n" RESET,
+               features_too_far_from_lens - 5, kDepthMaxM);
   }
 
   if (count_valid_features < min_valid_features) {

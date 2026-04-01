@@ -21,6 +21,8 @@
 
 #include "StateHelper.h"
 
+#include <mutex>
+
 #include "state/State.h"
 #include "types/Landmark.h"
 #include "utils/chi_squared_quantile.h"
@@ -756,4 +758,19 @@ void StateHelper::marginalize_slam(std::shared_ptr<State> state) {
       it0++;
     }
   }
+}
+
+void StateHelper::inflate_covariance_diagonal(
+    std::shared_ptr<State> state,
+    const std::shared_ptr<Type> &var,
+    double variance_add_per_axis) {
+  if (variance_add_per_axis <= 0.0 || var == nullptr)
+    return;
+  std::lock_guard<std::mutex> lock(state->_mutex_state);
+  const int id = var->id();
+  const int n = var->size();
+  for (int i = 0; i < n; ++i) {
+    state->_Cov(id + i, id + i) += variance_add_per_axis;
+  }
+  state->_Cov = state->_Cov.selfadjointView<Eigen::Upper>();
 }

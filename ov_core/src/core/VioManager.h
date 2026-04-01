@@ -30,6 +30,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <unordered_map>
 
 #include "utils/timing.h"
 #include "VioManagerOptions.h"
@@ -331,12 +332,15 @@ protected:
   // Re-triangulated features 3d positions seen from the current frame (used in visualization)
   // For each feature we have a linear system A * p_FinG = b we create and increment their costs
   double active_tracks_time = -1;
-  std::unordered_map<size_t, Eigen::Vector3d> active_tracks_posinG;  // 活动跟踪特征点在全局坐标系中的位置
+  /// 活动跟踪特征点全局坐标 p_FinG；retriangulate 后会剔除当前 cam0 光轴后方/深度无效点（+Z 为光轴前方）
+  std::unordered_map<size_t, Eigen::Vector3d> active_tracks_posinG;
   std::unordered_map<size_t, Eigen::Vector3d> active_tracks_uvd;     // 活动跟踪特征点的UV坐标和深度
   cv::Mat active_image;                                              // 活动图像
   std::map<size_t, Eigen::Matrix3d> active_feat_linsys_A;           // 活动特征线性系统的A矩阵
   std::map<size_t, Eigen::Vector3d> active_feat_linsys_b;           // 活动特征线性系统的b向量
   std::map<size_t, int> active_feat_linsys_count;                    // 活动特征线性系统的观测计数
+  /// 深度平滑用：上一帧各特征在 cam0 下的 +Z 深度（米）
+  std::unordered_map<size_t, double> active_tracks_depth_smooth_prev;
 };
 
 } // namespace ov_msckf

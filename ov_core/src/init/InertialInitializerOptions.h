@@ -109,6 +109,13 @@ struct InertialInitializerOptions {
   /// sqrt(min_reciprocal_condition_number))
   double init_dyn_min_rec_cond = 1e-15;
 
+  /// 动态初始化：三角化特征在首观测相机系下距光心深度（范数）允许区间 [min, max]（米）；区间外不计入有效特征
+  double init_dyn_triang_depth_min_m = 0.3;
+  double init_dyn_triang_depth_max_m = 1.3;
+
+  /// 动态初始化：最小有效特征数（测量数足够的特征门槛、以及深度在区间内特征门槛，两处共用）
+  int init_dyn_min_valid_features = 8;
+
   /// Initial IMU gyroscope bias values for dynamic initialization (will be optimized)
   Eigen::Vector3d init_dyn_bias_g = Eigen::Vector3d::Zero();
 
@@ -140,6 +147,12 @@ struct InertialInitializerOptions {
       parser->parse_config("init_dyn_inflation_bg", init_dyn_inflation_bias_gyro);
       parser->parse_config("init_dyn_inflation_ba", init_dyn_inflation_bias_accel);
       parser->parse_config("init_dyn_min_rec_cond", init_dyn_min_rec_cond);
+      parser->parse_config("init_dyn_triang_depth_min_m",
+                           init_dyn_triang_depth_min_m, false);
+      parser->parse_config("init_dyn_triang_depth_max_m",
+                           init_dyn_triang_depth_max_m, false);
+      parser->parse_config("init_dyn_min_valid_features",
+                           init_dyn_min_valid_features, false);
       std::vector<double> bias_g = {0, 0, 0};
       std::vector<double> bias_a = {0, 0, 0};
       parser->parse_config("init_dyn_bias_g", bias_g);
@@ -180,6 +193,22 @@ struct InertialInitializerOptions {
     PRINT_DEBUG("  - init_dyn_inflation_bg: %.2e\n", init_dyn_inflation_bias_gyro);
     PRINT_DEBUG("  - init_dyn_inflation_ba: %.2e\n", init_dyn_inflation_bias_accel);
     PRINT_DEBUG("  - init_dyn_min_rec_cond: %.2e\n", init_dyn_min_rec_cond);
+    PRINT_DEBUG("  - init_dyn_triang_depth: [%.3f, %.3f] m (首相机三角化距光心)\n",
+                init_dyn_triang_depth_min_m, init_dyn_triang_depth_max_m);
+    if (init_dyn_triang_depth_min_m >= init_dyn_triang_depth_max_m) {
+      PRINT_ERROR(RED "init_dyn_triang_depth_min_m 必须小于 init_dyn_triang_depth_max_m\n" RESET);
+      std::exit(EXIT_FAILURE);
+    }
+    PRINT_DEBUG("  - init_dyn_min_valid_features: %d\n", init_dyn_min_valid_features);
+    if (init_dyn_min_valid_features < 1) {
+      PRINT_ERROR(RED "init_dyn_min_valid_features 须 >= 1\n" RESET);
+      std::exit(EXIT_FAILURE);
+    }
+    if (init_dyn_min_valid_features > init_max_features) {
+      PRINT_ERROR(RED "init_dyn_min_valid_features (%d) 不能大于 init_max_features (%d)\n" RESET,
+                  init_dyn_min_valid_features, init_max_features);
+      std::exit(EXIT_FAILURE);
+    }
     if (init_dyn_num_pose < 4) {
       PRINT_ERROR(RED "请求的帧数不足！！\n" RESET);
       PRINT_ERROR(RED "  init_dyn_num_pose = %d (4 min)\n" RESET, init_dyn_num_pose);

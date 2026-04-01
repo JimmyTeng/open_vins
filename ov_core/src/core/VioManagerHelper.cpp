@@ -277,6 +277,8 @@ void VioManager::retriangulate_active_tracks(
   }
   active_tracks_posinG.clear();
   active_tracks_uvd.clear();
+  if (params.active_tracks_depth_smooth_alpha >= 1.0 - 1e-12)
+    active_tracks_depth_smooth_prev.clear();
 
   // 前端中的当前活动跟踪
   // TODO: 应该在这里断言这些是在消息时间...
@@ -431,6 +433,68 @@ void VioManager::retriangulate_active_tracks(
   std::shared_ptr<PoseJPL> clone_Ii = state->_clones_IMU.at(active_tracks_time);
   Eigen::Matrix3d R_GtoIi = clone_Ii->Rot();
   Eigen::Vector3d p_IiinG = clone_Ii->pos();
+
+  // 仅保留当前 cam0 光心前方：相机系 +Z 为光轴方向，深度须为正当且落在 fi_min/max_dist
+  //（p_FinG 的全局 z 可为负，与「是否在镜头前」无关）
+  {
+    const double z_min = std::max(0.1, params.featinit_options.min_dist);
+    const double z_max = params.featinit_options.max_dist;
+    std::vector<size_t> drop;
+    for (const auto &feat : active_tracks_posinG) {
+      Eigen::Vector3d p_FinIi = R_GtoIi * (feat.second - p_IiinG);
+      Eigen::Vector3d p_FinCi = R_ItoC * p_FinIi + p_IinC;
+      const double depth = p_FinCi(2);
+      if (depth < z_min || depth > z_max || std::isnan(depth) ||
+          std::isinf(depth))
+        drop.push_back(feat.first);
+    }
+    for (size_t id : drop)
+      active_tracks_posinG.erase(id);
+  }
+
+  // 沿当前 cam0 像素射线对深度做一阶低通，减轻线性三角化 + 全局系漂移带来的帧间跳变（不改变 SLAM/MSCKF 滤波）
+  if (params.active_tracks_depth_smooth_alpha < 1.0 - 1e-12 &&
+      params.active_tracks_depth_smooth_alpha > 1e-12) {
+    const double a = params.active_tracks_depth_smooth_alpha;
+    for (auto &feat : active_tracks_posinG) {
+      if (feat_uvs_in_cam0.find(feat.first) == feat_uvs_in_cam0.end())
+        continue;
+      Eigen::Vector3d p_FinIi = R_GtoIi * (feat.second - p_IiinG);
+      Eigen::Vector3d p_FinCi = R_ItoC * p_FinIi + p_IinC;
+      double depth = p_FinCi(2);
+      auto itp = active_tracks_depth_smooth_prev.find(feat.first);
+      if (itp != active_tracks_depth_smooth_prev.end())
+        depth = a * depth + (1.0 - a) * itp->second;
+      active_tracks_depth_smooth_prev[feat.first] = depth;
+      cv::Point2f pt_n = state->_cam_intrinsics_cameras.at(0)->undistort_cv(
+          feat_uvs_in_cam0.at(feat.first));
+      Eigen::Vector3d pFc(pt_n.x * depth, pt_n.y * depth, depth);
+      Eigen::Vector3d pFi = R_ItoC.transpose() * (pFc - p_IinC);
+      feat.second = R_GtoIi.transpose() * pFi + p_IiinG;
+    }
+    for (auto it = active_tracks_depth_smooth_prev.begin();
+         it != active_tracks_depth_smooth_prev.end();) {
+      if (active_tracks_posinG.find(it->first) == active_tracks_posinG.end() ||
+          feat_uvs_in_cam0.find(it->first) == feat_uvs_in_cam0.end())
+        it = active_tracks_depth_smooth_prev.erase(it);
+      else
+        ++it;
+    }
+  }
+
+  if (params.print_triangulated_points && !active_tracks_posinG.empty()) {
+    PRINT_INFO(CYAN
+               "[TRI] t=%.9f  N=%zu  p_FinG (global, m)；depth_cam0=当前 cam0 "
+               "+Z 深度 (m，光轴前方)\n" RESET,
+               active_tracks_time, active_tracks_posinG.size());
+    for (const auto &feat : active_tracks_posinG) {
+      Eigen::Vector3d p_FinIi = R_GtoIi * (feat.second - p_IiinG);
+      Eigen::Vector3d p_FinCi = R_ItoC * p_FinIi + p_IinC;
+      PRINT_INFO("  id=%zu  x=%.6f  y=%.6f  z=%.6f  depth_cam0=%.6f\n",
+                 feat.first, feat.second(0), feat.second(1), feat.second(2),
+                 p_FinCi(2));
+    }
+  }
 
   // 4. 接下来我们可以用全局位置更新变量
   //    我们还将特征点投影到当前帧

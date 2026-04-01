@@ -277,10 +277,10 @@ VioManager::VioManager(VioManagerOptions &params_)
     updaterZUPT = std::make_shared<UpdaterZeroVelocity>(
         params.zupt_options, params.imu_noises,
         trackFEATS->get_feature_database(), propagator, params.gravity_mag,
-        params.zupt_or_max_velocity, params.zupt_noise_multiplier,
-        params.zupt_or_max_disparity, params.zupt_or_chi2_multipler,
-        params.zupt_and_max_velocity, params.zupt_and_max_disparity,
-        params.zupt_and_chi2_multipler);
+        params.zupt_agree_max_velocity, params.zupt_noise_multiplier,
+        params.zupt_agree_max_disparity, params.zupt_agree_chi2_multipler,
+        params.zupt_strict_max_velocity, params.zupt_strict_max_disparity,
+        params.zupt_strict_chi2_multipler);
   }
 }
 
@@ -464,10 +464,10 @@ void VioManager::feed_measurement_simulation(
       updaterZUPT = std::make_shared<UpdaterZeroVelocity>(
           params.zupt_options, params.imu_noises,
           trackFEATS->get_feature_database(), propagator, params.gravity_mag,
-          params.zupt_or_max_velocity, params.zupt_noise_multiplier,
-          params.zupt_or_max_disparity, params.zupt_or_chi2_multipler,
-          params.zupt_and_max_velocity, params.zupt_and_max_disparity,
-          params.zupt_and_chi2_multipler);
+          params.zupt_agree_max_velocity, params.zupt_noise_multiplier,
+          params.zupt_agree_max_disparity, params.zupt_agree_chi2_multipler,
+          params.zupt_strict_max_velocity, params.zupt_strict_max_disparity,
+          params.zupt_strict_chi2_multipler);
     }
     PRINT_WARNING(RED "[仿真]: 将跟踪器转换为TrackSIM对象！\n" RESET);
   }
@@ -746,6 +746,10 @@ void VioManager::do_feature_propagate_update(
   // NOTE: then no need to prop since we already are at the desired timestep
   if (state->_timestamp != message.timestamp) {
     propagator->propagate_and_clone(state, message.timestamp);
+    if (params.post_propagate_vel_cov_diag_add > 0.0) {
+      StateHelper::inflate_covariance_diagonal(
+          state, state->_imu->v(), params.post_propagate_vel_cov_diag_add);
+    }
   }
   rT3 = rtime_now();
 

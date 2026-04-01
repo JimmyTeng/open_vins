@@ -43,27 +43,26 @@ UpdaterZeroVelocity::UpdaterZeroVelocity(
     UpdaterOptions &options, NoiseManager &noises,
     std::shared_ptr<ov_core::FeatureDatabase> db,
     std::shared_ptr<Propagator> prop, double gravity_mag,
-    double zupt_or_max_velocity, double zupt_noise_multiplier,
-    double zupt_or_max_disparity, double zupt_or_chi2_multipler,
-    double zupt_and_max_velocity, double zupt_and_max_disparity,
-    double zupt_and_chi2_multipler)
+    double zupt_agree_max_velocity, double zupt_noise_multiplier,
+    double zupt_agree_max_disparity, double zupt_agree_chi2_multipler,
+    double zupt_strict_max_velocity, double zupt_strict_max_disparity,
+    double zupt_strict_chi2_multipler)
     : _options(options),
       _noises(noises),
       _db(db),
       _prop(prop),
-      _or_max_velocity(zupt_or_max_velocity),
-      _or_noise_multiplier(zupt_noise_multiplier),
-      _or_max_disparity(zupt_or_max_disparity),
-      _or_chi2_multipler(zupt_or_chi2_multipler),
-      _and_max_velocity(zupt_and_max_velocity),
-      _and_max_disparity(zupt_and_max_disparity),
-      _and_chi2_multipler(zupt_and_chi2_multipler) {
+      _agree_max_velocity(zupt_agree_max_velocity),
+      _agree_max_disparity(zupt_agree_max_disparity),
+      _agree_chi2_multipler(zupt_agree_chi2_multipler),
+      _strict_max_velocity(zupt_strict_max_velocity),
+      _strict_max_disparity(zupt_strict_max_disparity),
+      _strict_chi2_multipler(zupt_strict_chi2_multipler) {
   _zupt_max_velocity =
-      std::min(zupt_or_max_velocity, zupt_and_max_velocity);
+      std::min(zupt_agree_max_velocity, zupt_strict_max_velocity);
   _zupt_noise_multiplier = zupt_noise_multiplier;
   _zupt_max_disparity =
-      std::min(zupt_or_max_disparity, zupt_and_max_disparity);
-  _options.chi2_multipler = zupt_or_chi2_multipler;
+      std::min(zupt_agree_max_disparity, zupt_strict_max_disparity);
+  _options.chi2_multipler = zupt_agree_chi2_multipler;
   // 初始化重力向量
   _gravity << 0.0, 0.0, gravity_mag;
 
@@ -154,6 +153,8 @@ bool UpdaterZeroVelocity::try_update(std::shared_ptr<State> state,
 
   // false（默认）：第二路测量用「比力减重力」残差 (a_hat - R*g)≈0，对应惯性系线加速度≈0（匀速），
   //   Hx 为 [q,bg,ba]，H 列宽 9；加计残差对 ba、q 有块，不含速度状态。
+  //   可观性：静止时 f≈R^T*g_world，重力在机体系的投影约束「垂线方向」上的姿态——俯仰、横滚相对重力可观；
+  //   绕重力轴的航向仅靠该加计模型不可观；陀螺残差 ω≈0 主要与 bg、角速度耦合，不单独恢复 yaw。
   // true：第二路改为「速度积分一致性」残差（与 v、g*dt、R^T*a_hat*dt 组合），Hx 增加 v，H 列宽 12；
   //   注释写明未充分验证，与默认 ZUPT 文献模型不同，慎用。
   bool integrated_accel_constraint = false;
@@ -225,6 +226,7 @@ bool UpdaterZeroVelocity::try_update(std::shared_ptr<State> state,
     // 测量残差（真实值为零）
     res.block(6 * i + 0, 0, 3, 1) = -w_omega * w_hat;
     if (!integrated_accel_constraint) {
+      // 残差对 q 的雅可比 ∝ skew(R*g)：将估计重力与测量比力对齐，可观子空间对应 roll/pitch（相对 g）
       res.block(6 * i + 3, 0, 3, 1) =
           -w_accel * (a_hat - state->_imu->Rot() * _gravity);
     } else {
@@ -258,7 +260,7 @@ bool UpdaterZeroVelocity::try_update(std::shared_ptr<State> state,
   // 将噪声矩阵乘以固定倍数（马氏 χ² 与后续 EKF 的 R 共用 zupt_noise_multiplier）
   // 我们通常需要将IMU视为"最差"情况以进行检测/避免过度自信
   Eigen::MatrixXd R =
-      _or_noise_multiplier *
+      _zupt_noise_multiplier *
       Eigen::MatrixXd::Identity(res.rows(), res.rows());
 
   // 接下来将偏置向前传播
@@ -280,6 +282,9 @@ bool UpdaterZeroVelocity::try_update(std::shared_ptr<State> state,
 
   // 获取阈值（查表或 Wilson-Hilferty 近似）
   double chi2_check = ov_core::chi2_quantile_095(static_cast<int>(res.rows()));
+  // 赞同阈值 / 否决阈值：与 estimator_config 中 zupt_agree_*、zupt_strict_* 的 χ² 倍率对应
+  const double chi2_lim_agree = _agree_chi2_multipler * chi2_check;
+  const double chi2_lim_strict = _strict_chi2_multipler * chi2_check;
   if (res.rows() >= 1000) {
     PRINT_WARNING(YELLOW
                   "[ZUPT]: chi2_check over the residual limit - %d\n" RESET,
@@ -298,46 +303,66 @@ bool UpdaterZeroVelocity::try_update(std::shared_ptr<State> state,
   }
 
   bool stationary_gate_passed = false;
-  bool gate_or = false;
-  bool gate_and = false;
+  // gate_agree：赞同阈值支路（YAML zupt_agree_*）；gate_strict：否决阈值支路（YAML zupt_strict_*）
+  bool gate_agree = false;
+  bool gate_strict = false;
+  bool disp_agree = false, chi2_agree = false, vel_agree = false;
+  bool disp_strict = false, chi2_strict = false, vel_strict = false;
+  bool agree_bypass_veto = false;
 
   if (override_with_disparity_check) {
-    bool disp_o =
-        (disp_avg < _or_max_disparity && num_features > 20);
-    bool chi2_o = chi2 <= _or_chi2_multipler * chi2_check;
-    bool vel_o = state->_imu->vel().norm() <= _or_max_velocity;
-    gate_or = disp_o || (chi2_o && vel_o);
+    disp_agree = (disp_avg < _agree_max_disparity && num_features > 20);
+    chi2_agree = chi2 <= chi2_lim_agree;
+    vel_agree = state->_imu->vel().norm() <= _agree_max_velocity;
+    // 特征足够且视差已超过赞同阈值：禁止仅靠 χ²+|v| 通过赞同支路（大视差仍当运动）
+    agree_bypass_veto = (num_features > 20 && disp_avg >= _agree_max_disparity);
+    gate_agree = disp_agree || (chi2_agree && vel_agree && !agree_bypass_veto);
 
-    bool disp_a =
-        (disp_avg < _and_max_disparity && num_features > 20);
-    bool chi2_a = chi2 <= _and_chi2_multipler * chi2_check;
-    bool vel_a = state->_imu->vel().norm() <= _and_max_velocity;
-    gate_and = disp_a && chi2_a && vel_a;
+    disp_strict = (disp_avg < _strict_max_disparity && num_features > 20);
+    chi2_strict = chi2 <= chi2_lim_strict;
+    vel_strict = state->_imu->vel().norm() <= _strict_max_velocity;
+    gate_strict = disp_strict && chi2_strict && vel_strict;
   } else {
-    bool chi2_o = chi2 <= _or_chi2_multipler * chi2_check;
-    bool vel_o = state->_imu->vel().norm() <= _or_max_velocity;
-    gate_or = chi2_o && vel_o;
-    bool chi2_a = chi2 <= _and_chi2_multipler * chi2_check;
-    bool vel_a = state->_imu->vel().norm() <= _and_max_velocity;
-    gate_and = chi2_a && vel_a;
+    chi2_agree = chi2 <= chi2_lim_agree;
+    vel_agree = state->_imu->vel().norm() <= _agree_max_velocity;
+    gate_agree = chi2_agree && vel_agree;
+    chi2_strict = chi2 <= chi2_lim_strict;
+    vel_strict = state->_imu->vel().norm() <= _strict_max_velocity;
+    gate_strict = chi2_strict && vel_strict;
   }
-  stationary_gate_passed = gate_or || gate_and;
+  // 静止门总结果：赞同阈值支路 或 否决阈值支路 任一通过
+  stationary_gate_passed = gate_agree || gate_strict;
 
-  // 静止门判定后每帧必打一行（通过/不通过均打印，便于对照日志）
+  // 静止门判定后每帧必打一行（通过/不通过均打印）
   {
     const char *gate_res = stationary_gate_passed ? "PASS" : "FAIL";
+    const int merge = (gate_agree || gate_strict) ? 1 : 0;
     if (override_with_disparity_check) {
       PRINT_INFO(CYAN
-                 "[ZUPT]: gate %s gate_or=%d gate_and=%d | disp=%.3f | "
-                 "chi2=%.3f |v|=%.3f\n" RESET,
-                 gate_res, gate_or ? 1 : 0, gate_and ? 1 : 0, disp_avg, chi2,
-                 state->_imu->vel().norm());
+                 "[ZUPT]: gate %s merge=(赞同||否决)=%d | 赞同: disp=%d chi2=%d "
+                 "vel=%d bypass_veto=%d -> agree=%d | 否决: disp=%d chi2=%d "
+                 "vel=%d -> strict=%d | disp=%.3f nf=%d | chi2=%.3f "
+                 "lim_agree=%.3f lim_strict=%.3f | |v|=%.3f v_lim_agree=%.3f "
+                 "v_lim_strict=%.3f | d_lim_agree=%.3f d_lim_strict=%.3f\n"
+                 RESET,
+                 gate_res, merge, disp_agree ? 1 : 0, chi2_agree ? 1 : 0,
+                 vel_agree ? 1 : 0, agree_bypass_veto ? 1 : 0,
+                 gate_agree ? 1 : 0, disp_strict ? 1 : 0, chi2_strict ? 1 : 0,
+                 vel_strict ? 1 : 0, gate_strict ? 1 : 0, disp_avg, num_features,
+                 chi2, chi2_lim_agree, chi2_lim_strict,
+                 state->_imu->vel().norm(), _agree_max_velocity, _strict_max_velocity,
+                 _agree_max_disparity, _strict_max_disparity);
     } else {
       PRINT_INFO(CYAN
-                 "[ZUPT]: gate %s gate_or=%d gate_and=%d | chi2=%.3f "
-                 "|v|=%.3f\n" RESET,
-                 gate_res, gate_or ? 1 : 0, gate_and ? 1 : 0, chi2,
-                 state->_imu->vel().norm());
+                 "[ZUPT]: gate %s merge=(赞同||否决)=%d | 赞同: chi2=%d vel=%d "
+                 "-> agree=%d | 否决: chi2=%d vel=%d -> strict=%d | chi2=%.3f "
+                 "lim_agree=%.3f lim_strict=%.3f | |v|=%.3f v_lim_agree=%.3f "
+                 "v_lim_strict=%.3f\n" RESET,
+                 gate_res, merge, chi2_agree ? 1 : 0, vel_agree ? 1 : 0,
+                 gate_agree ? 1 : 0, chi2_strict ? 1 : 0, vel_strict ? 1 : 0,
+                 gate_strict ? 1 : 0, chi2, chi2_lim_agree, chi2_lim_strict,
+                 state->_imu->vel().norm(), _agree_max_velocity,
+                 _strict_max_velocity);
     }
   }
 
@@ -372,7 +397,7 @@ bool UpdaterZeroVelocity::try_update(std::shared_ptr<State> state,
     }
 
     // 最后将状态时间向前推进（测量噪声 R 与 χ² 中 S 共用 zupt_noise_multiplier）
-    R = _or_noise_multiplier * Eigen::MatrixXd::Identity(res.rows(), res.rows());
+    R = _zupt_noise_multiplier * Eigen::MatrixXd::Identity(res.rows(), res.rows());
     StateHelper::EKFUpdate(state, Hx_order, H, res, R);
     state->_timestamp = timestamp;
     {

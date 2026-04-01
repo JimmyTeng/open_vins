@@ -1,0 +1,13 @@
+---
+description: 本仓库编译验证统一使用 build_preset.sh（x64-release）
+alwaysApply: true
+---
+
+# 编译验证
+
+- 在 **open_vins** 仓库内做**编译验证**（改 C++/CMake 后确认能过编译）时，在仓库根目录执行：
+  ```bash
+  ./script/build_preset.sh x64-release
+  ```
+- 不要默认改用 `cmake --build build ...` 或其它手写路径，除非用户明确要求或脚本不可用。
+- 需要全量清理重配时可加 `--clean`；并行度为 **`-j 8`**（`-j` 与数字之间须有空格，勿写成 `-j8`）。

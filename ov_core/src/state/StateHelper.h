@@ -229,6 +229,14 @@ public:
    */
   static void marginalize_slam(std::shared_ptr<State> state);
 
+  /**
+   * @brief 向某状态变量误差协方差的对角增加各向同性增量（用于人为降低对该分量的置信度）
+   * @param variance_add_per_axis 每个标量自由度上增加的方差；≤0 则不做任何事
+   */
+  static void inflate_covariance_diagonal(std::shared_ptr<State> state,
+                                          const std::shared_ptr<ov_type::Type> &var,
+                                          double variance_add_per_axis);
+
 private:
   /**
    * All function in this class should be static.

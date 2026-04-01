@@ -114,14 +114,17 @@ struct VioManagerOptions {
   /// If we should only use the zupt at the very beginning static initialization phase
   bool zupt_only_at_beginning = false;
 
-  /// OR 静止门分支（缺省 1.0；可选 legacy zupt_* 先填两路，再由 zupt_or_* / zupt_and_* 覆盖）
-  double zupt_or_max_velocity = 1.0;
-  double zupt_or_max_disparity = 1.0;
-  double zupt_or_chi2_multipler = 1.0;
-  /// AND 静止门分支
-  double zupt_and_max_velocity = 1.0;
-  double zupt_and_max_disparity = 1.0;
-  double zupt_and_chi2_multipler = 1.0;
+  /// 赞同阈值支路（gate_agree；可选 legacy zupt_* 先填两路，再由 zupt_agree_* / zupt_strict_* 或旧键 zupt_or_* / zupt_and_* 覆盖）
+  double zupt_agree_max_velocity = 1.0;
+  double zupt_agree_max_disparity = 1.0;
+  double zupt_agree_chi2_multipler = 1.0;
+  /// 否决阈值支路（gate_strict）
+  double zupt_strict_max_velocity = 1.0;
+  double zupt_strict_max_disparity = 1.0;
+  double zupt_strict_chi2_multipler = 1.0;
+
+  /// 每次 IMU 传播后对速度误差协方差对角增加 (m^2/s^2)/轴；0=关闭。略增大可降低对纯 IMU 积分速度的置信度，使 MSCKF/SLAM 更易校正速度、减轻位置漂移
+  double post_propagate_vel_cov_diag_add = 0.0;
 
   /// 是否将时间性能记录到文件
   /// If we should record the timing performance to file
@@ -162,6 +165,14 @@ struct VioManagerOptions {
   /// If we should print tracking stats (periodic [VM] frame and [跟踪] update logs)
   bool print_tracking_stats = true;
 
+  /// 是否在每次 retriangulate 后打印线性三角化得到的特征点全局坐标 p_FinG（米；含 MSCKF 活动轨迹与 SLAM 路标）
+  /// If true, print global-frame triangulated feature positions after each retriangulate_active_tracks
+  bool print_triangulated_points = false;
+
+  /// 活动轨迹三角化深度（当前 cam0 +Z）一阶低通系数：1=关闭；0.2~0.5 可减轻帧间抖动（仅影响 active_tracks 可视化，非滤波状态）
+  /// IIR on triangulated depth along current ray; 1=off; smaller = smoother viz (not filter state)
+  double active_tracks_depth_smooth_alpha = 1.0;
+
   /**
    * @brief 加载并打印所有估计器设置
    * 这允许直观检查是否从ROS/CMD解析器正确加载了所有内容。
@@ -180,18 +191,22 @@ struct VioManagerOptions {
     if (parser != nullptr) {
       parser->parse_config("dt_slam_delay", dt_slam_delay);
       parser->parse_config("try_zupt", try_zupt);
-      // 可选 legacy：仅写 zupt_max_velocity 等时，先赋给两路，再由 zupt_or_* / zupt_and_* 覆盖
-      parser->parse_config("zupt_max_velocity", zupt_or_max_velocity, false);
-      zupt_and_max_velocity = zupt_or_max_velocity;
+      // 可选 legacy：仅写 zupt_max_velocity 等时，先赋给两路，再由 zupt_agree_* / zupt_strict_* 或旧键 zupt_or_* / zupt_and_* 覆盖
+      parser->parse_config("zupt_max_velocity", zupt_agree_max_velocity, false);
+      zupt_strict_max_velocity = zupt_agree_max_velocity;
       parser->parse_config("zupt_noise_multiplier", zupt_noise_multiplier, false);
       parser->parse_config("zupt_or_noise_multiplier", zupt_noise_multiplier,
                            false); // 废弃别名，与 zupt_noise_multiplier 同义
-      parser->parse_config("zupt_max_disparity", zupt_or_max_disparity, false);
-      zupt_and_max_disparity = zupt_or_max_disparity;
-      parser->parse_config("zupt_or_max_velocity", zupt_or_max_velocity, false);
-      parser->parse_config("zupt_or_max_disparity", zupt_or_max_disparity, false);
-      parser->parse_config("zupt_and_max_velocity", zupt_and_max_velocity, false);
-      parser->parse_config("zupt_and_max_disparity", zupt_and_max_disparity, false);
+      parser->parse_config("zupt_max_disparity", zupt_agree_max_disparity, false);
+      zupt_strict_max_disparity = zupt_agree_max_disparity;
+      parser->parse_config("zupt_agree_max_velocity", zupt_agree_max_velocity, false);
+      parser->parse_config("zupt_agree_max_disparity", zupt_agree_max_disparity, false);
+      parser->parse_config("zupt_strict_max_velocity", zupt_strict_max_velocity, false);
+      parser->parse_config("zupt_strict_max_disparity", zupt_strict_max_disparity, false);
+      parser->parse_config("zupt_or_max_velocity", zupt_agree_max_velocity, false);
+      parser->parse_config("zupt_or_max_disparity", zupt_agree_max_disparity, false);
+      parser->parse_config("zupt_and_max_velocity", zupt_strict_max_velocity, false);
+      parser->parse_config("zupt_and_max_disparity", zupt_strict_max_disparity, false);
       parser->parse_config("zupt_only_at_beginning", zupt_only_at_beginning);
       parser->parse_config("record_timing_information", record_timing_information);
       parser->parse_config("record_timing_filepath", record_timing_filepath);
@@ -220,16 +235,22 @@ struct VioManagerOptions {
       parser->parse_config("print_state_calib", print_state_calib);
       parser->parse_config("print_timing", print_timing);
       parser->parse_config("print_tracking_stats", print_tracking_stats);
+      parser->parse_config("print_triangulated_points", print_triangulated_points,
+                           false);
+      parser->parse_config("active_tracks_depth_smooth_alpha",
+                           active_tracks_depth_smooth_alpha, false);
+      parser->parse_config("post_propagate_vel_cov_diag_add",
+                           post_propagate_vel_cov_diag_add, false);
     }
     PRINT_DEBUG("  - SLAM延迟时间: %.1f\n", dt_slam_delay);
     PRINT_DEBUG("  - 零速度更新 try_zupt: %d\n", try_zupt);
     PRINT_DEBUG("  - 仅在开始时使用零速度更新 zupt_only_at_beginning: %d\n",
                 zupt_only_at_beginning);
-    PRINT_DEBUG("  - ZUPT 静止门 = gate_or || gate_and（χ² 倍率见「噪声参数」段）\n");
-    PRINT_DEBUG("    OR ： |v|≤%.3f m/s  disp≤%.4f px\n",
-                zupt_or_max_velocity, zupt_or_max_disparity);
-    PRINT_DEBUG("    AND： |v|≤%.3f m/s  disp≤%.4f px\n",
-                zupt_and_max_velocity, zupt_and_max_disparity);
+    PRINT_DEBUG("  - ZUPT 静止门 = 赞同阈值支路 || 否决阈值支路（χ² 倍率见「噪声参数」段）\n");
+    PRINT_DEBUG("    赞同阈值（zupt_agree_*）：|v|≤%.3f m/s  disp≤%.4f px\n",
+                zupt_agree_max_velocity, zupt_agree_max_disparity);
+    PRINT_DEBUG("    否决阈值（zupt_strict_*）：|v|≤%.3f m/s  disp≤%.4f px\n",
+                zupt_strict_max_velocity, zupt_strict_max_disparity);
     PRINT_DEBUG("    ZUPT 测量噪声 R 标量倍率（χ² 与 EKF 共用）: %.3f\n",
                 zupt_noise_multiplier);
     PRINT_DEBUG("  - 记录时间信息?: %d\n", (int)record_timing_information);
@@ -243,6 +264,11 @@ struct VioManagerOptions {
     PRINT_DEBUG("  - 打印状态与标定?: %d\n", (int)print_state_calib);
     PRINT_DEBUG("  - 打印各阶段耗时?: %d\n", (int)print_timing);
     PRINT_DEBUG("  - 打印跟踪统计([VM]帧/[跟踪]更新)?: %d\n", (int)print_tracking_stats);
+    PRINT_DEBUG("  - 打印三角化点云 p_FinG?: %d\n", (int)print_triangulated_points);
+    PRINT_DEBUG("  - 活动轨迹深度平滑 alpha: %.4f (1=关)\n",
+                active_tracks_depth_smooth_alpha);
+    PRINT_DEBUG("  - 传播后速度协方差对角膨胀: %.6f (m^2/s^2)/轴（0=关）\n",
+                post_propagate_vel_cov_diag_add);
   }
 
   // NOISE / CHI2 ============================
@@ -268,13 +294,13 @@ struct VioManagerOptions {
   /// Update options for zero velocity (chi2 multiplier)
   UpdaterOptions zupt_options;
 
-  /// 静止门恒为 gate_or||gate_and；将辅助量写回 zupt_*（须在解析完 chi² 后调用）
+  /// 静止门恒为 gate_agree||gate_strict；将辅助量写回 zupt_*（须在解析完 chi² 后调用）
   void apply_zupt_active_branch() {
     zupt_max_velocity =
-        std::min(zupt_or_max_velocity, zupt_and_max_velocity);
+        std::min(zupt_agree_max_velocity, zupt_strict_max_velocity);
     zupt_max_disparity =
-        std::min(zupt_or_max_disparity, zupt_and_max_disparity);
-    zupt_options.chi2_multipler = zupt_or_chi2_multipler;
+        std::min(zupt_agree_max_disparity, zupt_strict_max_disparity);
+    zupt_options.chi2_multipler = zupt_agree_chi2_multipler;
   }
 
   /**
@@ -307,16 +333,20 @@ struct VioManagerOptions {
       msckf_options.sigma_pix_sq = std::pow(msckf_options.sigma_pix, 2);
       slam_options.sigma_pix_sq = std::pow(slam_options.sigma_pix, 2);
       aruco_options.sigma_pix_sq = std::pow(aruco_options.sigma_pix, 2);
-      // 可选 legacy zupt_chi2_multipler：同时赋两路；再由 zupt_or_* / zupt_and_* 覆盖
-      parser->parse_config("zupt_chi2_multipler", zupt_or_chi2_multipler, false);
-      zupt_and_chi2_multipler = zupt_or_chi2_multipler;
-      parser->parse_config("zupt_or_chi2_multipler", zupt_or_chi2_multipler,
+      // 可选 legacy zupt_chi2_multipler：同时赋两路；再由 zupt_agree_* / zupt_strict_* 或旧键 zupt_or_* / zupt_and_* 覆盖
+      parser->parse_config("zupt_chi2_multipler", zupt_agree_chi2_multipler, false);
+      zupt_strict_chi2_multipler = zupt_agree_chi2_multipler;
+      parser->parse_config("zupt_agree_chi2_multipler", zupt_agree_chi2_multipler,
                            false);
-      parser->parse_config("zupt_and_chi2_multipler", zupt_and_chi2_multipler,
+      parser->parse_config("zupt_strict_chi2_multipler", zupt_strict_chi2_multipler,
+                           false);
+      parser->parse_config("zupt_or_chi2_multipler", zupt_agree_chi2_multipler,
+                           false);
+      parser->parse_config("zupt_and_chi2_multipler", zupt_strict_chi2_multipler,
                            false);
     } else {
-      zupt_or_chi2_multipler = zupt_options.chi2_multipler;
-      zupt_and_chi2_multipler = zupt_options.chi2_multipler;
+      zupt_agree_chi2_multipler = zupt_options.chi2_multipler;
+      zupt_strict_chi2_multipler = zupt_options.chi2_multipler;
     }
     apply_zupt_active_branch();
     PRINT_DEBUG("  MSCKF特征更新器:\n");
@@ -326,15 +356,15 @@ struct VioManagerOptions {
     PRINT_DEBUG("  ARUCO标签更新器:\n");
     aruco_options.print();
     PRINT_DEBUG("  零速度更新器 (ZUPT):\n");
-    PRINT_DEBUG("    - 门限：chi2 ≤ mult × χ²_0.95(残差维)；OR/AND 各用各自 mult 得到 gate_or / gate_and\n");
+    PRINT_DEBUG("    - 门限：chi2 ≤ mult × χ²_0.95(残差维)；赞同/否决各用各自 mult 得到 gate_agree / gate_strict\n");
     PRINT_DEBUG("    - 马氏 χ² 中 S 与 EKF 更新 R 共用 zupt_noise_multiplier\n");
-    PRINT_DEBUG("    - OR  chi2_mult: %.4f\n", zupt_or_chi2_multipler);
-    PRINT_DEBUG("    - AND chi2_mult: %.4f\n", zupt_and_chi2_multipler);
-    PRINT_DEBUG("    - EKF 测量噪声 R 与 χ² 中 R 相同（gate_or||gate_and 为真才进入更新）\n");
-    PRINT_DEBUG("    - 兼容字段：zupt_options.chi2_multipler=%.4f（=OR，供内部一致性）\n",
+    PRINT_DEBUG("    - 赞同 chi2_mult: %.4f\n", zupt_agree_chi2_multipler);
+    PRINT_DEBUG("    - 否决 chi2_mult: %.4f\n", zupt_strict_chi2_multipler);
+    PRINT_DEBUG("    - EKF 测量噪声 R 与 χ² 中 R 相同（gate_agree||gate_strict 为真才进入更新）\n");
+    PRINT_DEBUG("    - 兼容字段：zupt_options.chi2_multipler=%.4f（=赞同，供内部一致性）\n",
                 zupt_options.chi2_multipler);
-    PRINT_DEBUG("    - 辅助量：zupt_max_velocity=%.3f (=min(OR,AND)，如 has_moved)；"
-                "zupt_max_disparity=%.4f (=min(OR,AND))；"
+    PRINT_DEBUG("    - 辅助量：zupt_max_velocity=%.3f (=min(赞同,否决)，如 has_moved)；"
+                "zupt_max_disparity=%.4f (=min(赞同,否决))；"
                 "zupt_noise_multiplier=%.3f\n",
                 zupt_max_velocity, zupt_max_disparity, zupt_noise_multiplier);
   }

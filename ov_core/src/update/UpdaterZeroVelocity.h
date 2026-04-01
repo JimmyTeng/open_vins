@@ -50,6 +50,10 @@ class Propagator;
  * 此外，即使特征可以被三角化（例如立体视觉），质量也可能很差并影响性能。
  * 如果我们能够检测到静止的情况，就可以利用这一点来避免在此期间进行特征更新。
  * 主要应用场景是在需要停止的**轮式车辆**上（例如红绿灯或停车）。
+ *
+ * 可观性（默认残差 a_hat − R*g ≈ 0）：静止时比力与重力在机体系中的方向一致，
+ * 加速度计对「机体相对垂线」的俯仰、横滚提供观测（与重力对齐的两自由度）；
+ * 绕重力轴的航向仅靠重力/该 ZUPT 模型不可观，需视觉或磁等外部信息。
  */
 class UpdaterZeroVelocity {
 
@@ -64,16 +68,16 @@ public:
    * @param zupt_max_velocity 进行更新时应考虑的最大速度
    * @param zupt_noise_multiplier IMU噪声矩阵的乘数（默认应为1.0）
    * @param zupt_max_disparity 进行更新时应考虑的最大视差（单逻辑模式；组合模式可忽略）
-   * @param or_* / and_* 静止门恒为 gate_or||gate_and；zupt_noise_multiplier 为测量噪声 R 共用倍率
+   * @param zupt_agree_* 赞同阈值；zupt_strict_* 否决阈值；静止门为 gate_agree||gate_strict；zupt_noise_multiplier 为 R 共用倍率
    */
   UpdaterZeroVelocity(
       UpdaterOptions &options, NoiseManager &noises,
       std::shared_ptr<ov_core::FeatureDatabase> db,
       std::shared_ptr<Propagator> prop, double gravity_mag,
-      double zupt_or_max_velocity, double zupt_noise_multiplier,
-      double zupt_or_max_disparity, double zupt_or_chi2_multipler,
-      double zupt_and_max_velocity, double zupt_and_max_disparity,
-      double zupt_and_chi2_multipler);
+      double zupt_agree_max_velocity, double zupt_noise_multiplier,
+      double zupt_agree_max_disparity, double zupt_agree_chi2_multipler,
+      double zupt_strict_max_velocity, double zupt_strict_max_disparity,
+      double zupt_strict_chi2_multipler);
 
   /**
    * @brief 惯性数据的输入函数
@@ -117,19 +121,20 @@ protected:
   /// 辅助：与 params 同步的保守阈（min 两路速度/视差），供内部一致性
   double _zupt_max_velocity = 1.0;
 
-  /// 辅助：OR 支路噪声
+  /// 辅助：测量噪声倍率（χ² 与 EKF 共用）
   double _zupt_noise_multiplier = 1.0;
 
   /// 辅助：min 两路视差阈
   double _zupt_max_disparity = 1.0;
 
-  double _or_max_velocity = 1.0;
-  double _or_noise_multiplier = 1.0;
-  double _or_max_disparity = 1.0;
-  double _or_chi2_multipler = 1.0;
-  double _and_max_velocity = 1.0;
-  double _and_max_disparity = 1.0;
-  double _and_chi2_multipler = 1.0;
+  /// 赞同阈值支路（YAML zupt_agree_*）
+  double _agree_max_velocity = 1.0;
+  double _agree_max_disparity = 1.0;
+  double _agree_chi2_multipler = 1.0;
+  /// 否决阈值支路（YAML zupt_strict_*）
+  double _strict_max_velocity = 1.0;
+  double _strict_max_disparity = 1.0;
+  double _strict_chi2_multipler = 1.0;
 
   /// IMU消息历史记录（时间、角速度、线加速度）
   std::vector<ov_core::ImuData> imu_data;
