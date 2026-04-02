@@ -112,6 +112,15 @@ public:
   }
 
   /**
+   * @brief Set camera->IMU time offset for timestamp conversion.
+   * @param dt_cam_to_imu t_imu = t_cam + dt_cam_to_imu
+   */
+  void set_cam_to_imu_time_offset(double dt_cam_to_imu) {
+    std::lock_guard<std::mutex> lck(imu_data_mtx);
+    cam_to_imu_dt = dt_cam_to_imu;
+  }
+
+  /**
    * @brief Get the last frame timestamp
    * @return Last frame timestamp
    */
@@ -137,6 +146,12 @@ private:
    */
   std::vector<ImuData> select_imu_readings(double timestamp_start, double timestamp_end);
 
+  /**
+   * @brief Clean old IMU measurements (caller must hold imu_data_mtx)
+   * @param oldest_time Keep measurements after this time
+   */
+  void clean_old_imu_measurements_unlocked(double oldest_time);
+
   // Rotation from IMU to Camera frame
   Eigen::Matrix3d R_ItoC;
 
@@ -152,6 +167,10 @@ private:
 
   // Maximum time to keep IMU data (seconds)
   double max_imu_buffer_time = 1.0;
+
+  // Camera to IMU time offset (seconds): t_imu = t_cam + dt
+  double cam_to_imu_dt = 0.0;
+
 };
 
 } // namespace ov_core

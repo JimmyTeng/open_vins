@@ -21,6 +21,7 @@
 
 #include "TrackKLT.h"
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 
@@ -34,8 +35,92 @@
 #include "feat/FeatureDatabase.h"
 #include "utils/opencv_lambda_body.h"
 #include "utils/print.h"
+#include "utils/quat_ops.h"
 
 using namespace ov_core;
+
+void TrackKLT::feed_imu(const ImuData &imu_data) {
+  if (!use_imu_klt_prior) {
+    return;
+  }
+  for (auto &pair : imu_predictors) {
+    if (pair.second != nullptr) {
+      pair.second->feed_imu(imu_data);
+    }
+  }
+}
+
+void TrackKLT::set_imu_klt_prior_options(bool enabled, double min_dt,
+                                         double max_dt, bool debug) {
+  use_imu_klt_prior = enabled;
+  imu_klt_prior_debug = debug;
+  imu_klt_prior_min_dt = std::max(0.0, min_dt);
+  imu_klt_prior_max_dt = std::max(imu_klt_prior_min_dt, max_dt);
+}
+
+void TrackKLT::set_camera_extrinsics(
+    const std::map<size_t, Eigen::VectorXd> &cam_extrinsics) {
+  cam_R_ItoC.clear();
+  imu_predictors.clear();
+  for (const auto &pair : cam_extrinsics) {
+    if (pair.second.size() < 7) {
+      continue;
+    }
+    Eigen::Vector4d q_ItoC = pair.second.block(0, 0, 4, 1);
+    Eigen::Matrix3d R_ItoC = quat_2_Rot(q_ItoC);
+    cam_R_ItoC[pair.first] = R_ItoC;
+    auto cam_it = camera_calib.find(pair.first);
+    if (cam_it != camera_calib.end() && cam_it->second != nullptr) {
+      imu_predictors[pair.first] =
+          std::make_shared<IMUOpticalFlowPredictor>(R_ItoC, cam_it->second);
+    }
+  }
+}
+
+void TrackKLT::set_cam_to_imu_time_offset(double dt_cam_to_imu) {
+  for (auto &pair : imu_predictors) {
+    if (pair.second != nullptr) {
+      pair.second->set_cam_to_imu_time_offset(dt_cam_to_imu);
+    }
+  }
+}
+
+bool TrackKLT::apply_imu_prior_for_klt(size_t cam_id, double timestamp_new,
+                                       const std::vector<cv::KeyPoint> &pts_old,
+                                       std::vector<cv::KeyPoint> &pts_new) {
+  if (!use_imu_klt_prior || pts_old.empty()) {
+    return false;
+  }
+  auto it = imu_predictors.find(cam_id);
+  if (it == imu_predictors.end() || it->second == nullptr) {
+    return false;
+  }
+  double timestamp_old = it->second->get_last_frame_timestamp();
+  if (timestamp_old <= 0.0) {
+    return false;
+  }
+  double dt = timestamp_new - timestamp_old;
+  if (dt < imu_klt_prior_min_dt || dt > imu_klt_prior_max_dt) {
+    return false;
+  }
+
+  std::vector<cv::Point2f> pts_old_cv, pts_predicted_cv;
+  pts_old_cv.reserve(pts_old.size());
+  for (const auto &kp : pts_old) {
+    pts_old_cv.push_back(kp.pt);
+  }
+
+  if (!it->second->predict_points(timestamp_new, pts_old_cv, pts_predicted_cv) ||
+      pts_predicted_cv.size() != pts_old_cv.size()) {
+    return false;
+  }
+
+  pts_new = pts_old;
+  for (size_t i = 0; i < pts_new.size(); i++) {
+    pts_new.at(i).pt = pts_predicted_cv.at(i);
+  }
+  return true;
+}
 
 void TrackKLT::feed_new_camera(const CameraData &message) {
   // Error check that we have all the data
@@ -135,6 +220,10 @@ void TrackKLT::feed_monocular(const CameraData &message, size_t msg_id) {
     img_mask_last[cam_id] = mask;
     pts_last[cam_id] = good_left;
     ids_last[cam_id] = good_ids_left;
+    auto pred_it = imu_predictors.find(cam_id);
+    if (pred_it != imu_predictors.end() && pred_it->second != nullptr) {
+      pred_it->second->set_last_frame_timestamp(message.timestamp);
+    }
     return;
   }
 
@@ -150,11 +239,18 @@ void TrackKLT::feed_monocular(const CameraData &message, size_t msg_id) {
 
   // Our return success masks, and predicted new features
   std::vector<uchar> mask_ll;
-  std::vector<cv::KeyPoint> pts_left_new = pts_left_old;
+  // IMU prior call site (monocular temporal tracking):
+  // use IMU prediction as LK initialization when available.
+  std::vector<cv::KeyPoint> pts_left_pred = pts_left_old;
+  bool has_left_pred =
+      apply_imu_prior_for_klt(cam_id, message.timestamp, pts_left_old,
+                              pts_left_pred);
+  std::vector<cv::KeyPoint> pts_left_new =
+      has_left_pred ? pts_left_pred : pts_left_old;
 
   // Lets track temporally
   perform_matching(img_pyramid_last[cam_id], imgpyr, pts_left_old, pts_left_new,
-                   cam_id, cam_id, mask_ll);
+                   cam_id, cam_id, mask_ll, &pts_left_pred);
   assert(pts_left_new.size() == ids_left_old.size());
   rT4 = rtime_now();
 
@@ -170,6 +266,10 @@ void TrackKLT::feed_monocular(const CameraData &message, size_t msg_id) {
     PRINT_ERROR(RED
                 "[KLT-EXTRACTOR]: Failed to get enough points to do RANSAC, "
                 "resetting.....\n" RESET);
+    auto pred_it = imu_predictors.find(cam_id);
+    if (pred_it != imu_predictors.end() && pred_it->second != nullptr) {
+      pred_it->second->set_last_frame_timestamp(message.timestamp);
+    }
     return;
   }
 
@@ -213,6 +313,10 @@ void TrackKLT::feed_monocular(const CameraData &message, size_t msg_id) {
     img_mask_last[cam_id] = mask;
     pts_last[cam_id] = good_left;
     ids_last[cam_id] = good_ids_left;
+  }
+  auto pred_it = imu_predictors.find(cam_id);
+  if (pred_it != imu_predictors.end() && pred_it->second != nullptr) {
+    pred_it->second->set_last_frame_timestamp(message.timestamp);
   }
   rT5 = rtime_now();
 
@@ -277,6 +381,14 @@ void TrackKLT::feed_stereo(const CameraData &message, size_t msg_id_left,
     pts_last[cam_id_right] = good_right;
     ids_last[cam_id_left] = good_ids_left;
     ids_last[cam_id_right] = good_ids_right;
+    auto pred_l = imu_predictors.find(cam_id_left);
+    if (pred_l != imu_predictors.end() && pred_l->second != nullptr) {
+      pred_l->second->set_last_frame_timestamp(message.timestamp);
+    }
+    auto pred_r = imu_predictors.find(cam_id_right);
+    if (pred_r != imu_predictors.end() && pred_r->second != nullptr) {
+      pred_r->second->set_last_frame_timestamp(message.timestamp);
+    }
     return;
   }
 
@@ -296,13 +408,29 @@ void TrackKLT::feed_stereo(const CameraData &message, size_t msg_id_left,
 
   // Our return success masks, and predicted new features
   std::vector<uchar> mask_ll, mask_rr;
-  std::vector<cv::KeyPoint> pts_left_new = pts_left_old;
-  std::vector<cv::KeyPoint> pts_right_new = pts_right_old;
+  // IMU prior call site (stereo temporal tracking, left camera):
+  // use IMU prediction as LK initialization when available.
+  std::vector<cv::KeyPoint> pts_left_pred = pts_left_old;
+  bool has_left_pred =
+      apply_imu_prior_for_klt(cam_id_left, message.timestamp, pts_left_old,
+                              pts_left_pred);
+  // IMU prior call site (stereo temporal tracking, right camera):
+  // use IMU prediction as LK initialization when available.
+  std::vector<cv::KeyPoint> pts_right_pred = pts_right_old;
+  bool has_right_pred =
+      apply_imu_prior_for_klt(cam_id_right, message.timestamp, pts_right_old,
+                              pts_right_pred);
+  std::vector<cv::KeyPoint> pts_left_new =
+      has_left_pred ? pts_left_pred : pts_left_old;
+  std::vector<cv::KeyPoint> pts_right_new =
+      has_right_pred ? pts_right_pred : pts_right_old;
 
   // Lets track temporally
   parallel_for_(cv::Range(0, 2), LambdaBody([&](const cv::Range &range) {
                   for (int i = range.start; i < range.end; i++) {
                     bool is_left = (i == 0);
+                    const std::vector<cv::KeyPoint> *pred_dbg =
+                        is_left ? &pts_left_pred : &pts_right_pred;
                     perform_matching(
                         img_pyramid_last[is_left ? cam_id_left : cam_id_right],
                         is_left ? imgpyr_left : imgpyr_right,
@@ -310,7 +438,7 @@ void TrackKLT::feed_stereo(const CameraData &message, size_t msg_id_left,
                         is_left ? pts_left_new : pts_right_new,
                         is_left ? cam_id_left : cam_id_right,
                         is_left ? cam_id_left : cam_id_right,
-                        is_left ? mask_ll : mask_rr);
+                        is_left ? mask_ll : mask_rr, pred_dbg);
                   }
                 }));
   rT4 = rtime_now();
@@ -346,6 +474,14 @@ void TrackKLT::feed_stereo(const CameraData &message, size_t msg_id_left,
     PRINT_ERROR(RED
                 "[KLT-EXTRACTOR]: Failed to get enough points to do RANSAC, "
                 "resetting.....\n" RESET);
+    auto pred_l = imu_predictors.find(cam_id_left);
+    if (pred_l != imu_predictors.end() && pred_l->second != nullptr) {
+      pred_l->second->set_last_frame_timestamp(message.timestamp);
+    }
+    auto pred_r = imu_predictors.find(cam_id_right);
+    if (pred_r != imu_predictors.end() && pred_r->second != nullptr) {
+      pred_r->second->set_last_frame_timestamp(message.timestamp);
+    }
     return;
   }
 
@@ -441,6 +577,14 @@ void TrackKLT::feed_stereo(const CameraData &message, size_t msg_id_left,
     pts_last[cam_id_right] = good_right;
     ids_last[cam_id_left] = good_ids_left;
     ids_last[cam_id_right] = good_ids_right;
+  }
+  auto pred_l = imu_predictors.find(cam_id_left);
+  if (pred_l != imu_predictors.end() && pred_l->second != nullptr) {
+    pred_l->second->set_last_frame_timestamp(message.timestamp);
+  }
+  auto pred_r = imu_predictors.find(cam_id_right);
+  if (pred_r != imu_predictors.end() && pred_r->second != nullptr) {
+    pred_r->second->set_last_frame_timestamp(message.timestamp);
   }
   rT6 = rtime_now();
 
@@ -976,11 +1120,11 @@ void TrackKLT::perform_detection_stereo(
   }
 }
 
-void TrackKLT::perform_matching(const std::vector<cv::Mat> &img0pyr,
-                                const std::vector<cv::Mat> &img1pyr,
-                                std::vector<cv::KeyPoint> &kpts0,
-                                std::vector<cv::KeyPoint> &kpts1, size_t id0,
-                                size_t id1, std::vector<uchar> &mask_out) {
+void TrackKLT::perform_matching(
+    const std::vector<cv::Mat> &img0pyr, const std::vector<cv::Mat> &img1pyr,
+    std::vector<cv::KeyPoint> &kpts0, std::vector<cv::KeyPoint> &kpts1,
+    size_t id0, size_t id1, std::vector<uchar> &mask_out,
+    const std::vector<cv::KeyPoint> *pts1_pred_for_debug) {
   // We must have equal vectors
   assert(kpts0.size() == kpts1.size());
 
@@ -992,6 +1136,16 @@ void TrackKLT::perform_matching(const std::vector<cv::Mat> &img0pyr,
   for (size_t i = 0; i < kpts0.size(); i++) {
     pts0.push_back(kpts0.at(i).pt);
     pts1.push_back(kpts1.at(i).pt);
+  }
+  std::vector<cv::Point2f> pts1_pred_debug;
+  bool has_pred_debug = false;
+  if (pts1_pred_for_debug != nullptr &&
+      pts1_pred_for_debug->size() == kpts0.size()) {
+    pts1_pred_debug.reserve(pts1_pred_for_debug->size());
+    for (const auto &kp : *pts1_pred_for_debug) {
+      pts1_pred_debug.push_back(kp.pt);
+    }
+    has_pred_debug = true;
   }
 
   // If we don't have enough points for ransac just return empty
@@ -1232,6 +1386,55 @@ void TrackKLT::perform_matching(const std::vector<cv::Mat> &img0pyr,
                             ? 1
                             : 0);
     mask_out.push_back(mask);
+  }
+
+  if (imu_klt_prior_debug && use_imu_klt_prior && has_pred_debug) {
+    std::vector<double> org_assoc_vals;
+    std::vector<double> pred_assoc_vals;
+    org_assoc_vals.reserve(mask_out.size());
+    pred_assoc_vals.reserve(mask_out.size());
+    double sum_org_assoc = 0.0;
+    double sum_pred_assoc = 0.0;
+    double max_org_assoc = 0.0;
+    double max_pred_assoc = 0.0;
+    for (size_t i = 0; i < mask_out.size(); i++) {
+      if (!mask_out[i]) {
+        continue;
+      }
+      const double org_assoc =
+          std::hypot(pts1[i].x - pts0[i].x, pts1[i].y - pts0[i].y);
+      const double pred_assoc = std::hypot(pts1[i].x - pts1_pred_debug[i].x,
+                                           pts1[i].y - pts1_pred_debug[i].y);
+      org_assoc_vals.push_back(org_assoc);
+      pred_assoc_vals.push_back(pred_assoc);
+      sum_org_assoc += org_assoc;
+      sum_pred_assoc += pred_assoc;
+      max_org_assoc = std::max(max_org_assoc, org_assoc);
+      max_pred_assoc = std::max(max_pred_assoc, pred_assoc);
+    }
+    const size_t n_valid = org_assoc_vals.size();
+    if (n_valid > 0) {
+      auto percentile = [](std::vector<double> vals, double p) {
+        if (vals.empty()) {
+          return 0.0;
+        }
+        std::sort(vals.begin(), vals.end());
+        const double idx_f = p * static_cast<double>(vals.size() - 1);
+        const size_t idx = static_cast<size_t>(std::round(idx_f));
+        return vals.at(std::min(idx, vals.size() - 1));
+      };
+      const double org_median = percentile(org_assoc_vals, 0.5);
+      const double pred_median = percentile(pred_assoc_vals, 0.5);
+      const double org_p90 = percentile(org_assoc_vals, 0.9);
+      const double pred_p90 = percentile(pred_assoc_vals, 0.9);
+      PRINT_INFO(
+          "[KLT-IMU] cam %zu->%zu residual(inliers): n=%zu "
+          "orig(avg=%.3f,med=%.3f,p90=%.3f,max=%.3f) "
+          "pred(avg=%.3f,med=%.3f,p90=%.3f,max=%.3f)\n",
+          id0, id1, n_valid, sum_org_assoc / n_valid, org_median, org_p90,
+          max_org_assoc, sum_pred_assoc / n_valid, pred_median, pred_p90,
+          max_pred_assoc);
+    }
   }
 
   // Copy back the updated positions

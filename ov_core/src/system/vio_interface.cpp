@@ -94,8 +94,24 @@ void VioInterface::OnImage(const vio_image_msg_t& image) {
     }
   }
   if (!to_show.empty()) {
+    static bool window_initialized = false;
+    if (!window_initialized) {
+      const std::string window_name = "VIO: prev raw | track";
+      cv::namedWindow(window_name, cv::WINDOW_NORMAL);
+      cv::resizeWindow(window_name, 1280, 480);
+      cv::moveWindow(window_name, 50, 50);
+      cv::setWindowProperty(window_name, cv::WND_PROP_TOPMOST, 1);
+      window_initialized = true;
+    }
     cv::imshow("VIO: prev raw | track", to_show);
-    cv::waitKey(0);
+    int waitkey_ms = 1;
+    if (vio_manager_options_) {
+      waitkey_ms = vio_manager_options_->debug_display_waitkey_ms;
+      if (waitkey_ms < 0) {
+        waitkey_ms = 1;
+      }
+    }
+    cv::waitKey(waitkey_ms);
   }
 #endif
 }

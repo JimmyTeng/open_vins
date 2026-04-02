@@ -85,6 +85,10 @@ grid_y: 5 # extraction sub-grid count for vertical direction (uniform tracking)
 min_px_dist: 10 # distance between features (features near each other provide less information)
 knn_ratio: 0.70 # descriptor knn threshold for the top two descriptor matches
 track_frequency: 21.0 # frequency we will perform feature tracking at (in frames per second / hertz)
+use_imu_klt_prior: true # use imu rotation prior to initialize KLT points
+imu_klt_prior_min_dt: 0.002 # minimum frame dt (s) to enable imu prior
+imu_klt_prior_max_dt: 0.08 # maximum frame dt (s) to enable imu prior
+imu_klt_prior_debug: true # print imu-klt prior debug logs
 downsample_cameras: false # will downsample image in half if true
 num_opencv_threads: 4 # -1: auto, 0-1: serial, >1: number of threads
 histogram_method: "HISTOGRAM" # NONE, HISTOGRAM, CLAHE

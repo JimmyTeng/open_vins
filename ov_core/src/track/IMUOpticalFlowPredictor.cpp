@@ -44,8 +44,11 @@ void IMUOpticalFlowPredictor::feed_imu(const ImuData &imu_data) {
 
   // Clean old measurements
   if (!this->imu_data.empty() && last_frame_timestamp > 0) {
-    double oldest_time = last_frame_timestamp - max_imu_buffer_time;
-    clean_old_imu_measurements(oldest_time);
+    // Keep enough history in IMU time domain:
+    // t_imu = t_cam + cam_to_imu_dt.
+    double oldest_time =
+        (last_frame_timestamp + cam_to_imu_dt) - max_imu_buffer_time;
+    clean_old_imu_measurements_unlocked(oldest_time);
   }
 
   // Debug: print buffer size occasionally
@@ -147,16 +150,24 @@ bool IMUOpticalFlowPredictor::predict_points_with_rotation(
 
 bool IMUOpticalFlowPredictor::get_rotation_between_frames(
     double timestamp_old, double timestamp_new, Eigen::Matrix3d &R_CtoC) {
+  double dt_cam_to_imu = 0.0;
+  {
+    std::lock_guard<std::mutex> lck(imu_data_mtx);
+    dt_cam_to_imu = cam_to_imu_dt;
+  }
+  const double timestamp_old_imu = timestamp_old + dt_cam_to_imu;
+  const double timestamp_new_imu = timestamp_new + dt_cam_to_imu;
+
   // Get IMU readings between frames
   std::vector<ImuData> imu_readings =
-      select_imu_readings(timestamp_old, timestamp_new);
+      select_imu_readings(timestamp_old_imu, timestamp_new_imu);
 
   if (imu_readings.size() < 2) {
     // Not enough IMU data
     PRINT_DEBUG(
         "[IMU-PREDICTOR] Not enough IMU readings: %zu (need >=2), time range "
         "[%.6f, %.6f]\n",
-        imu_readings.size(), timestamp_old, timestamp_new);
+        imu_readings.size(), timestamp_old_imu, timestamp_new_imu);
     return false;
   }
 
@@ -182,8 +193,10 @@ bool IMUOpticalFlowPredictor::get_rotation_between_frames(
   R_CtoC =
       R_ItoC * R_ItoI * R_CtoI;  // R_Cold_to_Cnew = R_ItoC * R_ItoI * R_ItoC^T
 
-  PRINT_DEBUG("[IMU-PREDICTOR] Got rotation: %zu IMU readings, dt=%.6f\n",
-              imu_readings.size(), timestamp_new - timestamp_old);
+  PRINT_DEBUG(
+      "[IMU-PREDICTOR] Got rotation: %zu IMU readings, dt=%.6f (cam dt=%.6f)\n",
+      imu_readings.size(), timestamp_new_imu - timestamp_old_imu,
+      timestamp_new - timestamp_old);
   return true;
 }
 
@@ -210,10 +223,11 @@ bool IMUOpticalFlowPredictor::integrate_angular_velocity(
     // Average angular velocity
     Eigen::Vector3d w_avg = 0.5 * (data_minus.wm + data_plus.wm);
 
-    // Compute rotation increment using exponential map
-    // R = exp(w * dt) where w is angular velocity
+    // Compute rotation increment using exponential map.
+    // Keep sign consistent with Propagator (JPL convention):
+    // relative old->new body rotation is exp(-w*dt).
     Eigen::Vector3d w_dt = w_avg * dt;
-    Eigen::Matrix3d dR = exp_so3(w_dt);
+    Eigen::Matrix3d dR = exp_so3(-w_dt);
 
     // Update rotation
     R_ItoI = dR * R_ItoI;
@@ -227,40 +241,89 @@ std::vector<ImuData> IMUOpticalFlowPredictor::select_imu_readings(
   std::lock_guard<std::mutex> lck(imu_data_mtx);
 
   std::vector<ImuData> selected;
-  for (const auto &data : imu_data) {
-    if (data.timestamp >= timestamp_start && data.timestamp <= timestamp_end) {
-      selected.push_back(data);
+  if (imu_data.size() < 2 || timestamp_end <= timestamp_start) {
+    return selected;
+  }
+
+  auto interpolate_imu = [](const ImuData &d0, const ImuData &d1,
+                            double ts) -> ImuData {
+    const double dt = d1.timestamp - d0.timestamp;
+    if (dt <= 1e-12) {
+      ImuData out = d0;
+      out.timestamp = ts;
+      return out;
+    }
+    const double alpha = (ts - d0.timestamp) / dt;
+    ImuData out;
+    out.timestamp = ts;
+    out.wm = (1.0 - alpha) * d0.wm + alpha * d1.wm;
+    out.am = (1.0 - alpha) * d0.am + alpha * d1.am;
+    return out;
+  };
+
+  // Build exactly-clipped measurements in [timestamp_start, timestamp_end].
+  for (size_t i = 0; i + 1 < imu_data.size(); i++) {
+    const ImuData &d0 = imu_data.at(i);
+    const ImuData &d1 = imu_data.at(i + 1);
+    if (d1.timestamp <= d0.timestamp) {
+      continue;
+    }
+
+    const bool crosses_start =
+        (d0.timestamp <= timestamp_start && d1.timestamp > timestamp_start);
+    if (crosses_start && selected.empty()) {
+      selected.push_back(interpolate_imu(d0, d1, timestamp_start));
+    }
+
+    if (d0.timestamp >= timestamp_start && d0.timestamp <= timestamp_end) {
+      selected.push_back(d0);
+    }
+
+    const bool crosses_end =
+        (d0.timestamp < timestamp_end && d1.timestamp >= timestamp_end);
+    if (crosses_end) {
+      // Ensure end timestamp appears exactly once, then stop.
+      if (selected.empty() ||
+          std::abs(selected.back().timestamp - timestamp_end) > 1e-12) {
+        selected.push_back(interpolate_imu(d0, d1, timestamp_end));
+      }
+      break;
     }
   }
 
-  // Also include one measurement before and after if available
-  if (!imu_data.empty()) {
-    // Find measurement just before start
-    for (auto it = imu_data.rbegin(); it != imu_data.rend(); ++it) {
-      if (it->timestamp < timestamp_start) {
-        selected.insert(selected.begin(), *it);
-        break;
-      }
-    }
-
-    // Find measurement just after end
-    for (const auto &data : imu_data) {
-      if (data.timestamp > timestamp_end) {
-        selected.push_back(data);
-        break;
-      }
+  // Remove duplicate timestamps if any.
+  std::vector<ImuData> dedup;
+  dedup.reserve(selected.size());
+  for (const auto &d : selected) {
+    if (!dedup.empty() &&
+        std::abs(dedup.back().timestamp - d.timestamp) <= 1e-12) {
+      dedup.back() = d;
+    } else {
+      dedup.push_back(d);
     }
   }
 
-  // Sort by timestamp
-  std::sort(selected.begin(), selected.end());
-
-  return selected;
+  // Require exact clipped boundaries to avoid partial integration when
+  // requested interval is not fully covered by IMU data.
+  if (dedup.size() < 2) {
+    return {};
+  }
+  if (std::abs(dedup.front().timestamp - timestamp_start) > 1e-6) {
+    return {};
+  }
+  if (std::abs(dedup.back().timestamp - timestamp_end) > 1e-6) {
+    return {};
+  }
+  return dedup;
 }
 
 void IMUOpticalFlowPredictor::clean_old_imu_measurements(double oldest_time) {
   std::lock_guard<std::mutex> lck(imu_data_mtx);
+  clean_old_imu_measurements_unlocked(oldest_time);
+}
 
+void IMUOpticalFlowPredictor::clean_old_imu_measurements_unlocked(
+    double oldest_time) {
   // Remove measurements older than oldest_time
   while (!imu_data.empty() && imu_data.front().timestamp < oldest_time) {
     imu_data.pop_front();

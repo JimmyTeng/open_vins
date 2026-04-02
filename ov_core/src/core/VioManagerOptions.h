@@ -660,6 +660,21 @@ struct VioManagerOptions {
   /// Frequency we want to track images at (higher freq ones will be dropped)
   double track_frequency = 20.0;
 
+  /// 调试显示窗口 waitKey 等待时长（毫秒，0=不等待/仅处理事件）
+  int debug_display_waitkey_ms = 1;
+
+  /// 是否启用 IMU 先验来初始化 KLT 光流（仅前端初值，不改变后端模型）
+  bool use_imu_klt_prior = false;
+
+  /// 使用 IMU 先验的最小帧间隔（秒）
+  double imu_klt_prior_min_dt = 0.002;
+
+  /// 使用 IMU 先验的最大帧间隔（秒）
+  double imu_klt_prior_max_dt = 0.08;
+
+  /// 打印 IMU-KLT 先验调试信息
+  bool imu_klt_prior_debug = false;
+
   /// 特征初始化/三角化器使用的参数
   /// Parameters used by our feature initialize / triangulator
   ov_core::FeatureInitializerOptions featinit_options;
@@ -707,6 +722,12 @@ struct VioManagerOptions {
       }
       parser->parse_config("knn_ratio", knn_ratio);
       parser->parse_config("track_frequency", track_frequency);
+      parser->parse_config("debug_display_waitkey_ms", debug_display_waitkey_ms,
+                           false);
+      parser->parse_config("use_imu_klt_prior", use_imu_klt_prior, false);
+      parser->parse_config("imu_klt_prior_min_dt", imu_klt_prior_min_dt, false);
+      parser->parse_config("imu_klt_prior_max_dt", imu_klt_prior_max_dt, false);
+      parser->parse_config("imu_klt_prior_debug", imu_klt_prior_debug, false);
     }
     PRINT_DEBUG("特征跟踪参数:\n");
     PRINT_DEBUG("  - 使用双目: %d\n", use_stereo);
@@ -724,6 +745,12 @@ struct VioManagerOptions {
     PRINT_DEBUG("  - 直方图方法: %d\n", (int)histogram_method);
     PRINT_DEBUG("  - KNN比率: %.3f\n", knn_ratio);
     PRINT_DEBUG("  - 跟踪频率: %.1f\n", track_frequency);
+    PRINT_DEBUG("  - 调试显示 waitKey 时长(ms): %d\n",
+                debug_display_waitkey_ms);
+    PRINT_DEBUG("  - 启用IMU-KLT先验: %d\n", (int)use_imu_klt_prior);
+    PRINT_DEBUG("  - IMU-KLT先验帧间隔范围: [%.4f, %.4f] s\n",
+                imu_klt_prior_min_dt, imu_klt_prior_max_dt);
+    PRINT_DEBUG("  - IMU-KLT先验调试打印: %d\n", (int)imu_klt_prior_debug);
     featinit_options.print(parser);
   }
 

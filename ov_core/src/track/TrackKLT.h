@@ -22,7 +22,11 @@
 #ifndef OV_CORE_TRACK_KLT_H
 #define OV_CORE_TRACK_KLT_H
 
+#include <Eigen/Eigen>
+#include <map>
+
 #include "TrackBase.h"
+#include "IMUOpticalFlowPredictor.h"
 
 namespace ov_core {
 
@@ -61,6 +65,13 @@ public:
    * @param message Contains our timestamp, images, and camera ids
    */
   void feed_new_camera(const CameraData &message) override;
+
+  void feed_imu(const ImuData &imu_data);
+  void set_imu_klt_prior_options(bool enabled, double min_dt, double max_dt,
+                                 bool debug);
+  void set_camera_extrinsics(
+      const std::map<size_t, Eigen::VectorXd> &cam_extrinsics);
+  void set_cam_to_imu_time_offset(double dt_cam_to_imu);
 
 protected:
   /**
@@ -128,8 +139,16 @@ protected:
    * The two point vectors will be of equal size, but the mask_out variable will specify which points are good or bad.
    * If the second vector is non-empty, it will be used as an initial guess of where the keypoints are in the second image.
    */
-  void perform_matching(const std::vector<cv::Mat> &img0pyr, const std::vector<cv::Mat> &img1pyr, std::vector<cv::KeyPoint> &pts0,
-                        std::vector<cv::KeyPoint> &pts1, size_t id0, size_t id1, std::vector<uchar> &mask_out);
+  void perform_matching(const std::vector<cv::Mat> &img0pyr,
+                        const std::vector<cv::Mat> &img1pyr,
+                        std::vector<cv::KeyPoint> &pts0,
+                        std::vector<cv::KeyPoint> &pts1, size_t id0, size_t id1,
+                        std::vector<uchar> &mask_out,
+                        const std::vector<cv::KeyPoint> *pts1_pred_for_debug =
+                            nullptr);
+  bool apply_imu_prior_for_klt(size_t cam_id, double timestamp_new,
+                               const std::vector<cv::KeyPoint> &pts_old,
+                               std::vector<cv::KeyPoint> &pts_new);
 
   // Parameters for our FAST grid detector
   int threshold;
@@ -147,6 +166,14 @@ protected:
   std::map<size_t, std::vector<cv::Mat>> img_pyramid_last;
   std::map<size_t, cv::Mat> img_curr;
   std::map<size_t, std::vector<cv::Mat>> img_pyramid_curr;
+
+  // IMU prior options (default disabled)
+  bool use_imu_klt_prior = false;
+  bool imu_klt_prior_debug = false;
+  double imu_klt_prior_min_dt = 0.002;
+  double imu_klt_prior_max_dt = 0.08;
+  std::map<size_t, Eigen::Matrix3d> cam_R_ItoC;
+  std::map<size_t, std::shared_ptr<IMUOpticalFlowPredictor>> imu_predictors;
 };
 
 } // namespace ov_core

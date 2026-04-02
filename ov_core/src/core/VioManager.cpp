@@ -237,6 +237,15 @@ VioManager::VioManager(VioManagerOptions &params_)
                      state->_options.max_aruco_features, params.use_stereo,
                      params.histogram_method, params.fast_threshold,
                      params.grid_x, params.grid_y, params.min_px_dist));
+    auto track_klt = std::dynamic_pointer_cast<TrackKLT>(trackFEATS);
+    if (track_klt != nullptr) {
+      track_klt->set_camera_extrinsics(params.camera_extrinsics);
+      track_klt->set_imu_klt_prior_options(
+          params.use_imu_klt_prior, params.imu_klt_prior_min_dt,
+          params.imu_klt_prior_max_dt, params.imu_klt_prior_debug);
+      track_klt->set_cam_to_imu_time_offset(
+          state->_calib_dt_CAMtoIMU->value()(0));
+    }
   } else {
     // 使用描述符跟踪器
     trackFEATS = std::shared_ptr<TrackBase>(new TrackDescriptor(
@@ -412,6 +421,12 @@ void VioManager::feed_measurement_imu(const ov_core::ImuData &message) {
   }
   // 将IMU数据传递给传播器
   propagator->feed_imu(message, oldest_time);
+  auto track_klt = std::dynamic_pointer_cast<TrackKLT>(trackFEATS);
+  if (track_klt != nullptr) {
+    ImuData imu_for_track = message;
+    imu_for_track.wm = message.wm - state->_imu->bias_g();
+    track_klt->feed_imu(imu_for_track);
+  }
 
   // 如果未初始化，将IMU数据传递给初始化器
   // Push back to our initializer
@@ -626,6 +641,10 @@ void VioManager::track_image_and_update(
 
   std::vector<std::pair<size_t, Eigen::Vector2f>> tracked_feature_uvs_before =
       collect_tracked_feature_uvs(trackFEATS->get_feature_database());
+  auto track_klt = std::dynamic_pointer_cast<TrackKLT>(trackFEATS);
+  if (track_klt != nullptr) {
+    track_klt->set_cam_to_imu_time_offset(state->_calib_dt_CAMtoIMU->value()(0));
+  }
   trackFEATS->feed_new_camera(message);
   num_features_after_tracking = trackFEATS->get_feature_database()->size();
 

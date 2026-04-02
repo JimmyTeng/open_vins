@@ -109,6 +109,11 @@ grid_y: 6 # 特征网格行数
 min_px_dist: 15 # 特征间最小像素距（过小则冗余）
 knn_ratio: 0.5 # 描述子匹配 KNN 比值（仅非 KLT 时）
 track_frequency: 15.0 # 期望跟踪帧率（Hz）；更高频率的帧会被丢弃
+debug_display_waitkey_ms: 0 # 调试窗口 waitKey 时长（毫秒）；0=不等待，仅处理GUI事件
+use_imu_klt_prior: true # 启用 IMU 先验评估（当前仅计算预测vs原始残差，不替换跟踪初值）
+imu_klt_prior_min_dt: 0.002 # 使用 IMU 先验的最小帧间隔（秒）
+imu_klt_prior_max_dt: 0.08 # 使用 IMU 先验的最大帧间隔（秒）
+imu_klt_prior_debug: true # 打印 IMU 预测与原始值残差日志
 
 downsample_cameras: false # true：图像长宽各减半（内参在加载逻辑中已配合缩放）
 num_opencv_threads: 1 # OpenCV 线程：-1 默认，0–1 串行，>1 多线程

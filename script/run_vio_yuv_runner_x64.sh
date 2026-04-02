@@ -44,6 +44,15 @@ else
   export LD_LIBRARY_PATH="${BUILD_DIR}/ov_core:${BUILD_DIR}/ov_yuv_parser:${LD_LIBRARY_PATH}"
 fi
 
+# 打印将要执行的完整命令（可直接复制复现）
+run_and_exec() {
+  echo "实际运行命令:"
+  printf '  '
+  printf '%q ' "$@"
+  echo
+  exec "$@"
+}
+
 # 解析 init 根目录（优先工作区上一级，与脚本注释一致）
 resolve_init_base() {
   INIT_BASE=""
@@ -142,31 +151,31 @@ set -- "${FILTERED[@]}"
 
 if [ $# -eq 0 ]; then
   D="$(pick_dataset_interactive)"
-  exec "$BIN" "$D" "$DEFAULT_CONFIG"
+  run_and_exec "$BIN" "$D" "$DEFAULT_CONFIG"
 fi
 
 # 首参数是选项（如仅 --no-display）→ 先选目录再带上选项
 if [[ "$1" == -* ]] && [ ! -d "$1" ]; then
   D="$(pick_dataset_interactive)"
-  exec "$BIN" "$D" "$DEFAULT_CONFIG" "$@"
+  run_and_exec "$BIN" "$D" "$DEFAULT_CONFIG" "$@"
 fi
 
 # 纯数字且当前目录下不存在同名目录 → 按序号选（若存在名为数字的文件夹则仍按路径处理）
 if [[ "$1" =~ ^[0-9]+$ ]]; then
   if [ -d "$1" ]; then
-    exec "$BIN" "$@"
+    run_and_exec "$BIN" "$@"
   fi
   D="$(pick_dataset_by_index "$1")"
   echo "已选数据集: $D" >&2
   shift
   if [ $# -eq 0 ]; then
-    exec "$BIN" "$D" "$DEFAULT_CONFIG"
+    run_and_exec "$BIN" "$D" "$DEFAULT_CONFIG"
   fi
   # 第一个剩余参数是 yaml 则认为是指定配置；否则插入默认配置（供 --no-display 等选项）
   if [[ "$1" == *.yaml ]] || [[ "$1" == *.yml ]]; then
-    exec "$BIN" "$D" "$@"
+    run_and_exec "$BIN" "$D" "$@"
   fi
-  exec "$BIN" "$D" "$DEFAULT_CONFIG" "$@"
+  run_and_exec "$BIN" "$D" "$DEFAULT_CONFIG" "$@"
 fi
 
 # 显式数据目录：须存在
@@ -182,4 +191,4 @@ case "$1" in
   ;;
 esac
 
-exec "$BIN" "$@"
+run_and_exec "$BIN" "$@"
