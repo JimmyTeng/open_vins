@@ -373,9 +373,8 @@ bool InertialInitializer::initialize(
       return false;
     }
 
-    double gravity_mag_est = params.gravity_mag;
-    const bool static_success = init_static->initialize(
-        timestamp, covariance, order, t_imu, false, &gravity_mag_est);
+    const bool static_success =
+        init_static->initialize(timestamp, covariance, order, t_imu, false);
     if (!static_success) {
       PRINT_INFO(
           YELLOW
@@ -410,10 +409,9 @@ bool InertialInitializer::initialize(
     motion_still_state = MotionStillState::MOVING;
     params.init_dyn_bias_g = t_imu->bias_g();
     params.init_dyn_bias_a = t_imu->bias_a();
-    params.gravity_mag = gravity_mag_est;
     PRINT_INFO(CYAN
                "[InertialInitializer]: 离开静止触发静态阶段成功，更新动态初值 "
-               "bg=(%.6f, %.6f, %.6f), ba=(%.6f, %.6f, %.6f), |g|=%.6f\n" RESET,
+               "bg=(%.6f, %.6f, %.6f), ba=(%.6f, %.6f, %.6f), 固定|g|=%.6f\n" RESET,
                params.init_dyn_bias_g(0), params.init_dyn_bias_g(1),
                params.init_dyn_bias_g(2), params.init_dyn_bias_a(0),
                params.init_dyn_bias_a(1), params.init_dyn_bias_a(2),

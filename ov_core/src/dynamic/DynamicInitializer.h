@@ -94,7 +94,7 @@ public:
     params.init_dyn_bias_a = bias_a;
   }
 
-  /// 更新动态初始化内部使用的重力模长（由静态阶段估计）
+  /// 更新动态初始化内部使用的重力模长（通常来自配置常量）
   void set_gravity_magnitude(double gravity_mag) {
     params.gravity_mag = gravity_mag;
   }

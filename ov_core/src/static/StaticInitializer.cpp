@@ -23,7 +23,6 @@
 
 #include <cmath>
 
-#include "feat/FeatureHelper.h"
 #include "types/IMU.h"
 #include "utils/colors.h"
 #include "utils/helper.h"
@@ -41,8 +40,7 @@ bool StaticInitializer::initialize(double &timestamp,
                                    Eigen::MatrixXd &covariance,
                                    std::vector<std::shared_ptr<Type>> &order,
                                    std::shared_ptr<IMU> t_imu,
-                                   bool wait_for_jerk,
-                                   double *gravity_mag_est) {
+                                   bool wait_for_jerk) {
   const double static_window_time = params.init_static_window_time;
   PRINT_INFO(CYAN "========================================\n" RESET);
   PRINT_INFO(CYAN "[静态初始化] 静态初始化开始\n" RESET);
@@ -99,17 +97,14 @@ bool StaticInitializer::initialize(double &timestamp,
   InitializerHelper::gram_schmidt(z_axis, Ro);
   Eigen::Vector4d q_GtoI = rot_2_quat(Ro);
 
-  // 在静态窗口内估计常数重力模长 |g|（默认使用 |a_avg|，异常值回退配置值）。
-  double gravity_mag_used = a_avg.norm();
-  if (!std::isfinite(gravity_mag_used) || gravity_mag_used < 7.0 ||
-      gravity_mag_used > 12.0) {
+  // 静态初始化阶段将重力模长视为常数，不在此阶段估计。
+  double gravity_mag_used = params.gravity_mag;
+  if (!std::isfinite(gravity_mag_used) || gravity_mag_used <= 0.0) {
     PRINT_WARNING(YELLOW
-                  "[静态初始化] |g| 估计异常(%.6f), 回退到配置值 %.6f\n" RESET,
-                  gravity_mag_used, params.gravity_mag);
-    gravity_mag_used = params.gravity_mag;
-  }
-  if (gravity_mag_est != nullptr) {
-    *gravity_mag_est = gravity_mag_used;
+                  "[静态初始化] 配置重力模长无效(%.6f), 回退到默认值 9.810000\n"
+                  RESET,
+                  gravity_mag_used);
+    gravity_mag_used = 9.81;
   }
 
   // 将我们的偏置设置为等于我们的噪声（从加速度计偏置中减去我们的重力）
@@ -155,8 +150,12 @@ bool StaticInitializer::initialize(double &timestamp,
 
   PRINT_INFO(CYAN "========================================\n" RESET);
   PRINT_INFO(CYAN "  [静态初始化] 静态初始化成功\n" RESET);
-  PRINT_INFO(CYAN "  [静态初始化] 估计重力模长 |g| = %.6f m/s^2\n" RESET,
+  PRINT_INFO(CYAN "  [静态初始化] 使用固定重力模长 |g| = %.6f m/s^2\n" RESET,
              gravity_mag_used);
+  PRINT_INFO(CYAN
+             "  [静态初始化] 估计 bias 初值 bg=(%.6f, %.6f, %.6f), "
+             "ba=(%.6f, %.6f, %.6f)\n" RESET,
+             bg(0), bg(1), bg(2), ba(0), ba(1), ba(2));
   PRINT_INFO(CYAN "========================================\n" RESET);
 
   // 返回 :D
