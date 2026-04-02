@@ -140,7 +140,7 @@ protected:
   int min_px_dist;
 
   // How many pyramid levels to track
-  int pyr_levels = 4;
+  int pyr_levels = 5;
   cv::Size win_size = cv::Size(11, 11);
 
   // Last set of image pyramids

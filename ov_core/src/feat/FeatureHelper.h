@@ -29,6 +29,7 @@
 
 #include "Feature.h"
 #include "FeatureDatabase.h"
+#include "utils/colors.h"
 #include "utils/print.h"
 
 namespace ov_core {
@@ -125,12 +126,17 @@ public:
 
     // Compute the disparity
     std::vector<double> disparities;
+    int tracks_total = 0;
+    int tracks_with_history = 0;
+    int tracks_time_window_matched = 0;
     for (auto &feat : db->get_internal_data()) {
       for (auto &campairs : feat.second->timestamps) {
+        tracks_total++;
 
         // Skip if only one observation
         if (campairs.second.size() < 2)
           continue;
+        tracks_with_history++;
 
         // Now lets calculate the disparity (assumes time array is monotonic)
         size_t camid = campairs.first;
@@ -155,15 +161,27 @@ public:
         // If we found both an old and a new time, then we are good!
         if (!found0 || !found1)
           continue;
+        tracks_time_window_matched++;
         disparities.push_back((uv1 - uv0).norm());
       }
     }
+    PRINT_INFO(CYAN
+               "[FeatureHelper::compute_disparity] 过程: total_tracks=%d, with_history=%d, "
+               "window_matched=%d, disparities=%zu, newest=%.6f, oldest=%.6f\n" RESET,
+               tracks_total, tracks_with_history, tracks_time_window_matched,
+               disparities.size(), newest_time, oldest_time);
 
     // If no disparities, just return
     if (disparities.size() < 2) {
       disp_mean = -1;
       disp_var = -1;
       total_feats = 0;
+      PRINT_INFO(
+          YELLOW
+          "[FeatureHelper::compute_disparity] 结果: 样本不足（%zu<2）, mean=%.3f, var=%.3f, total=%d\n"
+          RESET,
+          disparities.size(), disp_mean, disp_var, total_feats);
+      return;
     }
 
     // Compute mean and standard deviation in respect to it
@@ -178,6 +196,10 @@ public:
     }
     disp_var = std::sqrt(disp_var / (double)(disparities.size() - 1));
     total_feats = (int)disparities.size();
+    PRINT_INFO(CYAN
+               "[FeatureHelper::compute_disparity] 结果: mean=%.6f px, std=%.6f px, total=%d\n"
+               RESET,
+               disp_mean, disp_var, total_feats);
   }
 
 private:

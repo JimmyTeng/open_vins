@@ -404,7 +404,10 @@ void VioManager::feed_measurement_imu(const ov_core::ImuData &message) {
   }
   // 如果未初始化，使用初始化窗口时间
   if (!is_initialized_vio) {
-    oldest_time = message.timestamp - params.init_options.init_window_time +
+    const double init_keep_time =
+        std::max(params.init_options.init_dyn_window_time,
+                 params.init_options.init_static_window_time);
+    oldest_time = message.timestamp - init_keep_time +
                   state->_calib_dt_CAMtoIMU->value()(0) - 0.10;
   }
   // 将IMU数据传递给传播器

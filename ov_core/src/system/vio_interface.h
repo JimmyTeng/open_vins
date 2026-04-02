@@ -64,6 +64,7 @@ private:
     std::shared_ptr<ov_msckf::Simulator> sim_;
     std::deque<ov_core::CameraData> camera_queue_;
     double last_imu_time_{0.0};
+    double last_accepted_cam_time_{-1.0};
     vio_debug_info_t debug_info_{};
     std::vector<double> debug_msckf_;
     std::vector<double> debug_slam_;

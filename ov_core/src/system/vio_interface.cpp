@@ -66,6 +66,18 @@ void VioInterface::OnImage(const vio_image_msg_t& image) {
   auto camera_data = ov_core::ToCameraData(image);
   {
     std::lock_guard<std::mutex> lck(camera_queue_mtx_);
+    // 按 track_frequency 限频，并设置容差避免边界抖动导致误丢帧。
+    if (vio_manager_options_ &&
+        vio_manager_options_->track_frequency > 0.0 &&
+        last_accepted_cam_time_ >= 0.0) {
+      const double min_dt = 1.0 / vio_manager_options_->track_frequency;
+      const double tol = std::max(0.001, 0.05 * min_dt);  // max(1ms, 5%)
+      const double dt = camera_data.timestamp - last_accepted_cam_time_;
+      if (dt <= 0.0 || dt < (min_dt - tol)) {
+        return;
+      }
+    }
+    last_accepted_cam_time_ = camera_data.timestamp;
     camera_queue_.push_back(std::move(camera_data));
     if (camera_queue_.size() > kMaxCameraQueueSize) {
       camera_queue_.pop_front();
@@ -100,6 +112,11 @@ int VioInterface::reset() {
   camera_queue_cond_.notify_all();
   if (run_thread_.joinable()) {
     run_thread_.join();
+  }
+  {
+    std::lock_guard<std::mutex> lck(camera_queue_mtx_);
+    camera_queue_.clear();
+    last_accepted_cam_time_ = -1.0;
   }
   return init();
 }

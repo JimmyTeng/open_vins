@@ -78,10 +78,12 @@ public:
    * @param[out] order 协方差矩阵的顺序
    * @param[out] t_imu 我们的IMU类型元素
    * @param wait_for_jerk 如果为true，我们将等待"急动"
+   * @param[out] gravity_mag_est 可选：返回静态窗口估计得到的重力模长 |g|（m/s^2）
    * @return 如果我们成功初始化了系统则返回true
    */
   bool initialize(double &timestamp, Eigen::MatrixXd &covariance, std::vector<std::shared_ptr<ov_type::Type>> &order,
-                  std::shared_ptr<ov_type::IMU> t_imu, bool wait_for_jerk = true);
+                  std::shared_ptr<ov_type::IMU> t_imu, bool wait_for_jerk = true,
+                  double *gravity_mag_est = nullptr);
 
 private:
   bool print_debug = false;

@@ -61,7 +61,8 @@ bool DynamicInitializer::initialize(
       }
     }
   }
-  double oldest_time = newest_cam_time - params.init_window_time;
+  const double dynamic_window_time = params.init_dyn_window_time;
+  double oldest_time = newest_cam_time - dynamic_window_time;
   if (newest_cam_time < 0 || oldest_time < 0) {
     PRINT_INFO(YELLOW
                "[DynamicInitializer] 动态初始化失败: 无效的时间戳\n" RESET);
@@ -79,10 +80,12 @@ bool DynamicInitializer::initialize(
     it_imu = imu_data->erase(it_imu);
   }
   if (_db->get_internal_data().size() < 0.75 * params.init_max_features) {
-    // PRINT_INFO(YELLOW "[DynamicInitializer] 动态初始化失败:
-    // 特征数据库检查失败 - 有 %zu 个特征点, 需要 %.0f\n" RESET,
-    //            _db->get_internal_data().size(), 0.75 *
-    //            params.init_max_features);
+    PRINT_INFO(
+        YELLOW
+        "[DynamicInitializer] 动态初始化失败: 特征数据库检查失败 - 有 %zu 个特征点, 需要 %.0f\n"
+        RESET,
+               _db->get_internal_data().size(), 0.75 *
+               params.init_max_features);
     return false;
   }
   // IMU 数据检查：需同时满足两点
@@ -92,13 +95,15 @@ bool DynamicInitializer::initialize(
   // (oldest_time + calib_camimu_dt) 的 IMU
   // 数据并被擦除，说明缓冲曾覆盖到窗口起点，才能从窗口起点做前向传播
   if (imu_data->size() < 2 || !have_old_imu_readings) {
-    // PRINT_INFO(YELLOW "[DynamicInitializer] 动态初始化失败: IMU数据检查失败 -
-    // "
-    //            "窗口内剩余样本数=%zu (需>=2), 是否曾有过窗口前旧数据=%d
-    //            (需=1)。" "若剩余<2 请检查 IMU 频率或
-    //            init_window_time；若旧数据=0 请确认 IMU
-    //            在窗口开始前已启动。\n" RESET, imu_data->size(),
-    //            have_old_imu_readings);
+    if (print_debug) {
+      PRINT_INFO(
+          YELLOW
+          "[DynamicInitializer] 动态初始化失败: IMU数据检查失败 - "
+          "窗口内剩余样本数=%zu (需>=2), 是否曾有过窗口前旧数据=%d (需=1)。"
+          "若剩余<2 请检查 IMU 频率或 init_dyn_window_time；"
+          "若旧数据=0 请确认 IMU 在窗口开始前已启动。\n" RESET,
+          imu_data->size(), have_old_imu_readings);
+    }
     return false;
   }
   if (print_debug) {
@@ -126,7 +131,7 @@ bool DynamicInitializer::initialize(
 
   // 设置参数
   const int min_num_meas_to_optimize =
-      (int)params.init_window_time;  // 优化所需的最小测量数量
+      (int)dynamic_window_time;  // 优化所需的最小测量数量
   const int min_valid_features = params.init_dyn_min_valid_features;
 
   // 可用于优化的特征点验证信息
@@ -139,7 +144,7 @@ bool DynamicInitializer::initialize(
   map_camera_times[newest_cam_time] = true;  // always insert final pose
   std::map<size_t, bool> map_camera_ids;
   double pose_dt_avg =
-      params.init_window_time / (double)(params.init_dyn_num_pose + 1);
+      dynamic_window_time / (double)(params.init_dyn_num_pose + 1);
   for (auto const &feat : features) {
     // 遍历每个时间戳并确保它是有效的位姿
     std::vector<double> times;
@@ -214,19 +219,12 @@ bool DynamicInitializer::initialize(
     if (print_debug) {
       PRINT_INFO(YELLOW
                  "[DynamicInitializer] pose_dt_avg 阈值: %.6f sec, "
-                 "init_window_time: %.2f sec\n" RESET,
-                 pose_dt_avg, params.init_window_time);
+                 "init_dyn_window_time: %.2f sec\n" RESET,
+                 pose_dt_avg, dynamic_window_time);
     }
     return false;
   }
   if (count_valid_features < min_valid_features) {
-    // 打印特征点统计信息
-    int feat_with_enough_meas = 0;
-    for (auto const &feat : features) {
-      if (map_features_num_meas[feat.first] >= min_num_meas_to_optimize) {
-        feat_with_enough_meas++;
-      }
-    }
     PRINT_INFO(YELLOW
                "[DynamicInitializer] 特征验证失败 - 有效: %d, 需要: %d, "
                "min_num_meas: %d\n" RESET,
@@ -287,7 +285,14 @@ bool DynamicInitializer::initialize(
   std::vector<ov_core::ImuData> readings =
       InitializerHelper::select_imu_readings(*imu_data, time0_in_imu,
                                              time1_in_imu);
-  assert(readings.size() > 2);
+  if (readings.size() <= 2) {
+    PRINT_WARNING(
+        YELLOW
+        "[DynamicInitializer] 动态初始化失败: 角速度/姿态变化检查阶段 IMU 样本不足 (%zu <= 2)\n"
+        RESET,
+        readings.size());
+    return false;
+  }
   for (size_t k = 0; k < readings.size() - 1; k++) {
     auto imu0 = readings.at(k);
     auto imu1 = readings.at(k + 1);
@@ -452,7 +457,6 @@ bool DynamicInitializer::initialize(
   const int n1 = system_size - 3;  // A1 列数 (特征+速度)
 
   // 预分配与缓冲区复用：仅当容量不足时扩容
-  auto t_buf_start = rtime_now();
   bool buf_reused = (buf_cap_meas >= num_measurements && buf_cap_n1 >= n1);
   if (!buf_reused) {
     buf_cap_meas = std::max(buf_cap_meas, num_measurements);
@@ -464,7 +468,6 @@ bool DynamicInitializer::initialize(
     buf_A1A1_inv.resize(buf_cap_n1, buf_cap_n1);
     buf_A1A1_inv_A1T.resize(buf_cap_n1, buf_cap_meas);
   }
-  auto t_buf_end = rtime_now();
   auto A = buf_A.block(0, 0, num_measurements, system_size);
   auto b = buf_b.head(num_measurements);
   auto AtA1_accum = buf_AtA1.block(0, 0, n1, n1);
@@ -813,6 +816,16 @@ bool DynamicInitializer::initialize(
         count_valid_features++;
       }
     }
+  }
+
+  if (print_debug) {
+    PRINT_INFO(
+        CYAN
+        "[DynamicInitializer] 三角化筛选统计: 检查=%d, 测量不足=%d, 相机后方=%d, 过近=%d, 过远=%d, 保留=%d\n"
+        RESET,
+        total_features_checked, features_with_insufficient_meas,
+        features_behind_camera, features_too_close_to_lens,
+        features_too_far_from_lens, count_valid_features);
   }
 
   // 三角化结果：各特征在首观测相机坐标系下与光心的距离（米）

@@ -21,6 +21,8 @@
 
 #include "StaticInitializer.h"
 
+#include <cmath>
+
 #include "feat/FeatureHelper.h"
 #include "types/IMU.h"
 #include "utils/colors.h"
@@ -39,7 +41,9 @@ bool StaticInitializer::initialize(double &timestamp,
                                    Eigen::MatrixXd &covariance,
                                    std::vector<std::shared_ptr<Type>> &order,
                                    std::shared_ptr<IMU> t_imu,
-                                   bool wait_for_jerk) {
+                                   bool wait_for_jerk,
+                                   double *gravity_mag_est) {
+  const double static_window_time = params.init_static_window_time;
   PRINT_INFO(CYAN "========================================\n" RESET);
   PRINT_INFO(CYAN "[静态初始化] 静态初始化开始\n" RESET);
   PRINT_INFO(CYAN "========================================\n" RESET);
@@ -56,134 +60,66 @@ bool StaticInitializer::initialize(double &timestamp,
   double oldesttime = imu_data->at(0).timestamp;
 
   // 如果没有足够的数据用于两个窗口则返回
-  if (newesttime - oldesttime < params.init_window_time) {
+  if (newesttime - oldesttime < static_window_time) {
     PRINT_INFO(YELLOW
                "[静态初始化] 静态初始化失败: 无法选择IMU读数窗口, "
                "没有足够的读数，没有足够的时间窗口\n" RESET);
     return false;
   }
 
-  // 首先让我们从最新测量到最旧测量收集一个IMU读数窗口
-  // 这里把数据分成两个窗口，一个窗口是一半窗口时间，一个窗口是整个窗口时间，窗口时间可以根据需要调整
-  // 一半窗口时间用于计算加速度的平均值 整个窗口时间用于计算加速度的方差
-
-  std::vector<ImuData> window_1to0, window_2to1;
+  // 仅使用最近一个静止窗口直接估计动态初始化 bias 初值（对应配置
+  // init_dyn_bias_g/init_dyn_bias_a），不再做双窗口/急动判定。
+  std::vector<ImuData> static_window;
   for (const ImuData &data : *imu_data) {
-    if (data.timestamp > newesttime - 0.5 * params.init_window_time &&
-        data.timestamp <= newesttime - 0.0 * params.init_window_time) {
-      // 一半窗口时间用于计算加速度的平均值 t∈[newesttime - 0.5 *
-      // params.init_window_time, newesttime - 0.0 * params.init_window_time]
-      window_1to0.push_back(data);
-    }
-    if (data.timestamp > newesttime - 1.0 * params.init_window_time &&
-        data.timestamp <= newesttime - 0.5 * params.init_window_time) {
-      // 整个窗口时间用于计算加速度的方差
-      window_2to1.push_back(data);
+    if (data.timestamp > newesttime - static_window_time &&
+        data.timestamp <= newesttime) {
+      static_window.push_back(data);
     }
   }
 
-  // 如果这两个都失败则返回
-
-  if (window_1to0.size() < min_imu_samples_per_window() ||
-      window_2to1.size() < min_imu_samples_per_window()) {
+  if (static_window.size() < min_imu_samples_per_window()) {
     PRINT_INFO(YELLOW
                "[静态初始化] 静态初始化失败: 窗口选择失败, "
                "无法选择IMU读数窗口, 没有足够的读数\n" RESET);
     return false;
   }
 
-  // 计算从1到0的最新窗口的样本方差
-  Eigen::Vector3d a_avg_1to0 = Eigen::Vector3d::Zero();
-  for (const ImuData &data : window_1to0) {
-    a_avg_1to0 += data.am;
+  Eigen::Vector3d a_avg = Eigen::Vector3d::Zero();
+  Eigen::Vector3d w_avg = Eigen::Vector3d::Zero();
+  for (const ImuData &data : static_window) {
+    a_avg += data.am;
+    w_avg += data.wm;
   }
-  a_avg_1to0 /= (int)window_1to0.size();
-  double a_var_1to0 = 0;
-  for (const ImuData &data : window_1to0) {
-    a_var_1to0 += (data.am - a_avg_1to0).dot(data.am - a_avg_1to0);
-  }
-  a_var_1to0 = std::sqrt(a_var_1to0 / ((int)window_1to0.size() - 1));
-
-  // 计算从2到1的第二新窗口的样本方差
-  Eigen::Vector3d a_avg_2to1 = Eigen::Vector3d::Zero();
-  Eigen::Vector3d w_avg_2to1 = Eigen::Vector3d::Zero();
-  for (const ImuData &data : window_2to1) {
-    a_avg_2to1 += data.am;
-    w_avg_2to1 += data.wm;
-  }
-  a_avg_2to1 = a_avg_2to1 / window_2to1.size();
-  w_avg_2to1 = w_avg_2to1 / window_2to1.size();
-  double a_var_2to1 = 0;
-  for (const ImuData &data : window_2to1) {
-    a_var_2to1 += (data.am - a_avg_2to1).dot(data.am - a_avg_2to1);
-  }
-  a_var_2to1 = std::sqrt(a_var_2to1 / ((int)window_2to1.size() - 1));
-  if (print_debug) {
-    PRINT_INFO(YELLOW
-               "  [静态初始化] IMU 激励标准差统计: 阶段2到1:%.3f, "
-               "阶段1到0:%.3f\n" RESET,
-               a_var_2to1, a_var_1to0);
-  }
-
-  // 情况1: 如果最新窗口低于阈值并且我们想等待直到检测到急动
-  // 说明：当前仍静止，等待急动模式需要检测到运动开始才能初始化
-  // wait_for_jerk=true:
-  // 系统未启用ZUPT，需要等待急动(从静止到运动的跳变)来确认设备开始运动
-  if (a_var_1to0 < params.init_imu_thresh && wait_for_jerk) {
-    PRINT_INFO(YELLOW
-               "  [静态初始化] "
-               "静态初始化失败[情况1-等待急动模式(wait_for_jerk=true,"
-               "未启用ZUPT)]: 最新窗口仍静止(方差%.3f < 阈值%.3f), "
-               "需要等待急动(运动开始)才能初始化\n" RESET,
-               a_var_1to0, params.init_imu_thresh);
-    return false;
-  }
-
-  // 情况2: 我们还应该检查旧状态是否高于阈值！
-  // 这是当我们启动时已经在移动的情况，因此我们需要等待一段静止运动
-  // 说明：旧窗口有运动，等待急动模式下需要先静止才能初始化
-  // wait_for_jerk=true: 系统未启用ZUPT，需要先静止再检测到急动才能初始化
-  if (a_var_2to1 > params.init_imu_thresh && wait_for_jerk) {
-    PRINT_INFO(
-        YELLOW
-        "  [静态初始化] "
-        "静态初始化失败[情况2-等待急动模式(wait_for_jerk=true,未启用ZUPT)]: "
-        "旧窗口检测到运动(方差%.3f > 阈值%.3f), 需要等待静止才能初始化\n" RESET,
-        a_var_2to1, params.init_imu_thresh);
-    return false;
-  }
-
-  // 情况3: 如果任一窗口高于阈值并且我们不等待急动
-  // 那么我们不是静止的（即正在移动），所以我们应该等待直到静止
-  // 说明：检测到运动，非等待急动模式下需要静止才能初始化
-  // wait_for_jerk=false:
-  // 系统已启用ZUPT，可在静止状态下立即初始化，但当前检测到运动需要等待静止
-  if ((a_var_1to0 > params.init_imu_thresh ||
-       a_var_2to1 > params.init_imu_thresh) &&
-      !wait_for_jerk) {
-    PRINT_INFO(YELLOW
-               "  [静态初始化] "
-               "静态初始化失败[情况3-非等待急动模式(wait_for_jerk=false,"
-               "已启用ZUPT)]: 检测到运动(方差阶段2到1:%.3f, 阶段1到0:%.3f > "
-               "阈值%.3f), 需要等待静止才能初始化\n" RESET,
-               a_var_2to1, a_var_1to0, params.init_imu_thresh);
-    return false;
-  }
+  a_avg /= static_cast<double>(static_window.size());
+  w_avg /= static_cast<double>(static_window.size());
 
   // 获取z轴与-g对齐的旋转（z_in_G=0,0,1）
-  Eigen::Vector3d z_axis = a_avg_2to1 / a_avg_2to1.norm();
+  Eigen::Vector3d z_axis = a_avg / a_avg.norm();
   Eigen::Matrix3d Ro;
   InitializerHelper::gram_schmidt(z_axis, Ro);
   Eigen::Vector4d q_GtoI = rot_2_quat(Ro);
 
+  // 在静态窗口内估计常数重力模长 |g|（默认使用 |a_avg|，异常值回退配置值）。
+  double gravity_mag_used = a_avg.norm();
+  if (!std::isfinite(gravity_mag_used) || gravity_mag_used < 7.0 ||
+      gravity_mag_used > 12.0) {
+    PRINT_WARNING(YELLOW
+                  "[静态初始化] |g| 估计异常(%.6f), 回退到配置值 %.6f\n" RESET,
+                  gravity_mag_used, params.gravity_mag);
+    gravity_mag_used = params.gravity_mag;
+  }
+  if (gravity_mag_est != nullptr) {
+    *gravity_mag_est = gravity_mag_used;
+  }
+
   // 将我们的偏置设置为等于我们的噪声（从加速度计偏置中减去我们的重力）
   Eigen::Vector3d gravity_inG;
-  gravity_inG << 0.0, 0.0, params.gravity_mag;
-  Eigen::Vector3d bg = w_avg_2to1;
-  Eigen::Vector3d ba = a_avg_2to1 - quat_2_Rot(q_GtoI) * gravity_inG;
+  gravity_inG << 0.0, 0.0, gravity_mag_used;
+  Eigen::Vector3d bg = w_avg;
+  Eigen::Vector3d ba = a_avg - quat_2_Rot(q_GtoI) * gravity_inG;
 
   // 设置我们的状态变量
-  timestamp = window_2to1.at(window_2to1.size() - 1).timestamp;
+  timestamp = static_window.back().timestamp;
   Eigen::VectorXd imu_state = Eigen::VectorXd::Zero(16);
   imu_state.block(0, 0, 4, 1) = q_GtoI;
   imu_state.block(10, 0, 3, 1) = bg;
@@ -219,6 +155,8 @@ bool StaticInitializer::initialize(double &timestamp,
 
   PRINT_INFO(CYAN "========================================\n" RESET);
   PRINT_INFO(CYAN "  [静态初始化] 静态初始化成功\n" RESET);
+  PRINT_INFO(CYAN "  [静态初始化] 估计重力模长 |g| = %.6f m/s^2\n" RESET,
+             gravity_mag_used);
   PRINT_INFO(CYAN "========================================\n" RESET);
 
   // 返回 :D

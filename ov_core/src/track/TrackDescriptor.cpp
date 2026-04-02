@@ -21,6 +21,9 @@
 
 #include "TrackDescriptor.h"
 
+#include <cmath>
+#include <limits>
+
 #include <opencv2/calib3d.hpp>
 #include <opencv2/features2d.hpp>
 
@@ -573,13 +576,212 @@ void TrackDescriptor::robust_match(const std::vector<cv::KeyPoint> &pts0,
   // Do RANSAC outlier rejection (note since we normalized the max pixel error
   // is now in the normalized cords)
   std::vector<uchar> mask_rsc;
+  std::vector<uchar> mask_hmg;
   double max_focallength_img0 = std::max(camera_calib.at(id0)->get_K()(0, 0),
                                          camera_calib.at(id0)->get_K()(1, 1));
   double max_focallength_img1 = std::max(camera_calib.at(id1)->get_K()(0, 0),
                                          camera_calib.at(id1)->get_K()(1, 1));
   double max_focallength = std::max(max_focallength_img0, max_focallength_img1);
-  cv::findFundamentalMat(pts0_n, pts1_n, cv::FM_RANSAC, 1 / max_focallength,
-                         0.999, mask_rsc);
+  const double ransac_thr = 1.0 / max_focallength;
+  cv::Mat F = cv::findFundamentalMat(pts0_n, pts1_n, cv::FM_RANSAC, ransac_thr,
+                                     0.999, mask_rsc);
+  cv::Mat H =
+      cv::findHomography(pts0_n, pts1_n, cv::RANSAC, ransac_thr, mask_hmg,
+                         2000, 0.999);
+
+  size_t f_inliers = 0;
+  for (uchar m : mask_rsc) {
+    f_inliers += (m == (uchar)1);
+  }
+  size_t h_inliers = 0;
+  for (uchar m : mask_hmg) {
+    h_inliers += (m == (uchar)1);
+  }
+  const size_t total = pts0_n.size();
+  const double f_ratio =
+      (total > 0) ? (100.0 * static_cast<double>(f_inliers) / total) : 0.0;
+  const double h_ratio =
+      (total > 0) ? (100.0 * static_cast<double>(h_inliers) / total) : 0.0;
+  auto compute_f_residual = [](const cv::Mat &Fmat,
+                               const std::vector<cv::Point2f> &p0,
+                               const std::vector<cv::Point2f> &p1,
+                               const std::vector<uchar> &mask) {
+    if (Fmat.empty() || Fmat.rows != 3 || Fmat.cols != 3) {
+      return std::numeric_limits<double>::infinity();
+    }
+    cv::Mat F64;
+    Fmat.convertTo(F64, CV_64F);
+    cv::Mat Ft = F64.t();
+    double sum = 0.0;
+    int cnt = 0;
+    for (size_t i = 0; i < p0.size(); i++) {
+      if (i >= mask.size() || mask[i] != (uchar)1) {
+        continue;
+      }
+      const cv::Vec3d x0(p0[i].x, p0[i].y, 1.0);
+      const cv::Vec3d x1(p1[i].x, p1[i].y, 1.0);
+      const cv::Vec3d l1 = cv::Vec3d(
+          Ft.at<double>(0, 0) * x1[0] + Ft.at<double>(0, 1) * x1[1] +
+              Ft.at<double>(0, 2) * x1[2],
+          Ft.at<double>(1, 0) * x1[0] + Ft.at<double>(1, 1) * x1[1] +
+              Ft.at<double>(1, 2) * x1[2],
+          Ft.at<double>(2, 0) * x1[0] + Ft.at<double>(2, 1) * x1[1] +
+              Ft.at<double>(2, 2) * x1[2]);
+      const cv::Vec3d l2 = cv::Vec3d(
+          F64.at<double>(0, 0) * x0[0] + F64.at<double>(0, 1) * x0[1] +
+              F64.at<double>(0, 2) * x0[2],
+          F64.at<double>(1, 0) * x0[0] + F64.at<double>(1, 1) * x0[1] +
+              F64.at<double>(1, 2) * x0[2],
+          F64.at<double>(2, 0) * x0[0] + F64.at<double>(2, 1) * x0[1] +
+              F64.at<double>(2, 2) * x0[2]);
+      const double n1 = std::sqrt(l1[0] * l1[0] + l1[1] * l1[1]);
+      const double n2 = std::sqrt(l2[0] * l2[0] + l2[1] * l2[1]);
+      if (n1 < 1e-12 || n2 < 1e-12) {
+        continue;
+      }
+      const double d1 = std::abs(l1[0] * x0[0] + l1[1] * x0[1] + l1[2]) / n1;
+      const double d2 = std::abs(l2[0] * x1[0] + l2[1] * x1[1] + l2[2]) / n2;
+      sum += 0.5 * (d1 + d2);
+      cnt++;
+    }
+    return (cnt > 0) ? (sum / static_cast<double>(cnt))
+                     : std::numeric_limits<double>::infinity();
+  };
+  auto compute_h_residual = [](const cv::Mat &Hmat,
+                               const std::vector<cv::Point2f> &p0,
+                               const std::vector<cv::Point2f> &p1,
+                               const std::vector<uchar> &mask) {
+    if (Hmat.empty() || Hmat.rows != 3 || Hmat.cols != 3) {
+      return std::numeric_limits<double>::infinity();
+    }
+    cv::Mat H64;
+    Hmat.convertTo(H64, CV_64F);
+    cv::Mat Hinv;
+    if (!cv::invert(H64, Hinv, cv::DECOMP_SVD)) {
+      return std::numeric_limits<double>::infinity();
+    }
+    double sum = 0.0;
+    int cnt = 0;
+    for (size_t i = 0; i < p0.size(); i++) {
+      if (i >= mask.size() || mask[i] != (uchar)1) {
+        continue;
+      }
+      const cv::Vec3d x0(p0[i].x, p0[i].y, 1.0);
+      const cv::Vec3d x1(p1[i].x, p1[i].y, 1.0);
+      cv::Vec3d hx1(
+          H64.at<double>(0, 0) * x0[0] + H64.at<double>(0, 1) * x0[1] +
+              H64.at<double>(0, 2) * x0[2],
+          H64.at<double>(1, 0) * x0[0] + H64.at<double>(1, 1) * x0[1] +
+              H64.at<double>(1, 2) * x0[2],
+          H64.at<double>(2, 0) * x0[0] + H64.at<double>(2, 1) * x0[1] +
+              H64.at<double>(2, 2) * x0[2]);
+      cv::Vec3d hix0(
+          Hinv.at<double>(0, 0) * x1[0] + Hinv.at<double>(0, 1) * x1[1] +
+              Hinv.at<double>(0, 2) * x1[2],
+          Hinv.at<double>(1, 0) * x1[0] + Hinv.at<double>(1, 1) * x1[1] +
+              Hinv.at<double>(1, 2) * x1[2],
+          Hinv.at<double>(2, 0) * x1[0] + Hinv.at<double>(2, 1) * x1[1] +
+              Hinv.at<double>(2, 2) * x1[2]);
+      if (std::abs(hx1[2]) < 1e-12 || std::abs(hix0[2]) < 1e-12) {
+        continue;
+      }
+      hx1 /= hx1[2];
+      hix0 /= hix0[2];
+      const double e1 = std::hypot(hx1[0] - x1[0], hx1[1] - x1[1]);
+      const double e2 = std::hypot(hix0[0] - x0[0], hix0[1] - x0[1]);
+      sum += 0.5 * (e1 + e2);
+      cnt++;
+    }
+    return (cnt > 0) ? (sum / static_cast<double>(cnt))
+                     : std::numeric_limits<double>::infinity();
+  };
+  auto compute_hull_area_and_shrunk =
+      [](const std::vector<cv::Point2f> &pts, const std::vector<uchar> &mask,
+         double shrink_px) {
+    std::vector<cv::Point2f> inliers;
+    inliers.reserve(pts.size());
+    for (size_t i = 0; i < pts.size(); i++) {
+      if (i < mask.size() && mask[i] == (uchar)1) {
+        inliers.push_back(pts[i]);
+      }
+    }
+    if (inliers.size() < 3) {
+      return std::make_pair(0.0, 0.0);
+    }
+    std::vector<cv::Point2f> hull;
+    cv::convexHull(inliers, hull, false);
+    if (hull.size() < 3) {
+      return std::make_pair(0.0, 0.0);
+    }
+    const double area_raw = std::abs(cv::contourArea(hull));
+    if (area_raw <= 1e-12 || shrink_px <= 0.0) {
+      return std::make_pair(area_raw, area_raw);
+    }
+
+    // 凸多边形快速内缩：各边沿内法线平移 shrink_px，并取相邻平移线交点。
+    const size_t n = hull.size();
+    const double signed_area = cv::contourArea(hull, true);
+    const bool ccw = (signed_area > 0.0);
+    std::vector<cv::Vec3d> lines;
+    lines.reserve(n);
+    for (size_t i = 0; i < n; i++) {
+      const cv::Point2f &p0 = hull[i];
+      const cv::Point2f &p1 = hull[(i + 1) % n];
+      const cv::Point2f e = p1 - p0;
+      const double len = std::hypot(e.x, e.y);
+      if (len < 1e-9) {
+        return std::make_pair(area_raw, 0.0);
+      }
+      cv::Point2f n_in = ccw ? cv::Point2f(-e.y / len, e.x / len)
+                             : cv::Point2f(e.y / len, -e.x / len);
+      const double c = n_in.x * p0.x + n_in.y * p0.y + shrink_px;
+      lines.emplace_back(n_in.x, n_in.y, c);
+    }
+
+    std::vector<cv::Point2f> hull_shrunk;
+    hull_shrunk.reserve(n);
+    for (size_t i = 0; i < n; i++) {
+      const cv::Vec3d &l1 = lines[i];
+      const cv::Vec3d &l2 = lines[(i + 1) % n];
+      const double det = l1[0] * l2[1] - l1[1] * l2[0];
+      if (std::abs(det) < 1e-12) {
+        return std::make_pair(area_raw, 0.0);
+      }
+      const double x = (l1[2] * l2[1] - l2[2] * l1[1]) / det;
+      const double y = (l1[0] * l2[2] - l2[0] * l1[2]) / det;
+      hull_shrunk.emplace_back((float)x, (float)y);
+    }
+    if (hull_shrunk.size() < 3) {
+      return std::make_pair(area_raw, 0.0);
+    }
+    const double area_shrunk = std::abs(cv::contourArea(hull_shrunk));
+    return std::make_pair(area_raw, area_shrunk);
+  };
+  const double f_res = compute_f_residual(F, pts0_n, pts1_n, mask_rsc);
+  const double h_res = compute_h_residual(H, pts0_n, pts1_n, mask_hmg);
+  const double kShrinkPx = 12.0;
+  const auto f_hull0 =
+      compute_hull_area_and_shrunk(pts0_rsc, mask_rsc, kShrinkPx);
+  const auto h_hull0 =
+      compute_hull_area_and_shrunk(pts0_rsc, mask_hmg, kShrinkPx);
+  const auto f_hull1 =
+      compute_hull_area_and_shrunk(pts1_rsc, mask_rsc, kShrinkPx);
+  const auto h_hull1 =
+      compute_hull_area_and_shrunk(pts1_rsc, mask_hmg, kShrinkPx);
+  const double f_hull_total = f_hull0.second + f_hull1.second;
+  const double h_hull_total = h_hull0.second + h_hull1.second;
+  const char *better_code =
+      (f_res < h_res) ? "F" : ((h_res < f_res) ? "H" : "TIE");
+  PRINT_INFO(
+      CYAN
+      "[DESC-GEOM] cam %zu->%zu\n"
+      "  TOTAL | n=%-4zu | better=%-3s | shrink=%.0f px | env_shrink(H/F): total=%8.1f/%-8.1f\n"
+      "  H     | inlier=%4zu(%6.2f%%) | res=%10.6f | env_shrink: total=%8.1f src=%8.1f dst=%8.1f\n"
+      "  F     | inlier=%4zu(%6.2f%%) | res=%10.6f | env_shrink: total=%8.1f src=%8.1f dst=%8.1f\n"
+      RESET,
+      id0, id1, total, better_code, kShrinkPx, h_hull_total, f_hull_total,
+      h_inliers, h_ratio, h_res, h_hull_total, h_hull0.second, h_hull1.second,
+      f_inliers, f_ratio, f_res, f_hull_total, f_hull0.second, f_hull1.second);
 
   // Loop through all good matches, and only append ones that have passed RANSAC
   for (size_t i = 0; i < matches_good.size(); i++) {

@@ -87,8 +87,20 @@ public:
                   std::shared_ptr<ov_type::IMU> &_imu, std::map<double, std::shared_ptr<ov_type::PoseJPL>> &_clones_IMU,
                   std::unordered_map<size_t, std::shared_ptr<ov_type::Landmark>> &_features_SLAM);
 
+  /// 更新动态初始化阶段使用的 bias 初始猜测（通常由静态初始化给出）
+  void set_initial_bias_guess(const Eigen::Vector3d &bias_g,
+                              const Eigen::Vector3d &bias_a) {
+    params.init_dyn_bias_g = bias_g;
+    params.init_dyn_bias_a = bias_a;
+  }
+
+  /// 更新动态初始化内部使用的重力模长（由静态阶段估计）
+  void set_gravity_magnitude(double gravity_mag) {
+    params.gravity_mag = gravity_mag;
+  }
+
 private:
-  bool print_debug = false;
+  bool print_debug = true;
 
   /// 初始化参数
   InertialInitializerOptions params;

@@ -96,6 +96,20 @@ public:
                   std::shared_ptr<ov_type::IMU> t_imu, bool wait_for_jerk = true);
 
 protected:
+  /// 运动-静止状态
+  enum class MotionStillState {
+    STILL,    // 静止
+    STOPPING, // 停止（动态进入静态）
+    MOVING,   // 运动
+    STARTING  // 启动（静态进入动态）
+  };
+
+  /// 统一管理状态切换、切换时间与日志
+  void update_motion_still_state(bool is_still, double cam_time);
+
+  /// 获取当前连续静止阶段持续时长（秒）
+  double current_still_duration_sec() const;
+
   bool print_debug = false;
   /// 初始化参数
   InertialInitializerOptions params;
@@ -111,6 +125,30 @@ protected:
 
   /// 动态初始化辅助类
   std::shared_ptr<DynamicInitializer> init_dynamic;
+
+  /// 两阶段初始化标记：静态阶段是否已完成
+  bool static_stage_done = false;
+
+  /// 静态初始化等待日志的上次打印时间戳（用于限频）
+  double static_wait_log_last_time = -1.0;
+
+  /// 是否已经观测到一段连续静止阶段（用于“静止->非静止”触发静态初始化）
+  bool static_seen_still_phase = false;
+
+  /// 最近一次被判定为静止时的相机时间戳
+  double static_last_still_cam_time = -1.0;
+
+  /// 最近一次“进入静止”时刻（连续静止段起点）
+  double static_enter_still_cam_time = -1.0;
+
+  /// 最近一次“离开静止”时刻（静止->非静止边沿）
+  double static_leave_still_cam_time = -1.0;
+
+  /// 当前运动-静止状态（由 update_motion_still_state 维护）
+  MotionStillState motion_still_state = MotionStillState::MOVING;
+
+  /// 状态机是否已初始化
+  bool motion_state_initialized = false;
 };
 
 } // namespace ov_init

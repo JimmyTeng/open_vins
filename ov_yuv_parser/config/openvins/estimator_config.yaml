@@ -18,10 +18,10 @@ max_clones: 30 # 滑动窗口克隆位姿个数；越大计算越重、越平滑
 max_slam: 50 # 状态中 SLAM 路标个数上限
 max_slam_in_update: 25 # 单次更新一批 SLAM 特征数上限（可分批）
 max_msckf_in_update: 25 # 单次 MSCKF 特征更新数上限（过大时一批离群特征易拉偏速度/位置，可酌减）
-dt_slam_delay: 1 # 初始化后延迟多少秒再启用 SLAM 更新（初值不稳时增大）
+dt_slam_delay: 0 # 初始化后延迟多少秒再启用 SLAM 更新（初值不稳时增大）
 
 # 与 Kalibr「目标系重力」模长一致，约 9.807 m/s²
-gravity_mag: 9.81
+gravity_mag: 9.82
 
 # 传播后对速度 v 的误差协方差按轴增加方差 (m^2/s^2)；0=关闭。略增大可降低「只靠 IMU 积分」对速度的过信，便于视觉/SLAM 拉回速度、减轻位置发散（与 kalibr 加计噪声、up_msckf_chi2 等一起调）
 post_propagate_vel_cov_diag_add: 0.02
@@ -47,28 +47,28 @@ zupt_noise_multiplier: 1 # 测量噪声 R 标量倍率；χ² 门限与 EKF 的 
 # 赞同阈值（对应代码 gate_agree；YAML zupt_agree_*；视差模式为 disp||(chi2∧|v|)）
 zupt_agree_chi2_multipler: 1 # 赞同：χ² 门限倍率 chi2 ≤ mult×χ²_0.95；越大越易通过 IMU 门
 zupt_agree_max_velocity: 0.1 # 赞同：|v| 上限（m/s）；超过则该支路速度判据不成立
-zupt_agree_max_disparity: 1 # 赞同：平均视差阈值（px）；视差门开启且特征>20 时参与判据
+zupt_agree_max_disparity: 1.5 # 赞同：平均视差阈值（px）；视差门开启且特征>20 时参与判据
 
 # 否决阈值（对应代码 gate_strict；YAML zupt_strict_*；需 disp∧chi2∧|v| 同时满足，视差模式）
-zupt_strict_chi2_multipler: 3 # 否决：χ² 门限倍率；通常 ≥ 赞同，使「严格静止」更难满足
+zupt_strict_chi2_multipler: 0.3 # 否决：χ² 门限倍率；通常 ≥ 赞同，使「严格静止」更难满足
 zupt_strict_max_velocity: 0.4 # 否决：|v| 上限（m/s）
-zupt_strict_max_disparity: 3 # 否决：视差阈值（px）
+zupt_strict_max_disparity: 4 # 否决：视差阈值（px）
 
 # ==================================================================
 # ==================================================================
 
 # ---------- 初始化 ----------
-init_window_time: 3 # 收集初始化信息的时长（秒，加长利于重力估计）
-init_imu_thresh: 0.0 # 加速度计方差阈值，检测「急动」；0.0 关闭静态初始化分支（配合动态 init）
-init_max_disparity: 10.0 # 判定静止的最大视差（与分辨率相关）
+init_static_window_time: 0.9 # 静态初始化窗口时长（秒）
+init_imu_thresh: 0.3 # 加速度计方差阈值，检测「急动」；0.0 关闭静态初始化分支（配合动态 init）
+init_max_disparity: 1.0 # 判定静止的最大视差（与分辨率相关）
 init_max_features: 20 # 初始化阶段跟踪特征数上限
 
-init_dyn_use: true # 是否使用动态初始化（运动段）
+init_dyn_window_time: 3 # 动态初始化窗口时长（秒）
 init_dyn_mle_opt_calib: false # 动态 MLE 是否同时优化标定（一般关）
 init_dyn_mle_max_iter: 50 # MLE 最大迭代；0 跳过 MLE
 init_dyn_mle_max_time: 0.5 # MLE 时限（秒）；过小易超时
 init_dyn_mle_max_threads: 2 # MLE 线程数
-init_dyn_num_pose: 6 # 窗口内位姿个数（均匀采样）
+init_dyn_num_pose: 8 # 窗口内位姿个数（均匀采样）
 init_dyn_min_deg: 5.0 # 初始化所需最小朝向变化（度）
 
 init_dyn_inflation_ori: 10 # 动态初始化后 q_GtoI 协方差放大倍数
@@ -78,7 +78,7 @@ init_dyn_inflation_ba: 200 # 动态初始化后加计偏置协方差放大倍数
 init_dyn_min_rec_cond: 1e-12 # 信息矩阵求逆最小允许倒数条件数；过小可能拒绝病态解
 
 # 动态初始化三角化：首观测相机系下特征距光心深度（范数，m）；仅 [min,max] 内计入有效特征
-init_dyn_triang_depth_min_m: 0.3
+init_dyn_triang_depth_min_m: 0.2
 init_dyn_triang_depth_max_m: 1.5
 
 # 动态初始化：最小有效特征数（测量充足与深度合格两处门槛）；须 ≤ init_max_features
@@ -102,11 +102,11 @@ filepath_gt: "/tmp/ov_groundtruth.txt" # 真值输出路径（仿真）
 
 # ---------- 前端跟踪 ----------
 use_klt: true # true：KLT；false：ORB 描述子 + 匹配
-num_pts: 200 # 每相机每帧目标特征数（影响算力与鲁棒性）
-fast_threshold: 50 # FAST 角点阈值；越小点越多、越慢
+num_pts: 120 # 每相机每帧目标特征数（影响算力与鲁棒性）
+fast_threshold: 25 # FAST 角点阈值；越小点越多、越慢
 grid_x: 8 # 特征网格列数（均匀撒点）
 grid_y: 6 # 特征网格行数
-min_px_dist: 20 # 特征间最小像素距（过小则冗余）
+min_px_dist: 15 # 特征间最小像素距（过小则冗余）
 knn_ratio: 0.5 # 描述子匹配 KNN 比值（仅非 KLT 时）
 track_frequency: 15.0 # 期望跟踪帧率（Hz）；更高频率的帧会被丢弃
 
@@ -158,6 +158,6 @@ print_state_calib: true # 每次更新后是否打印状态与标定
 print_timing: true # 是否打印各阶段耗时
 print_tracking_stats: true # 是否打印 [VM] 帧与 [跟踪] 周期日志
 # true：每帧 retriangulate 后打印线性三角化 p_FinG（全局系 m；活动 MSCKF + SLAM）；输出量大，仅调试
-print_triangulated_points: true
+print_triangulated_points: false
 # 1.0：关闭；0.15～0.4：对当前 cam0 深度沿射线低通，减轻 active_tracks 可视化帧间抖动（不进入滤波器）
-active_tracks_depth_smooth_alpha: 0.25
+active_tracks_depth_smooth_alpha: 0.15

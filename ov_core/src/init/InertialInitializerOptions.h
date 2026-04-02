@@ -60,8 +60,14 @@ struct InertialInitializerOptions {
 
   // INITIALIZATION ============================
 
-  /// Amount of time we will initialize over (seconds)
-  double init_window_time = 1.0;
+  /// 动态初始化时间窗（秒）
+  double init_dyn_window_time = 1.0;
+
+  /// 兼容旧配置键（init_window_time）；若提供将映射到 init_dyn_window_time
+  double init_window_time = -1.0;
+
+  /// 静态初始化所需静止时间窗（秒）；<=0 时回退使用 init_dyn_window_time
+  double init_static_window_time = -1.0;
 
   /// Variance threshold on our acceleration to be classified as moving
   double init_imu_thresh = 1.0;
@@ -72,8 +78,8 @@ struct InertialInitializerOptions {
   /// Number of features we should try to track
   int init_max_features = 50;
 
-  /// If we should perform dynamic initialization
-  bool init_dyn_use = false;
+  /// 始终采用动态初始化作为最终完成条件（兼容字段，固定为 true）
+  bool init_dyn_use = true;
 
   /// If we should optimize and recover the calibration in our MLE
   bool init_dyn_mle_opt_calib = false;
@@ -131,12 +137,16 @@ struct InertialInitializerOptions {
   void print_and_load_initializer(const std::shared_ptr<ov_core::YamlParser> &parser = nullptr) {
     PRINT_DEBUG("INITIALIZATION SETTINGS:\n");
     if (parser != nullptr) {
-      parser->parse_config("init_window_time", init_window_time);
+      parser->parse_config("init_dyn_window_time", init_dyn_window_time, false);
+      parser->parse_config("init_window_time", init_window_time, false);
+      parser->parse_config("init_static_window_time", init_static_window_time,
+                           false);
       parser->parse_config("init_imu_thresh", init_imu_thresh);
       parser->parse_config("init_max_disparity", init_max_disparity);
       parser->parse_config("init_max_features", init_max_features);
-      parser->parse_config("init_dyn_use", init_dyn_use);
       parser->parse_config("init_dyn_mle_opt_calib", init_dyn_mle_opt_calib);
+    // 统一策略：总是以动态初始化成功作为最终完成条件。
+    init_dyn_use = true;
       parser->parse_config("init_dyn_mle_max_iter", init_dyn_mle_max_iter);
       parser->parse_config("init_dyn_mle_max_threads", init_dyn_mle_max_threads);
       parser->parse_config("init_dyn_mle_max_time", init_dyn_mle_max_time);
@@ -160,7 +170,20 @@ struct InertialInitializerOptions {
       init_dyn_bias_g << bias_g.at(0), bias_g.at(1), bias_g.at(2);
       init_dyn_bias_a << bias_a.at(0), bias_a.at(1), bias_a.at(2);
     }
-    PRINT_DEBUG("  - init_window_time: %.2f\n", init_window_time);
+    if (init_dyn_window_time <= 0.0) {
+      init_dyn_window_time = init_window_time;
+    }
+    if (init_dyn_window_time <= 0.0) {
+      init_dyn_window_time = 1.0;
+    }
+    if (init_static_window_time <= 0.0) {
+      init_static_window_time = init_dyn_window_time;
+    }
+    PRINT_DEBUG("  - init_dyn_window_time: %.2f\n", init_dyn_window_time);
+    if (init_window_time > 0.0) {
+      PRINT_DEBUG("  - init_window_time(legacy): %.2f\n", init_window_time);
+    }
+    PRINT_DEBUG("  - init_static_window_time: %.2f\n", init_static_window_time);
     PRINT_DEBUG("  - init_imu_thresh: %.2f\n", init_imu_thresh);
     PRINT_DEBUG("  - init_max_disparity: %.2f\n", init_max_disparity);
     PRINT_DEBUG("  - init_max_features: %.2f\n", init_max_features);
@@ -169,19 +192,23 @@ struct InertialInitializerOptions {
       PRINT_ERROR(RED "  init_max_features = %d\n" RESET, init_max_features);
       std::exit(EXIT_FAILURE);
     }
-    if (init_imu_thresh <= 0.0 && !init_dyn_use) {
-      PRINT_ERROR(RED "需要一个IMU阈值用于静态初始化！\n" RESET);
-      PRINT_ERROR(RED "  init_imu_thresh = %.3f\n" RESET, init_imu_thresh);
-      PRINT_ERROR(RED "  init_dyn_use = %d\n" RESET, init_dyn_use);
-      std::exit(EXIT_FAILURE);
-    }
-    if (init_max_disparity <= 0.0 && !init_dyn_use) {
-      PRINT_ERROR(RED "需要一个视差阈值用于静态初始化！\n" RESET);
+    if (init_max_disparity <= 0.0) {
+      PRINT_ERROR(RED "需要正的 init_max_disparity 以判定静止/运动并触发动态初始化！\n" RESET);
       PRINT_ERROR(RED "  init_max_disparity = %.3f\n" RESET, init_max_disparity);
-      PRINT_ERROR(RED "  init_dyn_use = %d\n" RESET, init_dyn_use);
       std::exit(EXIT_FAILURE);
     }
-    PRINT_DEBUG("  - init_dyn_use: %d\n", init_dyn_use);
+    if (init_static_window_time <= 0.0) {
+      PRINT_ERROR(RED "init_static_window_time 必须 > 0\n" RESET);
+      PRINT_ERROR(RED "  init_static_window_time = %.3f\n" RESET,
+                  init_static_window_time);
+      std::exit(EXIT_FAILURE);
+    }
+    if (init_dyn_window_time <= 0.0) {
+      PRINT_ERROR(RED "init_dyn_window_time 必须 > 0\n" RESET);
+      PRINT_ERROR(RED "  init_dyn_window_time = %.3f\n" RESET,
+                  init_dyn_window_time);
+      std::exit(EXIT_FAILURE);
+    }
     PRINT_DEBUG("  - init_dyn_mle_opt_calib: %d\n", init_dyn_mle_opt_calib);
     PRINT_DEBUG("  - init_dyn_mle_max_iter: %d\n", init_dyn_mle_max_iter);
     PRINT_DEBUG("  - init_dyn_mle_max_threads: %d\n", init_dyn_mle_max_threads);
