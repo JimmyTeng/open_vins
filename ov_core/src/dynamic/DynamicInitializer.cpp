@@ -240,34 +240,6 @@ bool DynamicInitializer::initialize(
     // 打印相机位姿时间戳用于调试
     PRINT_INFO(CYAN "[DynamicInitializer] 相机位姿时间戳 (总共 %zu):\n" RESET,
                map_camera_times.size());
-
-    int idx = 0;
-    for (auto const &timepair : map_camera_times) {
-      double time_relative = timepair.first - oldest_camera_time;
-      double time_from_newest = newest_cam_time - timepair.first;
-      PRINT_INFO(CYAN
-                 "[DynamicInitializer] [%d] timestamp: %.6f sec, relative: "
-                 "%.6f sec, from_newest: %.6f sec\n" RESET,
-                 idx++, timepair.first, time_relative, time_from_newest);
-    }
-
-    if (print_debug && map_camera_times.size() > 1) {
-      auto it = map_camera_times.begin();
-      double prev_time = it->first;
-      ++it;
-      PRINT_INFO(CYAN "[DynamicInitializer] 时间戳间隔:\n" RESET);
-      int interval_idx = 0;
-      for (; it != map_camera_times.end(); ++it) {
-        double interval = it->first - prev_time;
-        PRINT_INFO(CYAN
-                   "[DynamicInitializer] [%d->%d] interval: %.6f sec "
-                   "(required: >= %.6f sec) %s\n" RESET,
-                   interval_idx, interval_idx + 1, interval, pose_dt_avg,
-                   (interval >= pose_dt_avg ? "✓" : "✗"));
-        prev_time = it->first;
-        interval_idx++;
-      }
-    }
   }
   // 启动文件指定的偏置初始猜测值
   // 我们现在不费力恢复偏置，因为它们应该在启动前大致已知，
@@ -828,55 +800,55 @@ bool DynamicInitializer::initialize(
         features_too_far_from_lens, count_valid_features);
   }
 
-  // 三角化结果：各特征在首观测相机坐标系下与光心的距离（米）
-  if (!features_inI0.empty()) {
-    PRINT_INFO(CYAN
-               "[DynamicInitializer] 三角化特征距镜头(光心)距离 (首观测相机 C, "
-               "单位 m)\n" RESET);
-    std::vector<double> dists;
-    dists.reserve(features_inI0.size());
-    constexpr size_t kMaxLines = 48;
-    size_t printed = 0;
-    for (auto const &fin : features_inI0) {
-      const size_t fid = fin.first;
-      const Eigen::Vector3d &p_FinI0 = fin.second;
-      auto itf = features.find(fid);
-      if (itf == features.end() || itf->second->timestamps.empty()) {
-        continue;
-      }
-      const size_t cam_id = itf->second->timestamps.begin()->first;
-      Eigen::Vector4d q_ItoC =
-          params.camera_extrinsics.at(cam_id).block(0, 0, 4, 1);
-      Eigen::Vector3d p_IinC =
-          params.camera_extrinsics.at(cam_id).block(4, 0, 3, 1);
-      Eigen::Matrix3d R_ItoC = quat_2_Rot(q_ItoC);
-      const Eigen::Vector3d p_FinC = R_ItoC * p_FinI0 + p_IinC;
-      const double dist = p_FinC.norm();
-      dists.push_back(dist);
-      if (printed < kMaxLines) {
-        PRINT_INFO(
-            "  feat_id=%zu  dist=%.4f  p_FinC=(%.3f, %.3f, %.3f)  z=%.3f\n",
-            fid, dist, p_FinC(0), p_FinC(1), p_FinC(2), p_FinC(2));
-        printed++;
-      }
-    }
-    if (features_inI0.size() > kMaxLines) {
-      PRINT_INFO("  ... 仅列出前 %zu 条，共 %zu 个特征\n", kMaxLines,
-                 features_inI0.size());
-    }
-    if (!dists.empty()) {
-      const auto mm = std::minmax_element(dists.begin(), dists.end());
-      double sum = 0.0;
-      for (double d : dists) {
-        sum += d;
-      }
-      PRINT_INFO(
-          "  统计(仅有效点, 深度 ∈ [%.2f, %.2f] m): min=%.4f m, max=%.4f m, "
-          "mean=%.4f m (N=%zu)\n",
-          kDepthMinM, kDepthMaxM, *mm.first, *mm.second,
-          sum / static_cast<double>(dists.size()), dists.size());
-    }
-  }
+  // // 三角化结果：各特征在首观测相机坐标系下与光心的距离（米）
+  // if (!features_inI0.empty()) {
+  //   PRINT_INFO(CYAN
+  //              "[DynamicInitializer] 三角化特征距镜头(光心)距离 (首观测相机 C, "
+  //              "单位 m)\n" RESET);
+  //   std::vector<double> dists;
+  //   dists.reserve(features_inI0.size());
+  //   constexpr size_t kMaxLines = 48;
+  //   size_t printed = 0;
+  //   for (auto const &fin : features_inI0) {
+  //     const size_t fid = fin.first;
+  //     const Eigen::Vector3d &p_FinI0 = fin.second;
+  //     auto itf = features.find(fid);
+  //     if (itf == features.end() || itf->second->timestamps.empty()) {
+  //       continue;
+  //     }
+  //     const size_t cam_id = itf->second->timestamps.begin()->first;
+  //     Eigen::Vector4d q_ItoC =
+  //         params.camera_extrinsics.at(cam_id).block(0, 0, 4, 1);
+  //     Eigen::Vector3d p_IinC =
+  //         params.camera_extrinsics.at(cam_id).block(4, 0, 3, 1);
+  //     Eigen::Matrix3d R_ItoC = quat_2_Rot(q_ItoC);
+  //     const Eigen::Vector3d p_FinC = R_ItoC * p_FinI0 + p_IinC;
+  //     const double dist = p_FinC.norm();
+  //     dists.push_back(dist);
+  //     if (printed < kMaxLines) {
+  //       PRINT_INFO(
+  //           "  feat_id=%zu  dist=%.4f  p_FinC=(%.3f, %.3f, %.3f)  z=%.3f\n",
+  //           fid, dist, p_FinC(0), p_FinC(1), p_FinC(2), p_FinC(2));
+  //       printed++;
+  //     }
+  //   }
+  //   if (features_inI0.size() > kMaxLines) {
+  //     PRINT_INFO("  ... 仅列出前 %zu 条，共 %zu 个特征\n", kMaxLines,
+  //                features_inI0.size());
+  //   }
+  //   if (!dists.empty()) {
+  //     const auto mm = std::minmax_element(dists.begin(), dists.end());
+  //     double sum = 0.0;
+  //     for (double d : dists) {
+  //       sum += d;
+  //     }
+  //     PRINT_INFO(
+  //         "  统计(仅有效点, 深度 ∈ [%.2f, %.2f] m): min=%.4f m, max=%.4f m, "
+  //         "mean=%.4f m (N=%zu)\n",
+  //         kDepthMinM, kDepthMaxM, *mm.first, *mm.second,
+  //         sum / static_cast<double>(dists.size()), dists.size());
+  //   }
+  // }
   if (features_inI0.empty() &&
       (features_too_close_to_lens > 0 || features_too_far_from_lens > 0)) {
     PRINT_INFO(YELLOW

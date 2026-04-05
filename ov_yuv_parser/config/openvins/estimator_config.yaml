@@ -143,11 +143,11 @@ verbosity: "INFO" # 日志级别：ALL, DEBUG, INFO, WARNING, ERROR, SILENT
 print_state_calib: true # 每次更新后是否打印状态与标定
 print_timing: false # 是否打印各阶段耗时
 print_tracking_stats: true # 是否打印 [VM] 帧与 [跟踪] 周期日志
-print_zupt: true # 为 true 时打印 [ZUPT] 静止门/更新日志及启动时 ZUPT 参数说明
+print_zupt: false # 为 true 时打印 [ZUPT] 静止门/更新日志及启动时 ZUPT 参数说明
 # true：每帧 retriangulate 后打印线性三角化 p_FinG（全局系 m；活动 MSCKF + SLAM）；输出量大，仅调试
 print_triangulated_points: false
 
-debug_display_waitkey_ms: 0 # 调试窗口 waitKey 时长（毫秒）；0=不等待，仅处理GUI事件
+debug_display_waitkey_ms: 1 # 调试窗口 waitKey 时长（毫秒）；0=不等待，仅处理GUI事件
 imu_klt_prior_debug: false # 打印 IMU 预测与原始值残差日志
 print_klt_geom: false # true：打印 [KLT-GEOM] H/F RANSAC 与包络收缩统计（输出量大）
 

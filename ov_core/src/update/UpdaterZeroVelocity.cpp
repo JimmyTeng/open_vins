@@ -342,11 +342,8 @@ bool UpdaterZeroVelocity::try_update(std::shared_ptr<State> state,
   // 静止门总结果：赞同阈值支路 或 否决阈值支路 任一通过
   stationary_gate_passed = gate_agree || gate_strict;
 
-  // 静止门判定后两行：① gate ② pose（RPY、p_IinG）；与 [VM] 可同时存在
+  // 静止门判定日志（pose 在 try_update 成功时由 VioManager 打印）
   if (_print_zupt) {
-    const Eigen::Vector3d rpy_deg_gate =
-        rot2rpy(quat_2_Rot(state->_imu->quat())) * 180.0 / M_PI;
-    const Eigen::Vector3d p_IinG_gate = state->_imu->pos();
     const char *gate_res = stationary_gate_passed ? "PASS" : "FAIL";
     const int merge = (gate_agree || gate_strict) ? 1 : 0;
     if (override_with_disparity_check) {
@@ -376,10 +373,6 @@ bool UpdaterZeroVelocity::try_update(std::shared_ptr<State> state,
                  state->_imu->vel().norm(), _agree_max_velocity,
                  _strict_max_velocity);
     }
-    PRINT_INFO(GREEN "[ZUPT]: pose | RPY(deg)=%.2f,%.2f,%.2f | " 
-               "p_IinG=%.3f,%.3f,%.3f\n" RESET,
-               rpy_deg_gate(0), rpy_deg_gate(1), rpy_deg_gate(2),
-               p_IinG_gate(0), p_IinG_gate(1), p_IinG_gate(2));
   }
 
   // 延迟退出策略：仅当连续 n 回合检测到离开静止门才退出 ZUPT。

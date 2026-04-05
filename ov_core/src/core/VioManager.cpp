@@ -91,6 +91,16 @@ std::string allocate_vio_dataset_session_dir(const std::string &root_abs) {
   throw std::runtime_error("allocate_vio_dataset_session_dir: no free timestamp directory name");
 }
 
+/// try_update 成功（本帧保持并执行 ZUPT）后打印 pose；逻辑在 VioManager，避免 try_update 内误打
+void print_zupt_pose_line_after_success(const std::shared_ptr<State> &state) {
+  Eigen::Vector3d rpy_deg =
+      rot2rpy(quat_2_Rot(state->_imu->quat())) * 180.0 / M_PI;
+  PRINT_INFO(GREEN "[ZUPT]: RPY(deg)=%.3f,%.3f,%.3f | "
+                     "p_IinG = %.3f,%.3f,%.3f\n" RESET,
+             rpy_deg(0), rpy_deg(1), rpy_deg(2), state->_imu->pos()(0),
+             state->_imu->pos()(1), state->_imu->pos()(2));
+}
+
 } // namespace
 
 // 用于跟踪统计的静态变量
@@ -521,6 +531,9 @@ void VioManager::feed_measurement_simulation(
     }
     if (did_zupt_update) {
       assert(state->_timestamp == timestamp);
+      if (params.print_zupt) {
+        print_zupt_pose_line_after_success(state);
+      }
       propagator->clean_old_imu_measurements(
           timestamp + state->_calib_dt_CAMtoIMU->value()(0) - 0.10);
       updaterZUPT->clean_old_imu_measurements(
@@ -723,6 +736,9 @@ void VioManager::track_image_and_update(
     }
     if (did_zupt_update) {
       assert(state->_timestamp == message.timestamp);
+      if (params.print_state_calib) {
+        print_zupt_pose_line_after_success(state);
+      }
       propagator->clean_old_imu_measurements(
           message.timestamp + state->_calib_dt_CAMtoIMU->value()(0) - 0.10);
       updaterZUPT->clean_old_imu_measurements(
@@ -1319,7 +1335,7 @@ void VioManager::do_feature_propagate_update(
     Eigen::Vector3d rpy_deg =
         rot2rpy(quat_2_Rot(state->_imu->quat())) * 180.0 / M_PI;
     ss << std::fixed << std::setprecision(3)
-       << "[VM]: 欧拉角(deg) roll,pitch,yaw = " << rpy_deg(0) << ","
+       << "[VM]: RPY(deg)=" << rpy_deg(0) << ","
        << rpy_deg(1) << "," << rpy_deg(2) << " | p_IinG = "
        << state->_imu->pos()(0) << "," << state->_imu->pos()(1) << ","
        << state->_imu->pos()(2) << " | Dist = " << std::setprecision(2)
@@ -1328,85 +1344,87 @@ void VioManager::do_feature_propagate_update(
        << "," << state->_imu->bias_g()(1) << "," << state->_imu->bias_g()(2)
        << " | ba = " << state->_imu->bias_a()(0) << ","
        << state->_imu->bias_a()(1) << "," << state->_imu->bias_a()(2);
-    if (state->_options.do_calib_camera_intrinsics) {
-      for (int i = 0; i < state->_options.num_cameras; i++) {
-        std::shared_ptr<ov_type::Vec> calib = state->_cam_intrinsics.at(i);
-        ss << " | cam" << i << " intr = " << std::setprecision(3)
-           << calib->value()(0) << "," << calib->value()(1) << ","
-           << calib->value()(2) << "," << calib->value()(3) << " | "
-           << calib->value()(4) << "," << calib->value()(5) << ","
-           << calib->value()(6) << "," << calib->value()(7);
+    if(false){   
+      if (state->_options.do_calib_camera_intrinsics) {
+        for (int i = 0; i < state->_options.num_cameras; i++) {
+          std::shared_ptr<ov_type::Vec> calib = state->_cam_intrinsics.at(i);
+          ss << " | cam" << i << " intr = " << std::setprecision(3)
+            << calib->value()(0) << "," << calib->value()(1) << ","
+            << calib->value()(2) << "," << calib->value()(3) << " | "
+            << calib->value()(4) << "," << calib->value()(5) << ","
+            << calib->value()(6) << "," << calib->value()(7);
+        }
       }
-    }
-    if (state->_options.do_calib_camera_pose) {
-      for (int i = 0; i < state->_options.num_cameras; i++) {
-        std::shared_ptr<PoseJPL> calib = state->_calib_IMUtoCAM.at(i);
-        ss << " | 相机" << i << "外参 = " << std::setprecision(3)
-           << calib->quat()(0) << "," << calib->quat()(1) << ","
-           << calib->quat()(2) << "," << calib->quat()(3) << " | "
-           << calib->pos()(0) << "," << calib->pos()(1) << "," << calib->pos()(2);
+      if (state->_options.do_calib_camera_pose) {
+        for (int i = 0; i < state->_options.num_cameras; i++) {
+          std::shared_ptr<PoseJPL> calib = state->_calib_IMUtoCAM.at(i);
+          ss << " | 相机" << i << "外参 = " << std::setprecision(3)
+            << calib->quat()(0) << "," << calib->quat()(1) << ","
+            << calib->quat()(2) << "," << calib->quat()(3) << " | "
+            << calib->pos()(0) << "," << calib->pos()(1) << "," << calib->pos()(2);
+        }
       }
-    }
-    if (state->_options.do_calib_imu_intrinsics &&
-        state->_options.imu_model == StateOptions::ImuModel::KALIBR) {
-      ss << " | q_GYROtoI = " << std::setprecision(3)
-         << state->_calib_imu_GYROtoIMU->value()(0) << ","
-         << state->_calib_imu_GYROtoIMU->value()(1) << ","
-         << state->_calib_imu_GYROtoIMU->value()(2) << ","
-         << state->_calib_imu_GYROtoIMU->value()(3);
-    }
-    if (state->_options.do_calib_imu_intrinsics &&
-        state->_options.imu_model == StateOptions::ImuModel::RPNG) {
-      ss << " | q_ACCtoI = " << std::setprecision(3)
-         << state->_calib_imu_ACCtoIMU->value()(0) << ","
-         << state->_calib_imu_ACCtoIMU->value()(1) << ","
-         << state->_calib_imu_ACCtoIMU->value()(2) << ","
-         << state->_calib_imu_ACCtoIMU->value()(3);
-    }
-    if (state->_options.do_calib_imu_intrinsics &&
-        state->_options.imu_model == StateOptions::ImuModel::KALIBR) {
-      ss << " | Dw = " << std::setprecision(4)
-         << state->_calib_imu_dw->value()(0) << ","
-         << state->_calib_imu_dw->value()(1) << ","
-         << state->_calib_imu_dw->value()(2) << ","
-         << state->_calib_imu_dw->value()(3) << ","
-         << state->_calib_imu_dw->value()(4) << ","
-         << state->_calib_imu_dw->value()(5)
-         << " | Da = " << state->_calib_imu_da->value()(0) << ","
-         << state->_calib_imu_da->value()(1) << ","
-         << state->_calib_imu_da->value()(2) << ","
-         << state->_calib_imu_da->value()(3) << ","
-         << state->_calib_imu_da->value()(4) << ","
-         << state->_calib_imu_da->value()(5);
-    }
-    if (state->_options.do_calib_imu_intrinsics &&
-        state->_options.imu_model == StateOptions::ImuModel::RPNG) {
-      ss << " | Dw = " << std::setprecision(4)
-         << state->_calib_imu_dw->value()(0) << ","
-         << state->_calib_imu_dw->value()(1) << ","
-         << state->_calib_imu_dw->value()(2) << ","
-         << state->_calib_imu_dw->value()(3) << ","
-         << state->_calib_imu_dw->value()(4) << ","
-         << state->_calib_imu_dw->value()(5)
-         << " | Da = " << state->_calib_imu_da->value()(0) << ","
-         << state->_calib_imu_da->value()(1) << ","
-         << state->_calib_imu_da->value()(2) << ","
-         << state->_calib_imu_da->value()(3) << ","
-         << state->_calib_imu_da->value()(4) << ","
-         << state->_calib_imu_da->value()(5);
-    }
-    if (state->_options.do_calib_imu_intrinsics &&
-        state->_options.do_calib_imu_g_sensitivity) {
-      ss << " | Tg = " << std::setprecision(4)
-         << state->_calib_imu_tg->value()(0) << ","
-         << state->_calib_imu_tg->value()(1) << ","
-         << state->_calib_imu_tg->value()(2) << ","
-         << state->_calib_imu_tg->value()(3) << ","
-         << state->_calib_imu_tg->value()(4) << ","
-         << state->_calib_imu_tg->value()(5) << ","
-         << state->_calib_imu_tg->value()(6) << ","
-         << state->_calib_imu_tg->value()(7) << ","
-         << state->_calib_imu_tg->value()(8);
+      if (state->_options.do_calib_imu_intrinsics &&
+          state->_options.imu_model == StateOptions::ImuModel::KALIBR) {
+        ss << " | q_GYROtoI = " << std::setprecision(3)
+          << state->_calib_imu_GYROtoIMU->value()(0) << ","
+          << state->_calib_imu_GYROtoIMU->value()(1) << ","
+          << state->_calib_imu_GYROtoIMU->value()(2) << ","
+          << state->_calib_imu_GYROtoIMU->value()(3);
+      }
+      if (state->_options.do_calib_imu_intrinsics &&
+          state->_options.imu_model == StateOptions::ImuModel::RPNG) {
+        ss << " | q_ACCtoI = " << std::setprecision(3)
+          << state->_calib_imu_ACCtoIMU->value()(0) << ","
+          << state->_calib_imu_ACCtoIMU->value()(1) << ","
+          << state->_calib_imu_ACCtoIMU->value()(2) << ","
+          << state->_calib_imu_ACCtoIMU->value()(3);
+      }
+      if (state->_options.do_calib_imu_intrinsics &&
+          state->_options.imu_model == StateOptions::ImuModel::KALIBR) {
+        ss << " | Dw = " << std::setprecision(4)
+          << state->_calib_imu_dw->value()(0) << ","
+          << state->_calib_imu_dw->value()(1) << ","
+          << state->_calib_imu_dw->value()(2) << ","
+          << state->_calib_imu_dw->value()(3) << ","
+          << state->_calib_imu_dw->value()(4) << ","
+          << state->_calib_imu_dw->value()(5)
+          << " | Da = " << state->_calib_imu_da->value()(0) << ","
+          << state->_calib_imu_da->value()(1) << ","
+          << state->_calib_imu_da->value()(2) << ","
+          << state->_calib_imu_da->value()(3) << ","
+          << state->_calib_imu_da->value()(4) << ","
+          << state->_calib_imu_da->value()(5);
+      }
+      if (state->_options.do_calib_imu_intrinsics &&
+          state->_options.imu_model == StateOptions::ImuModel::RPNG) {
+        ss << " | Dw = " << std::setprecision(4)
+          << state->_calib_imu_dw->value()(0) << ","
+          << state->_calib_imu_dw->value()(1) << ","
+          << state->_calib_imu_dw->value()(2) << ","
+          << state->_calib_imu_dw->value()(3) << ","
+          << state->_calib_imu_dw->value()(4) << ","
+          << state->_calib_imu_dw->value()(5)
+          << " | Da = " << state->_calib_imu_da->value()(0) << ","
+          << state->_calib_imu_da->value()(1) << ","
+          << state->_calib_imu_da->value()(2) << ","
+          << state->_calib_imu_da->value()(3) << ","
+          << state->_calib_imu_da->value()(4) << ","
+          << state->_calib_imu_da->value()(5);
+      }
+      if (state->_options.do_calib_imu_intrinsics &&
+          state->_options.do_calib_imu_g_sensitivity) {
+        ss << " | Tg = " << std::setprecision(4)
+          << state->_calib_imu_tg->value()(0) << ","
+          << state->_calib_imu_tg->value()(1) << ","
+          << state->_calib_imu_tg->value()(2) << ","
+          << state->_calib_imu_tg->value()(3) << ","
+          << state->_calib_imu_tg->value()(4) << ","
+          << state->_calib_imu_tg->value()(5) << ","
+          << state->_calib_imu_tg->value()(6) << ","
+          << state->_calib_imu_tg->value()(7) << ","
+          << state->_calib_imu_tg->value()(8);
+      }
     }
     ss << "\n";
     PRINT_INFO(GREEN "%s" RESET, ss.str().c_str());
