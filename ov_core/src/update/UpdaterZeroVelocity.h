@@ -79,7 +79,8 @@ public:
       double zupt_strict_max_velocity, double zupt_strict_max_disparity,
       double zupt_strict_chi2_multipler,
       int zupt_exit_consecutive_failures,
-      double zupt_exit_cov_inflation);
+      double zupt_exit_cov_inflation,
+      bool print_zupt = false);
 
   /**
    * @brief 惯性数据的输入函数
@@ -104,7 +105,6 @@ public:
 
 protected:
 
-  bool print_debug = false;
   /// 更新期间使用的选项（chi2乘数）
   UpdaterOptions _options;
 
@@ -159,6 +159,9 @@ protected:
 
   /// 确认退出 ZUPT 时的 IMU 协方差倍化系数（1.0=关闭）
   double _zupt_exit_cov_inflation = 1.0;
+
+  /// 是否打印 [ZUPT] 静止门与更新日志（默认关闭）
+  bool _print_zupt = false;
 };
 
 } // namespace ov_msckf

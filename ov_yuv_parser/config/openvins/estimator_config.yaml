@@ -93,15 +93,6 @@ init_dyn_bias_a: [-0.053302996178729294, -0.015902613210897493, 0.07961711223434
 # ==================================================================
 # ==================================================================
 
-# ---------- 仿真/评测（ROS 等可能用；纯离线可忽略）----------
-save_total_state: false # 是否保存状态与对角标准差到文件；配合 ov_eval 等
-filepath_est: "/tmp/ov_estimate.txt" # 估计轨迹输出路径
-filepath_std: "/tmp/ov_estimate_std.txt" # 标准差输出路径
-filepath_gt: "/tmp/ov_groundtruth.txt" # 真值输出路径（仿真）
-
-# ==================================================================
-# ==================================================================
-
 # ---------- 前端跟踪 ----------
 use_klt: true # true：KLT；false：ORB 描述子 + 匹配
 num_pts: 120 # 每相机每帧目标特征数（影响算力与鲁棒性）
@@ -111,11 +102,9 @@ grid_y: 6 # 特征网格行数
 min_px_dist: 15 # 特征间最小像素距（过小则冗余）
 knn_ratio: 0.5 # 描述子匹配 KNN 比值（仅非 KLT 时）
 track_frequency: 15.0 # 期望跟踪帧率（Hz）；更高频率的帧会被丢弃
-debug_display_waitkey_ms: 0 # 调试窗口 waitKey 时长（毫秒）；0=不等待，仅处理GUI事件
 use_imu_klt_prior: true # 启用 IMU 先验评估（当前仅计算预测vs原始残差，不替换跟踪初值）
 imu_klt_prior_min_dt: 0.002 # 使用 IMU 先验的最小帧间隔（秒）
 imu_klt_prior_max_dt: 0.08 # 使用 IMU 先验的最大帧间隔（秒）
-imu_klt_prior_debug: true # 打印 IMU 预测与原始值残差日志
 
 downsample_cameras: false # true：图像长宽各减半（内参在加载逻辑中已配合缩放）
 num_opencv_threads: 1 # OpenCV 线程：-1 默认，0–1 串行，>1 多线程
@@ -148,9 +137,20 @@ relative_config_imucam: "kalibr_imucam_chain.yaml" # 相机内参、畸变、T_i
 sim_traj_path: "" # 仿真轨迹文件；实机/离线留空
 
 # ==================================================================
-# 打印 / 日志 / 计时
+# ---------- 调试 / 日志 / 可视化 / 评测落盘 ----------
 # ==================================================================
 verbosity: "INFO" # 日志级别：ALL, DEBUG, INFO, WARNING, ERROR, SILENT
+print_state_calib: true # 每次更新后是否打印状态与标定
+print_timing: false # 是否打印各阶段耗时
+print_tracking_stats: true # 是否打印 [VM] 帧与 [跟踪] 周期日志
+print_zupt: true # 为 true 时打印 [ZUPT] 静止门/更新日志及启动时 ZUPT 参数说明
+# true：每帧 retriangulate 后打印线性三角化 p_FinG（全局系 m；活动 MSCKF + SLAM）；输出量大，仅调试
+print_triangulated_points: false
+
+debug_display_waitkey_ms: 0 # 调试窗口 waitKey 时长（毫秒）；0=不等待，仅处理GUI事件
+imu_klt_prior_debug: false # 打印 IMU 预测与原始值残差日志
+print_klt_geom: false # true：打印 [KLT-GEOM] H/F RANSAC 与包络收缩统计（输出量大）
+
 record_timing_information: true # 是否在结束时写计时统计
 record_timing_filepath: "/tmp/traj_timing.txt" # 计时输出路径
 
@@ -161,10 +161,8 @@ record_vio_dataset_root: "/tmp/vio_dataset_log" # 记录根目录（须可写绝
 record_vio_mosaic_cols: 1 # 拼图列数
 record_vio_mosaic_rows: 15 # 拼图行数（每包行数）
 
-print_state_calib: true # 每次更新后是否打印状态与标定
-print_timing: true # 是否打印各阶段耗时
-print_tracking_stats: true # 是否打印 [VM] 帧与 [跟踪] 周期日志
-# true：每帧 retriangulate 后打印线性三角化 p_FinG（全局系 m；活动 MSCKF + SLAM）；输出量大，仅调试
-print_triangulated_points: false
-# 1.0：关闭；0.15～0.4：对当前 cam0 深度沿射线低通，减轻 active_tracks 可视化帧间抖动（不进入滤波器）
-active_tracks_depth_smooth_alpha: 0.15
+# 仿真/评测（ROS 等可能用；纯离线可忽略）
+save_total_state: false # 是否保存状态与对角标准差到文件；配合 ov_eval 等
+filepath_est: "/tmp/ov_estimate.txt" # 估计轨迹输出路径
+filepath_std: "/tmp/ov_estimate_std.txt" # 标准差输出路径
+filepath_gt: "/tmp/ov_groundtruth.txt" # 真值输出路径（仿真）

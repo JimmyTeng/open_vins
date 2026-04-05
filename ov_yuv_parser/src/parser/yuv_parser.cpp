@@ -155,21 +155,34 @@ std::vector<FrameData> YUVParser::parseAllFrames(
     file_groups[info.filename].push_back(info);
   }
 
-  // Process each file
+  // Process each file：用 FrameInfo 的 FramCnt 相对本文件首帧的偏移索引 YUV，
+  // 避免 txt 行顺序与二进制帧顺序不一致时错配时间戳与像素。
   for (const auto& file_group : file_groups) {
     const std::string& filename = file_group.first;
     const std::vector<FrameInfo>& infos = file_group.second;
+
+    if (infos.empty()) {
+      continue;
+    }
 
     std::string yuv_path = dump_yuv_dir + "/" + filename;
     std::vector<std::vector<unsigned char>> frames =
         parseYUVFile(yuv_path, 100);
 
-    // Create FrameData for each frame
-    for (size_t i = 0; i < frames.size() && i < infos.size(); ++i) {
+    const int base_fc = infos[0].frame_count;
+
+    for (const auto& info : infos) {
+      const int idx = info.frame_count - base_fc;
+      if (idx < 0 || static_cast<size_t>(idx) >= frames.size()) {
+        std::cerr << "Warning: " << filename << " FramCnt=" << info.frame_count
+                  << " -> index " << idx << " out of range (have "
+                  << frames.size() << " frames), skip\n";
+        continue;
+      }
       FrameData frame_data;
-      frame_data.info = infos[i];
-      frame_data.frame_data = frames[i];
-      frame_data.timestamp = infos[i].vi_pts;
+      frame_data.info = info;
+      frame_data.frame_data = frames[static_cast<size_t>(idx)];
+      frame_data.timestamp = info.vi_pts;
       all_frames.push_back(frame_data);
     }
   }
@@ -227,7 +240,8 @@ void YUVParser::printFrameStats(const std::vector<unsigned char>& frame_data) {
             << std::endl;
 }
 
-int YUVParser::exportFramesToPNG(const std::string& dump_yuv_dir) {
+int YUVParser::exportFramesToPNG(const std::string& dump_yuv_dir,
+                                 bool show_imshow, int wait_key_ms) {
   // Check if dump_yuv directory exists
   struct stat info;
   if (stat(dump_yuv_dir.c_str(), &info) != 0 || !(info.st_mode & S_IFDIR)) {
@@ -315,11 +329,36 @@ int YUVParser::exportFramesToPNG(const std::string& dump_yuv_dir) {
         std::cout << "Exported " << (i + 1) << " / " << all_frames.size()
                   << " frames..." << std::endl;
       }
+#if OPENVINS_HAVE_OPENCV_HIGHGUI
+      if (show_imshow) {
+        cv::Mat vis = frameToMat(frame_data.frame_data);
+        if (!vis.empty()) {
+          std::string cap = filename + " | " + std::to_string(i + 1) + "/" +
+                            std::to_string(all_frames.size());
+          cv::putText(vis, cap, cv::Point(8, 24), cv::FONT_HERSHEY_SIMPLEX, 0.5,
+                      cv::Scalar(255), 1);
+          cv::imshow("yuv_to_png preview", vis);
+          int w = (wait_key_ms <= 0) ? 0 : wait_key_ms;
+          int key = cv::waitKey(w) & 0xFF;
+          if (key == 'q' || key == 'Q' || key == 27) {
+            std::cout << "\n用户按 q/Esc 结束预览，已导出 " << success_count
+                      << " 帧。\n";
+            cv::destroyWindow("yuv_to_png preview");
+            return success_count;
+          }
+        }
+      }
+#endif
     } else {
       std::cerr << "Warning: Failed to save frame " << i
                 << " (timestamp: " << frame_data.timestamp << ")" << std::endl;
     }
   }
+#if OPENVINS_HAVE_OPENCV_HIGHGUI
+  if (show_imshow) {
+    cv::destroyWindow("yuv_to_png preview");
+  }
+#endif
 
   std::cout << "Export complete! Successfully exported " << success_count
             << " / " << all_frames.size() << " frames to " << output_dir

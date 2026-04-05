@@ -195,8 +195,8 @@ bool VioManager::try_to_initialize(const ov_core::CameraData &message) {
       Eigen::Vector3d rpy_deg =
           rot2rpy(state->_imu->Rot()) * 180.0 / M_PI;
       PRINT_INFO(GREEN
-                 "[VMH] 速度 (% 8.4f, % 8.4f, % 8.4f) 欧拉 (% 8.2f, "
-                 "% 8.2f, % 8.2f)\n" RESET,
+                 "[VMH] 速度 (%8.4f, %8.4f, %8.4f) 欧拉 (%8.2f, %8.2f, %8.2f)\n"
+                 RESET,
                  state->_imu->vel()(0), state->_imu->vel()(1),
                  state->_imu->vel()(2), rpy_deg(0), rpy_deg(1), rpy_deg(2));
       PRINT_INFO(GREEN
@@ -284,8 +284,6 @@ void VioManager::retriangulate_active_tracks(
   }
   active_tracks_posinG.clear();
   active_tracks_uvd.clear();
-  if (params.active_tracks_depth_smooth_alpha >= 1.0 - 1e-12)
-    active_tracks_depth_smooth_prev.clear();
 
   // 前端中的当前活动跟踪
   // TODO: 应该在这里断言这些是在消息时间...
@@ -457,36 +455,6 @@ void VioManager::retriangulate_active_tracks(
     }
     for (size_t id : drop)
       active_tracks_posinG.erase(id);
-  }
-
-  // 沿当前 cam0 像素射线对深度做一阶低通，减轻线性三角化 + 全局系漂移带来的帧间跳变（不改变 SLAM/MSCKF 滤波）
-  if (params.active_tracks_depth_smooth_alpha < 1.0 - 1e-12 &&
-      params.active_tracks_depth_smooth_alpha > 1e-12) {
-    const double a = params.active_tracks_depth_smooth_alpha;
-    for (auto &feat : active_tracks_posinG) {
-      if (feat_uvs_in_cam0.find(feat.first) == feat_uvs_in_cam0.end())
-        continue;
-      Eigen::Vector3d p_FinIi = R_GtoIi * (feat.second - p_IiinG);
-      Eigen::Vector3d p_FinCi = R_ItoC * p_FinIi + p_IinC;
-      double depth = p_FinCi(2);
-      auto itp = active_tracks_depth_smooth_prev.find(feat.first);
-      if (itp != active_tracks_depth_smooth_prev.end())
-        depth = a * depth + (1.0 - a) * itp->second;
-      active_tracks_depth_smooth_prev[feat.first] = depth;
-      cv::Point2f pt_n = state->_cam_intrinsics_cameras.at(0)->undistort_cv(
-          feat_uvs_in_cam0.at(feat.first));
-      Eigen::Vector3d pFc(pt_n.x * depth, pt_n.y * depth, depth);
-      Eigen::Vector3d pFi = R_ItoC.transpose() * (pFc - p_IinC);
-      feat.second = R_GtoIi.transpose() * pFi + p_IiinG;
-    }
-    for (auto it = active_tracks_depth_smooth_prev.begin();
-         it != active_tracks_depth_smooth_prev.end();) {
-      if (active_tracks_posinG.find(it->first) == active_tracks_posinG.end() ||
-          feat_uvs_in_cam0.find(it->first) == feat_uvs_in_cam0.end())
-        it = active_tracks_depth_smooth_prev.erase(it);
-      else
-        ++it;
-    }
   }
 
   if (params.print_triangulated_points && !active_tracks_posinG.empty()) {

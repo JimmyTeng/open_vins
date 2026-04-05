@@ -50,6 +50,8 @@ void TrackDescriptor::feed_new_camera(const CameraData &message) {
     std::exit(EXIT_FAILURE);
   }
 
+  const rtime_t rT_feed0 = rtime_now();
+
   // Either call our stereo or monocular version
   // If we are doing binocular tracking, then we should parallize our tracking
   size_t num_images = message.images.size();
@@ -70,6 +72,11 @@ void TrackDescriptor::feed_new_camera(const CameraData &message) {
                 "mono or stereo tracking",
                 num_images);
     std::exit(EXIT_FAILURE);
+  }
+
+  if (print_track_timing_us_) {
+    PRINT_INFO(CYAN "[TIME-DESC] 跟踪全程 %.3f µs\n" RESET,
+               rtime_us(rT_feed0, rtime_now()));
   }
 }
 
@@ -109,6 +116,10 @@ void TrackDescriptor::feed_monocular(const CameraData &message, size_t msg_id) {
     pts_last[cam_id] = good_left;
     ids_last[cam_id] = good_ids_left;
     desc_last[cam_id] = good_desc_left;
+    if (print_track_timing_us_) {
+      PRINT_INFO(CYAN "[TIME-DESC] 单目: 首帧/仅检测 %.3f µs\n" RESET,
+                 rtime_us(rT1, rtime_now()));
+    }
     return;
   }
 
@@ -187,13 +198,13 @@ void TrackDescriptor::feed_monocular(const CameraData &message, size_t msg_id) {
   }
   rT5 = rtime_now();
 
-  // Our timing information
-  PRINT_ALL("[TIME-DESC]: %.2f ms for detection\n", rtime_ms(rT1, rT2));
-  PRINT_ALL("[TIME-DESC]: %.2f ms for matching\n", rtime_ms(rT2, rT3));
-  PRINT_ALL("[TIME-DESC]: %.2f ms for merging\n", rtime_ms(rT3, rT4));
-  PRINT_ALL("[TIME-DESC]: %.2f ms for feature DB update (%d features)\n",
-            rtime_ms(rT4, rT5), (int)good_left.size());
-  PRINT_ALL("[TIME-DESC]: %.2f ms for total\n", rtime_ms(rT1, rT5));
+  if (print_track_timing_us_) {
+    PRINT_INFO(CYAN
+               "[TIME-DESC] 单目: 检测 %.3f µs | 匹配 %.3f µs | 合并ID %.3f µs | 入库 "
+               "%.3f µs | 小计 %.3f µs\n" RESET,
+               rtime_us(rT1, rT2), rtime_us(rT2, rT3), rtime_us(rT3, rT4),
+               rtime_us(rT4, rT5), rtime_us(rT1, rT5));
+  }
 }
 
 void TrackDescriptor::feed_stereo(const CameraData &message, size_t msg_id_left,
@@ -246,6 +257,10 @@ void TrackDescriptor::feed_stereo(const CameraData &message, size_t msg_id_left,
     ids_last[cam_id_right] = good_ids_right;
     desc_last[cam_id_left] = good_desc_left;
     desc_last[cam_id_right] = good_desc_right;
+    if (print_track_timing_us_) {
+      PRINT_INFO(CYAN "[TIME-DESC] 双目: 首帧/仅检测 %.3f µs\n" RESET,
+                 rtime_us(rT1, rtime_now()));
+    }
     return;
   }
 
@@ -377,13 +392,13 @@ void TrackDescriptor::feed_stereo(const CameraData &message, size_t msg_id_left,
   }
   rT5 = rtime_now();
 
-  // Our timing information
-  PRINT_ALL("[TIME-DESC]: %.2f ms for detection\n", rtime_ms(rT1, rT2));
-  PRINT_ALL("[TIME-DESC]: %.2f ms for matching\n", rtime_ms(rT2, rT3));
-  PRINT_ALL("[TIME-DESC]: %.2f ms for merging\n", rtime_ms(rT3, rT4));
-  PRINT_ALL("[TIME-DESC]: %.2f ms for feature DB update (%d features)\n",
-            rtime_ms(rT4, rT5), (int)good_left.size());
-  PRINT_ALL("[TIME-DESC]: %.2f ms for total\n", rtime_ms(rT1, rT5));
+  if (print_track_timing_us_) {
+    PRINT_INFO(CYAN
+               "[TIME-DESC] 双目: 检测 %.3f µs | 匹配 %.3f µs | 合并ID %.3f µs | 入库 "
+               "%.3f µs | 小计 %.3f µs\n" RESET,
+               rtime_us(rT1, rT2), rtime_us(rT2, rT3), rtime_us(rT3, rT4),
+               rtime_us(rT4, rT5), rtime_us(rT1, rT5));
+  }
 }
 
 void TrackDescriptor::perform_detection_monocular(

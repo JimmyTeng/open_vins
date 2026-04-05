@@ -49,6 +49,7 @@
 #include "update/UpdaterMSCKF.h"
 #include "update/UpdaterSLAM.h"
 #include "update/UpdaterZeroVelocity.h"
+#include "utils/colors.h"
 #include "utils/opencv_lambda_body.h"
 #include "utils/print.h"
 #include "utils/quat_ops.h"
@@ -244,9 +245,11 @@ VioManager::VioManager(VioManagerOptions &params_)
       track_klt->set_imu_klt_prior_options(
           params.use_imu_klt_prior, params.imu_klt_prior_min_dt,
           params.imu_klt_prior_max_dt, params.imu_klt_prior_debug);
+      track_klt->set_print_klt_geom(params.print_klt_geom);
       track_klt->set_cam_to_imu_time_offset(
           state->_calib_dt_CAMtoIMU->value()(0));
     }
+    trackFEATS->set_print_track_timing_us(params.print_timing);
   } else {
     // 使用描述符跟踪器
     trackFEATS = std::shared_ptr<TrackBase>(new TrackDescriptor(
@@ -254,6 +257,7 @@ VioManager::VioManager(VioManagerOptions &params_)
         state->_options.max_aruco_features, params.use_stereo,
         params.histogram_method, params.fast_threshold, params.grid_x,
         params.grid_y, params.min_px_dist, params.knn_ratio));
+    trackFEATS->set_print_track_timing_us(params.print_timing);
   }
 
   // 初始化ArUco标签提取器
@@ -292,7 +296,8 @@ VioManager::VioManager(VioManagerOptions &params_)
         params.zupt_strict_max_velocity, params.zupt_strict_max_disparity,
         params.zupt_strict_chi2_multipler,
         params.zupt_exit_consecutive_failures,
-        params.zupt_exit_cov_inflation);
+        params.zupt_exit_cov_inflation,
+        params.print_zupt);
   }
 }
 
@@ -490,7 +495,8 @@ void VioManager::feed_measurement_simulation(
           params.zupt_strict_max_velocity, params.zupt_strict_max_disparity,
           params.zupt_strict_chi2_multipler,
           params.zupt_exit_consecutive_failures,
-          params.zupt_exit_cov_inflation);
+          params.zupt_exit_cov_inflation,
+          params.print_zupt);
     }
     PRINT_WARNING(RED "[仿真]: 将跟踪器转换为TrackSIM对象！\n" RESET);
   }
@@ -733,8 +739,8 @@ void VioManager::track_image_and_update(
   if (!is_initialized_vio) {
     is_initialized_vio = try_to_initialize(message);
     if (!is_initialized_vio) {
-      double time_track = rtime_ms(rT1, rT2);
-      PRINT_DEBUG(BLUE "[VM]: 跟踪耗时 %.2f ms\n" RESET, time_track);
+      const double time_track_us = rtime_us(rT1, rT2);
+      PRINT_DEBUG(BLUE "[VM]: 跟踪耗时 %.3f µs\n" RESET, time_track_us);
       return;
     }
   }
@@ -1238,34 +1244,34 @@ void VioManager::do_feature_propagate_update(
 
   // 获取时间统计信息
   // Get timing statitics information
-  double time_track = rtime_ms(rT1, rT2);        // 特征跟踪时间
-  double time_prop = rtime_ms(rT2, rT3);         // 状态传播时间
-  double time_msckf = rtime_ms(rT3, rT4);        // MSCKF更新时间
-  double time_slam_update = rtime_ms(rT4, rT5);  // SLAM更新时间
-  double time_slam_delay = rtime_ms(rT5, rT6);   // SLAM延迟初始化时间
-  double time_marg = rtime_ms(rT6, rT7);         // 重新三角化和边缘化时间
-  double time_total = rtime_ms(rT1, rT7);        // 总时间
+  double time_track = rtime_us(rT1, rT2);        // 特征跟踪时间（µs）
+  double time_prop = rtime_us(rT2, rT3);         // 状态传播时间（µs）
+  double time_msckf = rtime_us(rT3, rT4);        // MSCKF更新时间（µs）
+  double time_slam_update = rtime_us(rT4, rT5);  // SLAM更新时间（µs）
+  double time_slam_delay = rtime_us(rT5, rT6);   // SLAM延迟初始化时间（µs）
+  double time_marg = rtime_us(rT6, rT7);         // 重新三角化和边缘化时间（µs）
+  double time_total = rtime_us(rT1, rT7);        // 总时间（µs）
 
-  // 打印时间信息（由配置 print_timing 控制）
-  // Timing information (controlled by config print_timing)
+  // 打印时间信息（由配置 print_timing 控制，单位微秒）
+  // Timing information (controlled by config print_timing), microseconds
   if (params.print_timing) {
-    PRINT_INFO(BLUE "[VM]: 跟踪耗时 %.2f ms\n" RESET, time_track);
-    PRINT_INFO(BLUE "[VM]: 传播耗时 %.2f ms\n" RESET, time_prop);
-    PRINT_INFO(BLUE "[VM]: MSCKF更新耗时 %.2f ms (%d 个特征)\n" RESET,
+    PRINT_INFO(BLUE "[VM]: 跟踪耗时 %.3f µs\n" RESET, time_track);
+    PRINT_INFO(BLUE "[VM]: 传播耗时 %.3f µs\n" RESET, time_prop);
+    PRINT_INFO(BLUE "[VM]: MSCKF更新耗时 %.3f µs (%d 个特征)\n" RESET,
                time_msckf, (int)featsup_MSCKF.size());
     if (state->_options.max_slam_features > 0) {
-      PRINT_INFO(BLUE "[VM]: SLAM更新耗时 %.2f ms (%d 个特征)\n" RESET,
+      PRINT_INFO(BLUE "[VM]: SLAM更新耗时 %.3f µs (%d 个特征)\n" RESET,
                  time_slam_update, (int)state->_features_SLAM.size());
-      PRINT_INFO(BLUE "[VM]: SLAM延迟初始化耗时 %.2f ms (%d 个特征)\n" RESET,
+      PRINT_INFO(BLUE "[VM]: SLAM延迟初始化耗时 %.3f µs (%d 个特征)\n" RESET,
                  time_slam_delay, (int)feats_slam_DELAYED.size());
     }
     PRINT_INFO(
         BLUE
-        "[VM]: 重新三角化和边缘化耗时 %.2f ms (状态中有 %d 个克隆)\n" RESET,
+        "[VM]: 重新三角化和边缘化耗时 %.3f µs (状态中有 %d 个克隆)\n" RESET,
         time_marg, (int)state->_clones_IMU.size());
 
     std::stringstream ss;
-    ss << "[VM]: 总耗时 " << std::setprecision(2) << time_total << " ms (相机";
+    ss << "[VM]: 总耗时 " << std::setprecision(3) << time_total << " µs (相机";
     for (const auto &id : message.sensor_ids) {
       ss << " " << id;
     }
@@ -1283,15 +1289,16 @@ void VioManager::do_feature_propagate_update(
     double timestamp_inI = state->_timestamp + t_ItoC;
     // 追加到文件
     // Append to the file
+    // 各阶段时间为微秒，文件内写入秒（与原先毫秒/1000 等价语义：总秒数）
     of_statistics << std::fixed << std::setprecision(15) << timestamp_inI << ","
-                  << std::fixed << std::setprecision(5) << (time_track / 1000.0)
-                  << "," << (time_prop / 1000.0) << "," << (time_msckf / 1000.0)
+                  << std::fixed << std::setprecision(5) << (time_track / 1e6)
+                  << "," << (time_prop / 1e6) << "," << (time_msckf / 1e6)
                   << ",";
     if (state->_options.max_slam_features > 0) {
-      of_statistics << (time_slam_update / 1000.0) << ","
-                    << (time_slam_delay / 1000.0) << ",";
+      of_statistics << (time_slam_update / 1e6) << ","
+                    << (time_slam_delay / 1e6) << ",";
     }
-    of_statistics << (time_marg / 1000.0) << "," << (time_total / 1000.0)
+    of_statistics << (time_marg / 1e6) << "," << (time_total / 1e6)
                   << std::endl;
     of_statistics.flush();
   }
@@ -1313,9 +1320,10 @@ void VioManager::do_feature_propagate_update(
         rot2rpy(quat_2_Rot(state->_imu->quat())) * 180.0 / M_PI;
     ss << std::fixed << std::setprecision(3)
        << "[VM]: 欧拉角(deg) roll,pitch,yaw = " << rpy_deg(0) << ","
-       << rpy_deg(1) << "," << rpy_deg(2) << " | p_IinG = " << state->_imu->pos()(0)
-       << "," << state->_imu->pos()(1) << "," << state->_imu->pos()(2)
-       << " | Dist = " << std::setprecision(2) << distance
+       << rpy_deg(1) << "," << rpy_deg(2) << " | p_IinG = "
+       << state->_imu->pos()(0) << "," << state->_imu->pos()(1) << ","
+       << state->_imu->pos()(2) << " | Dist = " << std::setprecision(2)
+       << distance
        << " s | bg = " << std::setprecision(4) << state->_imu->bias_g()(0)
        << "," << state->_imu->bias_g()(1) << "," << state->_imu->bias_g()(2)
        << " | ba = " << state->_imu->bias_a()(0) << ","
@@ -1336,8 +1344,7 @@ void VioManager::do_feature_propagate_update(
         ss << " | 相机" << i << "外参 = " << std::setprecision(3)
            << calib->quat()(0) << "," << calib->quat()(1) << ","
            << calib->quat()(2) << "," << calib->quat()(3) << " | "
-           << calib->pos()(0) << "," << calib->pos()(1) << ","
-           << calib->pos()(2);
+           << calib->pos()(0) << "," << calib->pos()(1) << "," << calib->pos()(2);
       }
     }
     if (state->_options.do_calib_imu_intrinsics &&
@@ -1402,6 +1409,6 @@ void VioManager::do_feature_propagate_update(
          << state->_calib_imu_tg->value()(8);
     }
     ss << "\n";
-    PRINT_INFO("%s", ss.str().c_str());
+    PRINT_INFO(GREEN "%s" RESET, ss.str().c_str());
   }
 }

@@ -129,6 +129,9 @@ struct VioManagerOptions {
   double zupt_strict_max_disparity = 1.0;
   double zupt_strict_chi2_multipler = 1.0;
 
+  /// 是否打印 ZUPT 运行时 [ZUPT] 日志与启动时 ZUPT 参数说明（默认关闭）
+  bool print_zupt = false;
+
   /// 每次 IMU 传播后对速度误差协方差对角增加 (m^2/s^2)/轴；0=关闭。略增大可降低对纯 IMU 积分速度的置信度，使 MSCKF/SLAM 更易校正速度、减轻位置漂移
   double post_propagate_vel_cov_diag_add = 0.0;
 
@@ -174,10 +177,6 @@ struct VioManagerOptions {
   /// 是否在每次 retriangulate 后打印线性三角化得到的特征点全局坐标 p_FinG（米；含 MSCKF 活动轨迹与 SLAM 路标）
   /// If true, print global-frame triangulated feature positions after each retriangulate_active_tracks
   bool print_triangulated_points = false;
-
-  /// 活动轨迹三角化深度（当前 cam0 +Z）一阶低通系数：1=关闭；0.2~0.5 可减轻帧间抖动（仅影响 active_tracks 可视化，非滤波状态）
-  /// IIR on triangulated depth along current ray; 1=off; smaller = smoother viz (not filter state)
-  double active_tracks_depth_smooth_alpha = 1.0;
 
   /**
    * @brief 加载并打印所有估计器设置
@@ -247,15 +246,16 @@ struct VioManagerOptions {
       parser->parse_config("print_tracking_stats", print_tracking_stats);
       parser->parse_config("print_triangulated_points", print_triangulated_points,
                            false);
-      parser->parse_config("active_tracks_depth_smooth_alpha",
-                           active_tracks_depth_smooth_alpha, false);
+      parser->parse_config("print_zupt", print_zupt, false);
       parser->parse_config("post_propagate_vel_cov_diag_add",
                            post_propagate_vel_cov_diag_add, false);
     }
     PRINT_DEBUG("  - SLAM延迟时间: %.1f\n", dt_slam_delay);
-    PRINT_DEBUG("  - 零速度更新 try_zupt: %d\n", try_zupt);
-    PRINT_DEBUG("  - 仅在开始时使用零速度更新 zupt_only_at_beginning: %d\n",
-                zupt_only_at_beginning);
+    if (print_zupt) {
+      PRINT_DEBUG("  - 零速度更新 try_zupt: %d\n", try_zupt);
+      PRINT_DEBUG("  - 仅在开始时使用零速度更新 zupt_only_at_beginning: %d\n",
+                  zupt_only_at_beginning);
+    }
     if (zupt_exit_consecutive_failures < 1) {
       PRINT_WARNING(
           YELLOW
@@ -264,8 +264,10 @@ struct VioManagerOptions {
           zupt_exit_consecutive_failures);
       zupt_exit_consecutive_failures = 1;
     }
-    PRINT_DEBUG("  - 延迟退出ZUPT 连续离开回合数 n: %d（1=立即退出）\n",
-                zupt_exit_consecutive_failures);
+    if (print_zupt) {
+      PRINT_DEBUG("  - 延迟退出ZUPT 连续离开回合数 n: %d（1=立即退出）\n",
+                  zupt_exit_consecutive_failures);
+    }
     if (zupt_exit_cov_inflation < 1.0) {
       PRINT_WARNING(YELLOW
                     "  - zupt_exit_cov_inflation=%.3f 非法，回退为 1.0（不倍化）\n"
@@ -273,15 +275,17 @@ struct VioManagerOptions {
                     zupt_exit_cov_inflation);
       zupt_exit_cov_inflation = 1.0;
     }
-    PRINT_DEBUG("  - 退出ZUPT时 IMU 协方差倍化系数: %.3f（1.0=关闭）\n",
-                zupt_exit_cov_inflation);
-    PRINT_DEBUG("  - ZUPT 静止门 = 赞同阈值支路 || 否决阈值支路（χ² 倍率见「噪声参数」段）\n");
-    PRINT_DEBUG("    赞同阈值（zupt_agree_*）：|v|≤%.3f m/s  disp≤%.4f px\n",
-                zupt_agree_max_velocity, zupt_agree_max_disparity);
-    PRINT_DEBUG("    否决阈值（zupt_strict_*）：|v|≤%.3f m/s  disp≤%.4f px\n",
-                zupt_strict_max_velocity, zupt_strict_max_disparity);
-    PRINT_DEBUG("    ZUPT 测量噪声 R 标量倍率（χ² 与 EKF 共用）: %.3f\n",
-                zupt_noise_multiplier);
+    if (print_zupt) {
+      PRINT_DEBUG("  - 退出ZUPT时 IMU 协方差倍化系数: %.3f（1.0=关闭）\n",
+                  zupt_exit_cov_inflation);
+      PRINT_DEBUG("  - ZUPT 静止门 = 赞同阈值支路 || 否决阈值支路（χ² 倍率见「噪声参数」段）\n");
+      PRINT_DEBUG("    赞同阈值（zupt_agree_*）：|v|≤%.3f m/s  disp≤%.4f px\n",
+                  zupt_agree_max_velocity, zupt_agree_max_disparity);
+      PRINT_DEBUG("    否决阈值（zupt_strict_*）：|v|≤%.3f m/s  disp≤%.4f px\n",
+                  zupt_strict_max_velocity, zupt_strict_max_disparity);
+      PRINT_DEBUG("    ZUPT 测量噪声 R 标量倍率（χ² 与 EKF 共用）: %.3f\n",
+                  zupt_noise_multiplier);
+    }
     PRINT_DEBUG("  - 记录时间信息?: %d\n", (int)record_timing_information);
     PRINT_DEBUG("  - 记录时间信息文件路径: %s\n", record_timing_filepath.c_str());
     PRINT_DEBUG("  - 记录VIO数据集?: %d\n", (int)record_vio_dataset);
@@ -294,8 +298,7 @@ struct VioManagerOptions {
     PRINT_DEBUG("  - 打印各阶段耗时?: %d\n", (int)print_timing);
     PRINT_DEBUG("  - 打印跟踪统计([VM]帧/[跟踪]更新)?: %d\n", (int)print_tracking_stats);
     PRINT_DEBUG("  - 打印三角化点云 p_FinG?: %d\n", (int)print_triangulated_points);
-    PRINT_DEBUG("  - 活动轨迹深度平滑 alpha: %.4f (1=关)\n",
-                active_tracks_depth_smooth_alpha);
+    PRINT_DEBUG("  - 打印 ZUPT 日志?: %d\n", (int)print_zupt);
     PRINT_DEBUG("  - 传播后速度协方差对角膨胀: %.6f (m^2/s^2)/轴（0=关）\n",
                 post_propagate_vel_cov_diag_add);
   }
@@ -384,18 +387,20 @@ struct VioManagerOptions {
     slam_options.print();
     PRINT_DEBUG("  ARUCO标签更新器:\n");
     aruco_options.print();
-    PRINT_DEBUG("  零速度更新器 (ZUPT):\n");
-    PRINT_DEBUG("    - 门限：chi2 ≤ mult × χ²_0.95(残差维)；赞同/否决各用各自 mult 得到 gate_agree / gate_strict\n");
-    PRINT_DEBUG("    - 马氏 χ² 中 S 与 EKF 更新 R 共用 zupt_noise_multiplier\n");
-    PRINT_DEBUG("    - 赞同 chi2_mult: %.4f\n", zupt_agree_chi2_multipler);
-    PRINT_DEBUG("    - 否决 chi2_mult: %.4f\n", zupt_strict_chi2_multipler);
-    PRINT_DEBUG("    - EKF 测量噪声 R 与 χ² 中 R 相同（gate_agree||gate_strict 为真才进入更新）\n");
-    PRINT_DEBUG("    - 兼容字段：zupt_options.chi2_multipler=%.4f（=赞同，供内部一致性）\n",
-                zupt_options.chi2_multipler);
-    PRINT_DEBUG("    - 辅助量：zupt_max_velocity=%.3f (=min(赞同,否决)，如 has_moved)；"
-                "zupt_max_disparity=%.4f (=min(赞同,否决))；"
-                "zupt_noise_multiplier=%.3f\n",
-                zupt_max_velocity, zupt_max_disparity, zupt_noise_multiplier);
+    if (print_zupt) {
+      PRINT_DEBUG("  零速度更新器 (ZUPT):\n");
+      PRINT_DEBUG("    - 门限：chi2 ≤ mult × χ²_0.95(残差维)；赞同/否决各用各自 mult 得到 gate_agree / gate_strict\n");
+      PRINT_DEBUG("    - 马氏 χ² 中 S 与 EKF 更新 R 共用 zupt_noise_multiplier\n");
+      PRINT_DEBUG("    - 赞同 chi2_mult: %.4f\n", zupt_agree_chi2_multipler);
+      PRINT_DEBUG("    - 否决 chi2_mult: %.4f\n", zupt_strict_chi2_multipler);
+      PRINT_DEBUG("    - EKF 测量噪声 R 与 χ² 中 R 相同（gate_agree||gate_strict 为真才进入更新）\n");
+      PRINT_DEBUG("    - 兼容字段：zupt_options.chi2_multipler=%.4f（=赞同，供内部一致性）\n",
+                  zupt_options.chi2_multipler);
+      PRINT_DEBUG("    - 辅助量：zupt_max_velocity=%.3f (=min(赞同,否决)，如 has_moved)；"
+                  "zupt_max_disparity=%.4f (=min(赞同,否决))；"
+                  "zupt_noise_multiplier=%.3f\n",
+                  zupt_max_velocity, zupt_max_disparity, zupt_noise_multiplier);
+    }
   }
 
   // STATE DEFAULTS ==========================
@@ -704,6 +709,9 @@ struct VioManagerOptions {
   /// 打印 IMU-KLT 先验调试信息
   bool imu_klt_prior_debug = false;
 
+  /// 打印 KLT 几何校验 [KLT-GEOM]（H/F RANSAC 与包络收缩统计，默认关闭）
+  bool print_klt_geom = false;
+
   /// 特征初始化/三角化器使用的参数
   /// Parameters used by our feature initialize / triangulator
   ov_core::FeatureInitializerOptions featinit_options;
@@ -757,6 +765,7 @@ struct VioManagerOptions {
       parser->parse_config("imu_klt_prior_min_dt", imu_klt_prior_min_dt, false);
       parser->parse_config("imu_klt_prior_max_dt", imu_klt_prior_max_dt, false);
       parser->parse_config("imu_klt_prior_debug", imu_klt_prior_debug, false);
+      parser->parse_config("print_klt_geom", print_klt_geom, false);
     }
     PRINT_DEBUG("特征跟踪参数:\n");
     PRINT_DEBUG("  - 使用双目: %d\n", use_stereo);
@@ -780,6 +789,7 @@ struct VioManagerOptions {
     PRINT_DEBUG("  - IMU-KLT先验帧间隔范围: [%.4f, %.4f] s\n",
                 imu_klt_prior_min_dt, imu_klt_prior_max_dt);
     PRINT_DEBUG("  - IMU-KLT先验调试打印: %d\n", (int)imu_klt_prior_debug);
+    PRINT_DEBUG("  - 打印KLT几何校验[KLT-GEOM]: %d\n", (int)print_klt_geom);
     featinit_options.print(parser);
   }
 

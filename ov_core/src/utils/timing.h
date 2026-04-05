@@ -47,6 +47,12 @@ inline double rtime_ms(T1 t1, T2 t2) {
   return std::chrono::duration<double, std::milli>(t2 - t1).count();
 }
 
+/// 计算两时间点之间的微秒数（浮点，便于与毫秒打印风格一致）
+template <typename T1, typename T2>
+inline double rtime_us(T1 t1, T2 t2) {
+  return std::chrono::duration<double, std::micro>(t2 - t1).count();
+}
+
 } // namespace ov_core
 
 #endif /* OV_CORE_TIMING_H */

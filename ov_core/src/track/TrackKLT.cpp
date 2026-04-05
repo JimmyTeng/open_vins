@@ -58,6 +58,8 @@ void TrackKLT::set_imu_klt_prior_options(bool enabled, double min_dt,
   imu_klt_prior_max_dt = std::max(imu_klt_prior_min_dt, max_dt);
 }
 
+void TrackKLT::set_print_klt_geom(bool enabled) { print_klt_geom_ = enabled; }
+
 void TrackKLT::set_camera_extrinsics(
     const std::map<size_t, Eigen::VectorXd> &cam_extrinsics) {
   cam_R_ItoC.clear();
@@ -190,6 +192,12 @@ void TrackKLT::feed_new_camera(const CameraData &message) {
                 num_images);
     std::exit(EXIT_FAILURE);
   }
+
+  const rtime_t rT_feed_end = rtime_now();
+  if (print_track_timing_us_) {
+    PRINT_INFO(CYAN "[TIME-KLT] 跟踪全程 %.3f µs\n" RESET,
+               rtime_us(rT1, rT_feed_end));
+  }
 }
 
 void TrackKLT::feed_monocular(const CameraData &message, size_t msg_id) {
@@ -224,13 +232,16 @@ void TrackKLT::feed_monocular(const CameraData &message, size_t msg_id) {
     if (pred_it != imu_predictors.end() && pred_it->second != nullptr) {
       pred_it->second->set_last_frame_timestamp(message.timestamp);
     }
+    if (print_track_timing_us_) {
+      PRINT_INFO(CYAN "[TIME-KLT] 单目: 首帧/仅检测 %.3f µs\n" RESET,
+                 rtime_us(rT1, rtime_now()));
+    }
     return;
   }
 
   // First we should make that the last images have enough features so we can do
   // KLT This will "top-off" our number of tracks so always have a constant
   // number
-  int pts_before_detect = (int)pts_last[cam_id].size();
   auto pts_left_old = pts_last[cam_id];
   auto ids_left_old = ids_last[cam_id];
   perform_detection_monocular(img_pyramid_last[cam_id], img_mask_last[cam_id],
@@ -269,6 +280,10 @@ void TrackKLT::feed_monocular(const CameraData &message, size_t msg_id) {
     auto pred_it = imu_predictors.find(cam_id);
     if (pred_it != imu_predictors.end() && pred_it->second != nullptr) {
       pred_it->second->set_last_frame_timestamp(message.timestamp);
+    }
+    if (print_track_timing_us_) {
+      PRINT_INFO(CYAN "[TIME-KLT] 单目: RANSAC失败重置 %.3f µs\n" RESET,
+                 rtime_us(rT1, rtime_now()));
     }
     return;
   }
@@ -319,6 +334,14 @@ void TrackKLT::feed_monocular(const CameraData &message, size_t msg_id) {
     pred_it->second->set_last_frame_timestamp(message.timestamp);
   }
   rT5 = rtime_now();
+
+  if (print_track_timing_us_) {
+    PRINT_INFO(CYAN
+               "[TIME-KLT] 单目: 金字塔与预处理 %.3f µs | 检测补点 %.3f µs | 光流 "
+               "%.3f µs | 入库与状态 %.3f µs | 小计 %.3f µs\n" RESET,
+               rtime_us(rT1, rT2), rtime_us(rT2, rT3), rtime_us(rT3, rT4),
+               rtime_us(rT4, rT5), rtime_us(rT1, rT5));
+  }
 
   // // Timing information (稳定跟踪：图像特征检测 + 光流跟踪)
   // PRINT_INFO("[TIME-KLT] 图像特征检测: %.4f s (%d 新点)\n", rtime_sec(rT2,
@@ -389,13 +412,16 @@ void TrackKLT::feed_stereo(const CameraData &message, size_t msg_id_left,
     if (pred_r != imu_predictors.end() && pred_r->second != nullptr) {
       pred_r->second->set_last_frame_timestamp(message.timestamp);
     }
+    if (print_track_timing_us_) {
+      PRINT_INFO(CYAN "[TIME-KLT] 双目: 首帧/仅检测 %.3f µs\n" RESET,
+                 rtime_us(rT1, rtime_now()));
+    }
     return;
   }
 
   // First we should make that the last images have enough features so we can do
   // KLT This will "top-off" our number of tracks so always have a constant
   // number
-  int pts_before_detect = (int)pts_last[cam_id_left].size();
   auto pts_left_old = pts_last[cam_id_left];
   auto pts_right_old = pts_last[cam_id_right];
   auto ids_left_old = ids_last[cam_id_left];
@@ -481,6 +507,10 @@ void TrackKLT::feed_stereo(const CameraData &message, size_t msg_id_left,
     auto pred_r = imu_predictors.find(cam_id_right);
     if (pred_r != imu_predictors.end() && pred_r->second != nullptr) {
       pred_r->second->set_last_frame_timestamp(message.timestamp);
+    }
+    if (print_track_timing_us_) {
+      PRINT_INFO(CYAN "[TIME-KLT] 双目: RANSAC失败重置 %.3f µs\n" RESET,
+                 rtime_us(rT1, rtime_now()));
     }
     return;
   }
@@ -588,19 +618,13 @@ void TrackKLT::feed_stereo(const CameraData &message, size_t msg_id_left,
   }
   rT6 = rtime_now();
 
-  // Timing information (稳定跟踪：图像特征检测 + 光流跟踪)
-  PRINT_INFO("[TIME-KLT] 图像特征检测: %.2f ms (%d 新点)\n", rtime_ms(rT2, rT3),
-             (int)pts_last[cam_id_left].size() - pts_before_detect);
-  PRINT_INFO("[TIME-KLT] 光流跟踪: %.2f ms\n", rtime_ms(rT3, rT4));
-  PRINT_ALL("[TIME-KLT]: %.2f ms for pyramid\n", rtime_ms(rT1, rT2));
-  PRINT_ALL("[TIME-KLT]: %.2f ms for detection (%d detected)\n",
-            rtime_ms(rT2, rT3),
-            (int)pts_last[cam_id_left].size() - pts_before_detect);
-  PRINT_ALL("[TIME-KLT]: %.2f ms for temporal klt\n", rtime_ms(rT3, rT4));
-  PRINT_ALL("[TIME-KLT]: %.2f ms for stereo klt\n", rtime_ms(rT4, rT5));
-  PRINT_ALL("[TIME-KLT]: %.2f ms for feature DB update (%d features)\n",
-            rtime_ms(rT5, rT6), (int)good_left.size());
-  PRINT_ALL("[TIME-KLT]: %.2f ms for total\n", rtime_ms(rT1, rT6));
+  if (print_track_timing_us_) {
+    PRINT_INFO(CYAN
+               "[TIME-KLT] 双目: 金字塔 %.3f µs | 检测 %.3f µs | 时序光流 %.3f µs | "
+               "立体间 %.3f µs | 入库 %.3f µs | 小计 %.3f µs\n" RESET,
+               rtime_us(rT1, rT2), rtime_us(rT2, rT3), rtime_us(rT3, rT4),
+               rtime_us(rT4, rT5), rtime_us(rT5, rT6), rtime_us(rT1, rT6));
+  }
 }
 
 void TrackKLT::perform_detection_monocular(const std::vector<cv::Mat> &img0pyr,
@@ -1368,16 +1392,18 @@ void TrackKLT::perform_matching(
   const double h_hull_total = h_hull0.second + h_hull1.second;
   const char *better_code =
       (f_res < h_res) ? "F" : ((h_res < f_res) ? "H" : "TIE");
-  PRINT_INFO(
-      CYAN
-      "[KLT-GEOM] cam %zu->%zu\n"
-      "  TOTAL | n=%-4zu | better=%-3s | shrink=%.0f px | env_shrink(H/F): total=%8.1f/%-8.1f\n"
-      "  H     | inlier=%4zu(%6.2f%%) | res=%10.6f | env_shrink: total=%8.1f src=%8.1f dst=%8.1f\n"
-      "  F     | inlier=%4zu(%6.2f%%) | res=%10.6f | env_shrink: total=%8.1f src=%8.1f dst=%8.1f\n"
-      RESET,
-      id0, id1, total, better_code, kShrinkPx, h_hull_total, f_hull_total,
-      h_inliers, h_ratio, h_res, h_hull_total, h_hull0.second, h_hull1.second,
-      f_inliers, f_ratio, f_res, f_hull_total, f_hull0.second, f_hull1.second);
+  if (print_klt_geom_) {
+    PRINT_INFO(
+        CYAN
+        "[KLT-GEOM] cam %zu->%zu\n"
+        "  TOTAL | n=%-4zu | better=%-3s | shrink=%.0f px | env_shrink(H/F): total=%8.1f/%-8.1f\n"
+        "  H     | inlier=%4zu(%6.2f%%) | res=%10.6f | env_shrink: total=%8.1f src=%8.1f dst=%8.1f\n"
+        "  F     | inlier=%4zu(%6.2f%%) | res=%10.6f | env_shrink: total=%8.1f src=%8.1f dst=%8.1f\n"
+        RESET,
+        id0, id1, total, better_code, kShrinkPx, h_hull_total, f_hull_total,
+        h_inliers, h_ratio, h_res, h_hull_total, h_hull0.second, h_hull1.second,
+        f_inliers, f_ratio, f_res, f_hull_total, f_hull0.second, f_hull1.second);
+  }
 
   // Loop through and record only ones that are valid
   for (size_t i = 0; i < mask_klt.size(); i++) {

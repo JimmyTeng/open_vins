@@ -47,7 +47,7 @@ UpdaterZeroVelocity::UpdaterZeroVelocity(
     double zupt_agree_max_disparity, double zupt_agree_chi2_multipler,
     double zupt_strict_max_velocity, double zupt_strict_max_disparity,
     double zupt_strict_chi2_multipler, int zupt_exit_consecutive_failures,
-    double zupt_exit_cov_inflation)
+    double zupt_exit_cov_inflation, bool print_zupt)
     : _options(options),
       _noises(noises),
       _db(db),
@@ -57,7 +57,8 @@ UpdaterZeroVelocity::UpdaterZeroVelocity(
       _agree_chi2_multipler(zupt_agree_chi2_multipler),
       _strict_max_velocity(zupt_strict_max_velocity),
       _strict_max_disparity(zupt_strict_max_disparity),
-      _strict_chi2_multipler(zupt_strict_chi2_multipler) {
+      _strict_chi2_multipler(zupt_strict_chi2_multipler),
+      _print_zupt(print_zupt) {
   _zupt_max_velocity =
       std::min(zupt_agree_max_velocity, zupt_strict_max_velocity);
   _zupt_noise_multiplier = zupt_noise_multiplier;
@@ -146,9 +147,11 @@ bool UpdaterZeroVelocity::try_update(std::shared_ptr<State> state,
 
   // 检查是否有至少一个测量值用于传播
   if (imu_recent.size() < 2) {
-    PRINT_WARNING(RED
-                  "[ZUPT]: There are no IMU data to check for zero velocity "
-                  "with!!\n" RESET);
+    if (_print_zupt) {
+      PRINT_WARNING(RED
+                    "[ZUPT]: There are no IMU data to check for zero velocity "
+                    "with!!\n" RESET);
+    }
     last_zupt_state_timestamp = 0.0;
     _zupt_leave_streak = 0;
     return false;
@@ -291,7 +294,7 @@ bool UpdaterZeroVelocity::try_update(std::shared_ptr<State> state,
   // 赞同阈值 / 否决阈值：与 estimator_config 中 zupt_agree_*、zupt_strict_* 的 χ² 倍率对应
   const double chi2_lim_agree = _agree_chi2_multipler * chi2_check;
   const double chi2_lim_strict = _strict_chi2_multipler * chi2_check;
-  if (res.rows() >= 1000) {
+  if (res.rows() >= 1000 && _print_zupt) {
     PRINT_WARNING(YELLOW
                   "[ZUPT]: chi2_check over the residual limit - %d\n" RESET,
                   (int)res.rows());
@@ -339,8 +342,11 @@ bool UpdaterZeroVelocity::try_update(std::shared_ptr<State> state,
   // 静止门总结果：赞同阈值支路 或 否决阈值支路 任一通过
   stationary_gate_passed = gate_agree || gate_strict;
 
-  // 静止门判定后每帧必打一行（通过/不通过均打印）
-  {
+  // 静止门判定后两行：① gate ② pose（RPY、p_IinG）；与 [VM] 可同时存在
+  if (_print_zupt) {
+    const Eigen::Vector3d rpy_deg_gate =
+        rot2rpy(quat_2_Rot(state->_imu->quat())) * 180.0 / M_PI;
+    const Eigen::Vector3d p_IinG_gate = state->_imu->pos();
     const char *gate_res = stationary_gate_passed ? "PASS" : "FAIL";
     const int merge = (gate_agree || gate_strict) ? 1 : 0;
     if (override_with_disparity_check) {
@@ -370,6 +376,10 @@ bool UpdaterZeroVelocity::try_update(std::shared_ptr<State> state,
                  state->_imu->vel().norm(), _agree_max_velocity,
                  _strict_max_velocity);
     }
+    PRINT_INFO(GREEN "[ZUPT]: pose | RPY(deg)=%.2f,%.2f,%.2f | " 
+               "p_IinG=%.3f,%.3f,%.3f\n" RESET,
+               rpy_deg_gate(0), rpy_deg_gate(1), rpy_deg_gate(2),
+               p_IinG_gate(0), p_IinG_gate(1), p_IinG_gate(2));
   }
 
   // 延迟退出策略：仅当连续 n 回合检测到离开静止门才退出 ZUPT。
@@ -379,17 +389,21 @@ bool UpdaterZeroVelocity::try_update(std::shared_ptr<State> state,
       _zupt_exit_consecutive_failures > 1) {
     _zupt_leave_streak++;
     if (_zupt_leave_streak < _zupt_exit_consecutive_failures) {
-      PRINT_INFO(
-          YELLOW
-          "[ZUPT]: 检测到离开静止门 %d/%d，延迟退出中，本帧仍执行 ZUPT\n" RESET,
-          _zupt_leave_streak, _zupt_exit_consecutive_failures);
+      if (_print_zupt) {
+        PRINT_INFO(
+            YELLOW
+            "[ZUPT]: 检测到离开静止门 %d/%d，延迟退出中，本帧仍执行 ZUPT\n" RESET,
+            _zupt_leave_streak, _zupt_exit_consecutive_failures);
+      }
       stationary_gate_passed = true;
       hold_zupt_this_frame_for_exit_delay = true;
     } else {
-      PRINT_INFO(
-          YELLOW
-          "[ZUPT]: 连续离开静止门达到 %d 回合，确认退出 ZUPT\n" RESET,
-          _zupt_exit_consecutive_failures);
+      if (_print_zupt) {
+        PRINT_INFO(
+            YELLOW
+            "[ZUPT]: 连续离开静止门达到 %d 回合，确认退出 ZUPT\n" RESET,
+            _zupt_exit_consecutive_failures);
+      }
     }
   }
 
@@ -401,9 +415,11 @@ bool UpdaterZeroVelocity::try_update(std::shared_ptr<State> state,
           StateHelper::get_marginal_covariance(state, cov_order);
       imu_cov *= _zupt_exit_cov_inflation;
       StateHelper::set_initial_covariance(state, imu_cov, cov_order);
-      PRINT_INFO(YELLOW
-                 "[ZUPT]: 退出时已倍化 IMU 协方差 x%.3f\n" RESET,
-                 _zupt_exit_cov_inflation);
+      if (_print_zupt) {
+        PRINT_INFO(YELLOW
+                   "[ZUPT]: 退出时已倍化 IMU 协方差 x%.3f\n" RESET,
+                   _zupt_exit_cov_inflation);
+      }
     }
     last_zupt_state_timestamp = 0.0;
     last_zupt_count = 0;
@@ -443,16 +459,6 @@ bool UpdaterZeroVelocity::try_update(std::shared_ptr<State> state,
     R = _zupt_noise_multiplier * Eigen::MatrixXd::Identity(res.rows(), res.rows());
     StateHelper::EKFUpdate(state, Hx_order, H, res, R);
     state->_timestamp = timestamp;
-    {
-      Eigen::Vector3d rpy_deg = rot2rpy(state->_imu->Rot()) * 180.0 / M_PI;
-      PRINT_INFO(
-          CYAN
-          "[ZUPT]: q_GtoI = %.4f,%.4f,%.4f,%.4f | RPY(deg) = %.2f,%.2f,%.2f | "
-          "p_IinG = %.3f,%.3f,%.3f\n" RESET,
-          state->_imu->quat()(0), state->_imu->quat()(1), state->_imu->quat()(2),
-          state->_imu->quat()(3), rpy_deg(0), rpy_deg(1), rpy_deg(2),
-          state->_imu->pos()(0), state->_imu->pos()(1), state->_imu->pos()(2));
-    }
 
   } else {
     // 将状态向前传播
@@ -498,16 +504,6 @@ bool UpdaterZeroVelocity::try_update(std::shared_ptr<State> state,
     StateHelper::EKFUpdate(state, Hx_order, H, res, R);
     StateHelper::marginalize(state, state->_clones_IMU.at(time1_cam));
     state->_clones_IMU.erase(time1_cam);
-    {
-      Eigen::Vector3d rpy_deg = rot2rpy(state->_imu->Rot()) * 180.0 / M_PI;
-      PRINT_INFO(
-          CYAN
-          "[ZUPT]: q_GtoI = %.4f,%.4f,%.4f,%.4f | RPY(deg) = %.2f,%.2f,%.2f | "
-          "p_IinG = %.3f,%.3f,%.3f\n" RESET,
-          state->_imu->quat()(0), state->_imu->quat()(1), state->_imu->quat()(2),
-          state->_imu->quat()(3), rpy_deg(0), rpy_deg(1), rpy_deg(2),
-          state->_imu->pos()(0), state->_imu->pos()(1), state->_imu->pos()(2));
-    }
   }
 
   // 最后返回

@@ -106,9 +106,12 @@ public:
     /**
      * @brief Export all frames from dump_yuv directory to PNG files
      * @param dump_yuv_dir Directory containing YUV files and FrameInfo.txt
+     * @param show_imshow 若本机构建启用了 highgui，逐帧 imshow 预览（边转边显示）
+     * @param wait_key_ms imshow 后 cv::waitKey 参数；<=0 表示每帧按键步进
      * @return Number of frames exported, or -1 on error
      */
-    int exportFramesToPNG(const std::string& dump_yuv_dir);
+    int exportFramesToPNG(const std::string& dump_yuv_dir, bool show_imshow = false,
+                          int wait_key_ms = 1);
     
     /**
      * @brief Play frames one by one with IMU data, sorted by timestamp

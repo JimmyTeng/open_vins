@@ -150,6 +150,9 @@ public:
   /// Setter method for number of active features
   void set_num_features(int _num_features) { num_features = _num_features; }
 
+  /// 是否打印前端跟踪各阶段耗时（微秒），与 VioManager 的 print_timing 同步设置
+  void set_print_track_timing_us(bool enabled) { print_track_timing_us_ = enabled; }
+
 protected:
   /// Camera object which has all calibration in it
   std::unordered_map<size_t, std::shared_ptr<CamBase>> camera_calib;
@@ -189,6 +192,9 @@ protected:
 
   /// Master ID for this tracker (atomic to allow for multi-threading)
   std::atomic<size_t> currid;
+
+  /// 与 VioManager::params.print_timing 一致：为 true 时打印 [TIME-KLT]/[TIME-DESC] 微秒耗时
+  bool print_track_timing_us_ = false;
 
   // Timing variables (most children use these...)
   rtime_t rT1, rT2, rT3, rT4, rT5, rT6, rT7;

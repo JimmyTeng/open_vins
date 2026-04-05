@@ -339,8 +339,6 @@ protected:
   std::map<size_t, Eigen::Matrix3d> active_feat_linsys_A;           // 活动特征线性系统的A矩阵
   std::map<size_t, Eigen::Vector3d> active_feat_linsys_b;           // 活动特征线性系统的b向量
   std::map<size_t, int> active_feat_linsys_count;                    // 活动特征线性系统的观测计数
-  /// 深度平滑用：上一帧各特征在 cam0 下的 +Z 深度（米）
-  std::unordered_map<size_t, double> active_tracks_depth_smooth_prev;
 };
 
 } // namespace ov_msckf

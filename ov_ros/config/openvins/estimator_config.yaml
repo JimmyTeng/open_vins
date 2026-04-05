@@ -96,6 +96,7 @@ use_imu_klt_prior: true # use imu rotation prior to initialize KLT points
 imu_klt_prior_min_dt: 0.002 # minimum frame dt (s) to enable imu prior
 imu_klt_prior_max_dt: 0.08 # maximum frame dt (s) to enable imu prior
 imu_klt_prior_debug: true # print imu-klt prior debug logs
+print_klt_geom: false # print [KLT-GEOM] H/F RANSAC hull stats (verbose)
 
 downsample_cameras: false # will downsample image in half if true
 num_opencv_threads: 4 # -1: auto, 0-1: serial, >1: number of threads

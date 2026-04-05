@@ -69,6 +69,8 @@ public:
   void feed_imu(const ImuData &imu_data);
   void set_imu_klt_prior_options(bool enabled, double min_dt, double max_dt,
                                  bool debug);
+  /// 为 true 时打印 [KLT-GEOM] H/F RANSAC 与包络收缩统计（默认关闭）
+  void set_print_klt_geom(bool enabled);
   void set_camera_extrinsics(
       const std::map<size_t, Eigen::VectorXd> &cam_extrinsics);
   void set_cam_to_imu_time_offset(double dt_cam_to_imu);
@@ -170,6 +172,8 @@ protected:
   // IMU prior options (default disabled)
   bool use_imu_klt_prior = false;
   bool imu_klt_prior_debug = false;
+  /// 与 VioManager::params.print_klt_geom 一致
+  bool print_klt_geom_ = false;
   double imu_klt_prior_min_dt = 0.002;
   double imu_klt_prior_max_dt = 0.08;
   std::map<size_t, Eigen::Matrix3d> cam_R_ItoC;
