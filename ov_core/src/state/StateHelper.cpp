@@ -28,6 +28,9 @@
 #include "utils/chi_squared_quantile.h"
 #include "utils/colors.h"
 #include "utils/print.h"
+#include "utils/quat_ops.h"
+
+#include <cmath>
 
 using namespace ov_core;
 using namespace ov_type;
@@ -247,6 +250,66 @@ void StateHelper::set_initial_covariance(
     }
     i_index += order[i]->size();
   }
+  state->_Cov = state->_Cov.selfadjointView<Eigen::Upper>();
+}
+
+void StateHelper::align_global_frame_yaw_to_imu_rpy_zero(
+    std::shared_ptr<State> state) {
+
+  Eigen::Vector3d rpy = rot2rpy(state->_imu->Rot());
+  const double yaw = rpy(2);
+  if (std::abs(yaw) < 1e-14) {
+    return;
+  }
+
+  const Eigen::Matrix3d Rz = rot_z(-yaw);
+  const Eigen::Matrix<double, 4, 1> qz = rot_2_quat(Rz);
+
+  const Eigen::Matrix<double, 4, 1> q = state->_imu->quat();
+  const Eigen::Matrix<double, 4, 1> q_fej = state->_imu->quat_fej();
+  const Eigen::Vector3d p = state->_imu->pos();
+  const Eigen::Vector3d p_fej = state->_imu->pos_fej();
+  const Eigen::Vector3d v = state->_imu->vel();
+  const Eigen::Vector3d v_fej = state->_imu->vel_fej();
+
+  Eigen::Matrix<double, 16, 1> x = state->_imu->value();
+  x.block(0, 0, 4, 1) = quat_multiply(qz, q);
+  x.block(4, 0, 3, 1) = Rz * p;
+  x.block(7, 0, 3, 1) = Rz * v;
+  state->_imu->set_value(x);
+
+  Eigen::Matrix<double, 16, 1> xf = state->_imu->fej();
+  xf.block(0, 0, 4, 1) = quat_multiply(qz, q_fej);
+  xf.block(4, 0, 3, 1) = Rz * p_fej;
+  xf.block(7, 0, 3, 1) = Rz * v_fej;
+  state->_imu->set_fej(xf);
+
+  const int n = state->_imu->size();
+  const int id = state->_imu->id();
+  Eigen::MatrixXd T = Eigen::MatrixXd::Identity(n, n);
+  T.block(0, 0, 3, 3) = Rz;
+  T.block(3, 3, 3, 3) = Rz;
+  T.block(6, 6, 3, 3) = Rz;
+
+  state->_Cov.block(id, id, n, n) =
+      T * state->_Cov.block(id, id, n, n) * T.transpose();
+
+  for (size_t i = 0; i < state->_variables.size(); i++) {
+    const auto &var = state->_variables.at(i);
+    if (var == state->_imu) {
+      continue;
+    }
+    const int vid = var->id();
+    const int vsz = var->size();
+    if (vid < 0) {
+      continue;
+    }
+    state->_Cov.block(id, vid, n, vsz) =
+        T * state->_Cov.block(id, vid, n, vsz);
+    state->_Cov.block(vid, id, vsz, n) =
+        state->_Cov.block(vid, id, vsz, n) * T.transpose();
+  }
+
   state->_Cov = state->_Cov.selfadjointView<Eigen::Upper>();
 }
 

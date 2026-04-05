@@ -80,9 +80,11 @@ void VioManager::initialize_with_gt(Eigen::Matrix<double, 17, 1> imustate) {
   // 打印初始化信息
   // Print what we init'ed with
   PRINT_DEBUG(GREEN "[VMH]: 从真值文件初始化成功！！！！\n" RESET);
-  PRINT_DEBUG(GREEN "[VMH]: 姿态 = %.4f, %.4f, %.4f, %.4f\n" RESET,
-              state->_imu->quat()(0), state->_imu->quat()(1),
-              state->_imu->quat()(2), state->_imu->quat()(3));
+  Eigen::Vector3d rpy_deg =
+      rot2rpy(quat_2_Rot(state->_imu->quat())) * 180.0 / M_PI;
+  PRINT_DEBUG(GREEN "[VMH]: 姿态 欧拉角(deg) roll,pitch,yaw = %.4f, %.4f, %.4f\n"
+                    RESET,
+              rpy_deg(0), rpy_deg(1), rpy_deg(2));
   PRINT_DEBUG(GREEN "[VMH]: 陀螺仪偏差 = %.4f, %.4f, %.4f\n" RESET,
               state->_imu->bias_g()(0), state->_imu->bias_g()(1),
               state->_imu->bias_g()(2));
@@ -155,6 +157,8 @@ bool VioManager::try_to_initialize(const ov_core::CameraData &message) {
       // 设置协方差（状态应该已经在初始化器中设置）
       // Set our covariance (state should already be set in the initializer)
       StateHelper::set_initial_covariance(state, covariance, order);
+      // 将全局航向规范到 rot2rpy 意义下 yaw=0（与固定全局 yaw 自由度一致）
+      StateHelper::align_global_frame_yaw_to_imu_rpy_zero(state);
 
       // 设置状态时间戳
       // Set the state time

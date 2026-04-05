@@ -99,6 +99,16 @@ public:
                                      const std::vector<std::shared_ptr<ov_type::Type>> &order);
 
   /**
+   * @brief 将全局坐标系绕 z 轴旋转，使当前 IMU 姿态在 rot2rpy 意义下 yaw 为 0（固定航向规范）
+   *
+   * 同步更新 q_GtoI、p_IinG、v_IinG 及 FEJ，并对 IMU 误差子块 (q,p,v) 的协方差做相应线性变换；
+   * 与 IMU 的交叉协方差块一并更新。陀螺/加计偏置不变。
+   *
+   * @param state 状态
+   */
+  static void align_global_frame_yaw_to_imu_rpy_zero(std::shared_ptr<State> state);
+
+  /**
    * @brief For a given set of variables, this will this will calculate a smaller covariance.
    *
    * That only includes the ones specified with all crossterms.
