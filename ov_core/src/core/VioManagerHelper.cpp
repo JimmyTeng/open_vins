@@ -29,6 +29,9 @@
 #include "state/StateHelper.h"
 #include "types/LandmarkRepresentation.h"
 #include "utils/print.h"
+#include "utils/quat_ops.h"
+
+#include <cmath>
 
 using namespace ov_core;
 using namespace ov_type;
@@ -185,13 +188,13 @@ bool VioManager::try_to_initialize(const ov_core::CameraData &message) {
       PRINT_INFO(GREEN "========================================\n" RESET);
       PRINT_INFO(GREEN "[VMH] 动态初始化完成，耗时 %.2f ms\n" RESET,
                  rtime_ms(init_rT1, init_rT2));
+      Eigen::Vector3d rpy_deg =
+          rot2rpy(state->_imu->Rot()) * 180.0 / M_PI;
       PRINT_INFO(GREEN
-                 "[VMH] 速度 (% 8.4f, % 8.4f, % 8.4f) 姿态 (% 8.4f, % 8.4f, % "
-                 "8.4f, % 8.4f)\n" RESET,
+                 "[VMH] 速度 (% 8.4f, % 8.4f, % 8.4f) 欧拉 (% 8.2f, "
+                 "% 8.2f, % 8.2f)\n" RESET,
                  state->_imu->vel()(0), state->_imu->vel()(1),
-                 state->_imu->vel()(2), state->_imu->quat()(0),
-                 state->_imu->quat()(1), state->_imu->quat()(2),
-                 state->_imu->quat()(3));
+                 state->_imu->vel()(2), rpy_deg(0), rpy_deg(1), rpy_deg(2));
       PRINT_INFO(GREEN
                  "[VMH] 陀螺 (% 8.4f, % 8.4f, % 8.4f) 加计 (% 8.4f, % 8.4f, % "
                  "8.4f)\n" RESET,

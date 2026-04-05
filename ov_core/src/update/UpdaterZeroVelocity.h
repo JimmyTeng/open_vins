@@ -77,7 +77,9 @@ public:
       double zupt_agree_max_velocity, double zupt_noise_multiplier,
       double zupt_agree_max_disparity, double zupt_agree_chi2_multipler,
       double zupt_strict_max_velocity, double zupt_strict_max_disparity,
-      double zupt_strict_chi2_multipler);
+      double zupt_strict_chi2_multipler,
+      int zupt_exit_consecutive_failures,
+      double zupt_exit_cov_inflation);
 
   /**
    * @brief 惯性数据的输入函数
@@ -148,6 +150,15 @@ protected:
 
   /// 调用更新的次数
   int last_zupt_count = 0;
+
+  /// 延迟退出 ZUPT：连续检测到“离开静止门失败”达到该阈值才真正退出（1 表示立即退出）
+  int _zupt_exit_consecutive_failures = 1;
+
+  /// 当前连续离开计数（仅在 ZUPT 连续阶段内累加）
+  int _zupt_leave_streak = 0;
+
+  /// 确认退出 ZUPT 时的 IMU 协方差倍化系数（1.0=关闭）
+  double _zupt_exit_cov_inflation = 1.0;
 };
 
 } // namespace ov_msckf

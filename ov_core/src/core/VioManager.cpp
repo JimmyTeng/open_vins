@@ -51,6 +51,7 @@
 #include "update/UpdaterZeroVelocity.h"
 #include "utils/opencv_lambda_body.h"
 #include "utils/print.h"
+#include "utils/quat_ops.h"
 #include "utils/sensor_data.h"
 #include "utils/vio_data_record_play.h"
 
@@ -289,7 +290,9 @@ VioManager::VioManager(VioManagerOptions &params_)
         params.zupt_agree_max_velocity, params.zupt_noise_multiplier,
         params.zupt_agree_max_disparity, params.zupt_agree_chi2_multipler,
         params.zupt_strict_max_velocity, params.zupt_strict_max_disparity,
-        params.zupt_strict_chi2_multipler);
+        params.zupt_strict_chi2_multipler,
+        params.zupt_exit_consecutive_failures,
+        params.zupt_exit_cov_inflation);
   }
 }
 
@@ -485,7 +488,9 @@ void VioManager::feed_measurement_simulation(
           params.zupt_agree_max_velocity, params.zupt_noise_multiplier,
           params.zupt_agree_max_disparity, params.zupt_agree_chi2_multipler,
           params.zupt_strict_max_velocity, params.zupt_strict_max_disparity,
-          params.zupt_strict_chi2_multipler);
+          params.zupt_strict_chi2_multipler,
+          params.zupt_exit_consecutive_failures,
+          params.zupt_exit_cov_inflation);
     }
     PRINT_WARNING(RED "[仿真]: 将跟踪器转换为TrackSIM对象！\n" RESET);
   }
@@ -1304,10 +1309,11 @@ void VioManager::do_feature_propagate_update(
   // 调试：根据配置拼接状态与标定信息，最后一行打印（由 print_state_calib 控制）
   if (params.print_state_calib) {
     std::ostringstream ss;
+    Eigen::Vector3d rpy_deg =
+        rot2rpy(quat_2_Rot(state->_imu->quat())) * 180.0 / M_PI;
     ss << std::fixed << std::setprecision(3)
-       << "[VM]: q_GtoI = " << state->_imu->quat()(0) << ","
-       << state->_imu->quat()(1) << "," << state->_imu->quat()(2) << ","
-       << state->_imu->quat()(3) << " | p_IinG = " << state->_imu->pos()(0)
+       << "[VM]: 欧拉角(deg) roll,pitch,yaw = " << rpy_deg(0) << ","
+       << rpy_deg(1) << "," << rpy_deg(2) << " | p_IinG = " << state->_imu->pos()(0)
        << "," << state->_imu->pos()(1) << "," << state->_imu->pos()(2)
        << " | Dist = " << std::setprecision(2) << distance
        << " s | bg = " << std::setprecision(4) << state->_imu->bias_g()(0)

@@ -114,6 +114,12 @@ struct VioManagerOptions {
   /// If we should only use the zupt at the very beginning static initialization phase
   bool zupt_only_at_beginning = false;
 
+  /// 延迟退出 ZUPT：仅当连续 n 回合检测到“离开静止门失败”才退出 ZUPT（n=1 表示立即退出）
+  int zupt_exit_consecutive_failures = 1;
+
+  /// 确认退出 ZUPT 时，对 IMU(15维)协方差整体倍化系数（1.0=关闭）
+  double zupt_exit_cov_inflation = 1.0;
+
   /// 赞同阈值支路（gate_agree；可选 legacy zupt_* 先填两路，再由 zupt_agree_* / zupt_strict_* 或旧键 zupt_or_* / zupt_and_* 覆盖）
   double zupt_agree_max_velocity = 1.0;
   double zupt_agree_max_disparity = 1.0;
@@ -208,6 +214,10 @@ struct VioManagerOptions {
       parser->parse_config("zupt_and_max_velocity", zupt_strict_max_velocity, false);
       parser->parse_config("zupt_and_max_disparity", zupt_strict_max_disparity, false);
       parser->parse_config("zupt_only_at_beginning", zupt_only_at_beginning);
+      parser->parse_config("zupt_exit_consecutive_failures",
+                           zupt_exit_consecutive_failures, false);
+      parser->parse_config("zupt_exit_cov_inflation", zupt_exit_cov_inflation,
+                           false);
       parser->parse_config("record_timing_information", record_timing_information);
       parser->parse_config("record_timing_filepath", record_timing_filepath);
       parser->parse_config("record_vio_dataset", record_vio_dataset, false);
@@ -246,6 +256,25 @@ struct VioManagerOptions {
     PRINT_DEBUG("  - 零速度更新 try_zupt: %d\n", try_zupt);
     PRINT_DEBUG("  - 仅在开始时使用零速度更新 zupt_only_at_beginning: %d\n",
                 zupt_only_at_beginning);
+    if (zupt_exit_consecutive_failures < 1) {
+      PRINT_WARNING(
+          YELLOW
+          "  - zupt_exit_consecutive_failures=%d 非法，回退为 1（立即退出）\n"
+          RESET,
+          zupt_exit_consecutive_failures);
+      zupt_exit_consecutive_failures = 1;
+    }
+    PRINT_DEBUG("  - 延迟退出ZUPT 连续离开回合数 n: %d（1=立即退出）\n",
+                zupt_exit_consecutive_failures);
+    if (zupt_exit_cov_inflation < 1.0) {
+      PRINT_WARNING(YELLOW
+                    "  - zupt_exit_cov_inflation=%.3f 非法，回退为 1.0（不倍化）\n"
+                    RESET,
+                    zupt_exit_cov_inflation);
+      zupt_exit_cov_inflation = 1.0;
+    }
+    PRINT_DEBUG("  - 退出ZUPT时 IMU 协方差倍化系数: %.3f（1.0=关闭）\n",
+                zupt_exit_cov_inflation);
     PRINT_DEBUG("  - ZUPT 静止门 = 赞同阈值支路 || 否决阈值支路（χ² 倍率见「噪声参数」段）\n");
     PRINT_DEBUG("    赞同阈值（zupt_agree_*）：|v|≤%.3f m/s  disp≤%.4f px\n",
                 zupt_agree_max_velocity, zupt_agree_max_disparity);

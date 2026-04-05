@@ -46,7 +46,8 @@ UpdaterZeroVelocity::UpdaterZeroVelocity(
     double zupt_agree_max_velocity, double zupt_noise_multiplier,
     double zupt_agree_max_disparity, double zupt_agree_chi2_multipler,
     double zupt_strict_max_velocity, double zupt_strict_max_disparity,
-    double zupt_strict_chi2_multipler)
+    double zupt_strict_chi2_multipler, int zupt_exit_consecutive_failures,
+    double zupt_exit_cov_inflation)
     : _options(options),
       _noises(noises),
       _db(db),
@@ -63,6 +64,8 @@ UpdaterZeroVelocity::UpdaterZeroVelocity(
   _zupt_max_disparity =
       std::min(zupt_agree_max_disparity, zupt_strict_max_disparity);
   _options.chi2_multipler = zupt_agree_chi2_multipler;
+  _zupt_exit_consecutive_failures = std::max(1, zupt_exit_consecutive_failures);
+  _zupt_exit_cov_inflation = std::max(1.0, zupt_exit_cov_inflation);
   // 初始化重力向量
   _gravity << 0.0, 0.0, gravity_mag;
 
@@ -106,12 +109,14 @@ bool UpdaterZeroVelocity::try_update(std::shared_ptr<State> state,
   // 如果还没有IMU数据，则返回
   if (imu_data.empty()) {
     last_zupt_state_timestamp = 0.0;
+    _zupt_leave_streak = 0;
     return false;
   }
 
   // 如果状态已经在期望的时间，则返回
   if (state->_timestamp == timestamp) {
     last_zupt_state_timestamp = 0.0;
+    _zupt_leave_streak = 0;
     return false;
   }
 
@@ -145,6 +150,7 @@ bool UpdaterZeroVelocity::try_update(std::shared_ptr<State> state,
                   "[ZUPT]: There are no IMU data to check for zero velocity "
                   "with!!\n" RESET);
     last_zupt_state_timestamp = 0.0;
+    _zupt_leave_streak = 0;
     return false;
   }
 
@@ -366,10 +372,47 @@ bool UpdaterZeroVelocity::try_update(std::shared_ptr<State> state,
     }
   }
 
+  // 延迟退出策略：仅当连续 n 回合检测到离开静止门才退出 ZUPT。
+  // n=1 时等价于旧行为（当帧即退出）。
+  bool hold_zupt_this_frame_for_exit_delay = false;
+  if (!stationary_gate_passed && last_zupt_count > 0 &&
+      _zupt_exit_consecutive_failures > 1) {
+    _zupt_leave_streak++;
+    if (_zupt_leave_streak < _zupt_exit_consecutive_failures) {
+      PRINT_INFO(
+          YELLOW
+          "[ZUPT]: 检测到离开静止门 %d/%d，延迟退出中，本帧仍执行 ZUPT\n" RESET,
+          _zupt_leave_streak, _zupt_exit_consecutive_failures);
+      stationary_gate_passed = true;
+      hold_zupt_this_frame_for_exit_delay = true;
+    } else {
+      PRINT_INFO(
+          YELLOW
+          "[ZUPT]: 连续离开静止门达到 %d 回合，确认退出 ZUPT\n" RESET,
+          _zupt_exit_consecutive_failures);
+    }
+  }
+
   if (!stationary_gate_passed) {
+    // 确认退出 ZUPT 时，对 IMU(15维)协方差整体倍化一次，降低静止阶段后的过置信。
+    if (last_zupt_count > 0 && _zupt_exit_cov_inflation > 1.0) {
+      std::vector<std::shared_ptr<Type>> cov_order = {state->_imu};
+      Eigen::MatrixXd imu_cov =
+          StateHelper::get_marginal_covariance(state, cov_order);
+      imu_cov *= _zupt_exit_cov_inflation;
+      StateHelper::set_initial_covariance(state, imu_cov, cov_order);
+      PRINT_INFO(YELLOW
+                 "[ZUPT]: 退出时已倍化 IMU 协方差 x%.3f\n" RESET,
+                 _zupt_exit_cov_inflation);
+    }
     last_zupt_state_timestamp = 0.0;
     last_zupt_count = 0;
+    _zupt_leave_streak = 0;
     return false;
+  }
+  // 仅在真实“静止门通过”时清零；若本帧是“延迟退出保活”，保留计数以实现连续 n 次判定。
+  if (!hold_zupt_this_frame_for_exit_delay) {
+    _zupt_leave_streak = 0;
   }
   // 只有在之前检测到的情况下才执行此更新
   // 如果成功，我们应该移除当前时间戳的特征轨迹
