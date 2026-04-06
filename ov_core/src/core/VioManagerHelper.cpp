@@ -555,8 +555,16 @@ cv::Mat VioManager::get_historical_viz_image() {
 
   // 如果需要，我们将叠加的文本
   // Text we will overlay if needed
-  std::string overlay = (did_zupt_update) ? "zvupt" : "";
-  overlay = (!is_initialized_vio) ? "init" : overlay;
+  std::string overlay;
+  if (!is_initialized_vio) {
+    overlay = "init";
+  } else if (did_zupt_update) {
+    overlay = "zvupt";
+  } else if (did_pure_rot_update) {
+    overlay = "pure_rot";
+  } else {
+    overlay = "";
+  }
 
   // Get the current active tracks
   cv::Mat img_history;

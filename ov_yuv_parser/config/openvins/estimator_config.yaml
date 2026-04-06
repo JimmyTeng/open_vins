@@ -34,6 +34,8 @@ feat_rep_aruco: "ANCHORED_MSCKF_INVERSE_DEPTH" # ArUco 表示
 # ---------- 零速更新 ZUPT（初始化完成后静止段）----------
 # 静止门恒为 gate_agree || gate_strict（赞同阈值支路 || 否决阈值支路），任一通过即可触发 ZUPT
 try_zupt: true # 是否启用 ZUPT
+print_zupt: false # 是否启用 ZUPT
+ # 为 true 时打印 [ZUPT] 静止门/更新日志及启动时 ZUPT 参数说明
 zupt_only_at_beginning: false # true：仅初期静止阶段用 ZUPT；false：全程可触发
 zupt_exit_consecutive_failures: 2 # 延迟退出：连续 n 回合判定“离开 ZUPT”才退出；1=立即退出（旧行为）
 zupt_exit_cov_inflation: 1.0 # 确认退出 ZUPT 时对 IMU(15维)协方差整体倍化；1.0=关闭，>1 增大退出后不确定度
@@ -56,6 +58,29 @@ zupt_strict_chi2_multipler: 0.3 # 否决：χ² 门限倍率；通常 ≥ 赞同
 zupt_strict_max_velocity: 0.4 # 否决：|v| 上限（m/s）
 zupt_strict_max_disparity: 4 # 否决：视差阈值（px）
 
+# ---------- 纯旋转 PureRot（绕相机光轴；与 ZUPT 独立）----------
+# IMU：|v|、陀螺幅值、χ²；图像：光流 f 与相对主点径向 r 垂直度 mean(1-|cos|)；IMU：相机系 |ωz|/|ω|（绕视轴分量）
+# 原地转时 VIO 速度常仍有漂移：pure_rot_max_velocity 过小会 v_ok=0；χ² 过大则增大 noise_multiplier / pure_rot_chi2_multipler
+try_pure_rot: true # 启用后，在 ZUPT 未更新本帧时尝试（见 pure_rot_only_after_zupt_fail）
+pure_rot_only_after_zupt_fail: true # true：仅当 try_zupt 且本帧 ZUPT 失败时才跑 PureRot
+print_pure_rot: true # 终端打印 [PureRot] 门限；调试图仅 zvupt/pure_rot/CAM 等简短状态
+pure_rot_max_velocity: 0.75 # |v| 上限 (m/s)
+pure_rot_gyro_min: 0.05 # 平均 |ω| 下限 (rad/s)，低于则视为非「明显旋转」
+pure_rot_gyro_max: 3.0 # 平均 |ω| 上限 (rad/s)，过高视为非纯转
+pure_rot_vel_sigma: 0.25 # v≈0 伪观测 σ (m/s)
+pure_rot_noise_multiplier: 40.0 # 放大 R，降低马氏 χ²
+# 图像：绕光轴时光流近似切向（f ⟂ 从主点到特征点的径向）
+pure_rot_use_image_gate: true
+pure_rot_flow_perp_min: 0.45 # 垂直度均值下限；过高易误杀，过低易与平移混淆
+pure_rot_flow_sign_consistency_min: 0.75 # r×f 符号与多数一致比例下限（向量叉积，保证转向一致）
+pure_rot_min_flow_features: 10 # 至少多少条有效轨迹参与 perp 统计
+pure_rot_flow_min_r_px: 80.0 # 仅统计距主点径向距离 **严格大于** 该值的特征（像素）
+pure_rot_flow_min_mag_px: 0.35 # 位移过小视为噪声
+# IMU：陀螺在 ref 相机坐标系下，绕光轴分量占比（OpenVINS 相机 z 一般为视轴）
+pure_rot_use_cam_z_gyro_gate: true
+pure_rot_min_omega_cam_z_ratio: 0.5 # |ωz|/|ω| 下限；安装角大时可略降
+pure_rot_ref_cam_id: 0 # 与 kalibr_imucam 中相机 id 一致
+
 # ==================================================================
 # ==================================================================
 
@@ -74,9 +99,9 @@ init_dyn_num_pose: 8 # 窗口内位姿个数（均匀采样）
 init_dyn_min_deg: 5.0 # 初始化所需最小朝向变化（度）
 
 init_dyn_inflation_ori: 10 # 动态初始化后 q_GtoI 协方差放大倍数
-init_dyn_inflation_vel: 300 # 动态初始化后 v 协方差放大倍数
+init_dyn_inflation_vel: 30 # 动态初始化后 v 协方差放大倍数
 init_dyn_inflation_bg: 10 # 动态初始化后陀螺偏置协方差放大倍数
-init_dyn_inflation_ba: 200 # 动态初始化后加计偏置协方差放大倍数
+init_dyn_inflation_ba: 20 # 动态初始化后加计偏置协方差放大倍数
 init_dyn_min_rec_cond: 1e-12 # 信息矩阵求逆最小允许倒数条件数；过小可能拒绝病态解
 
 # 动态初始化三角化：首观测相机系下特征距光心深度（范数，m）；仅 [min,max] 内计入有效特征
@@ -125,6 +150,7 @@ up_slam_sigma_px: 1 # SLAM 像素 σ（px）
 up_slam_chi2_multipler: 1 # SLAM χ² 倍率
 up_aruco_sigma_px: 1 # ArUco 像素 σ（px）
 up_aruco_chi2_multipler: 1 # ArUco χ² 倍率
+pure_rot_chi2_multipler: 4 # 纯旋转 χ² 门限 = mult×χ²_0.95(res维)；原 1 时 lim≈21、易 c_ok=0
 
 # 图像掩膜
 use_mask: false # true 时需在配置目录提供 mask0.png 等（与分辨率一致）
@@ -143,13 +169,11 @@ verbosity: "INFO" # 日志级别：ALL, DEBUG, INFO, WARNING, ERROR, SILENT
 print_state_calib: true # 每次更新后是否打印状态与标定
 print_timing: false # 是否打印各阶段耗时
 print_tracking_stats: true # 是否打印 [VM] 帧与 [跟踪] 周期日志
-print_zupt: false # 为 true 时打印 [ZUPT] 静止门/更新日志及启动时 ZUPT 参数说明
 # true：每帧 retriangulate 后打印线性三角化 p_FinG（全局系 m；活动 MSCKF + SLAM）；输出量大，仅调试
 print_triangulated_points: false
 
-debug_display_waitkey_ms: 1 # 调试窗口 waitKey 时长（毫秒）；0=不等待，仅处理GUI事件
+debug_display_waitkey_ms: 0 # 调试窗口 waitKey 时长（毫秒）；0=不等待，仅处理GUI事件
 imu_klt_prior_debug: false # 打印 IMU 预测与原始值残差日志
-print_klt_geom: false # true：打印 [KLT-GEOM] H/F RANSAC 与包络收缩统计（输出量大）
 
 record_timing_information: true # 是否在结束时写计时统计
 record_timing_filepath: "/tmp/traj_timing.txt" # 计时输出路径

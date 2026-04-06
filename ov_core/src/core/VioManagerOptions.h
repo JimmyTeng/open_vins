@@ -132,6 +132,55 @@ struct VioManagerOptions {
   /// 是否打印 ZUPT 运行时 [ZUPT] 日志与启动时 ZUPT 参数说明（默认关闭）
   bool print_zupt = false;
 
+  /// 是否启用纯旋转更新器（与 ZUPT 检测独立；默认在 ZUPT 本帧未成功后再尝试）
+  bool try_pure_rot = false;
+
+  /// 为 true 时：仅当本帧已启用 ZUPT 且 ZUPT 未通过静止门时才尝试纯旋转（推荐）
+  bool pure_rot_only_after_zupt_fail = true;
+
+  /// 纯旋转：滤波器估计线速度范数上限 (m/s)
+  double pure_rot_max_velocity = 0.15;
+
+  /// 纯旋转：IMU 窗口内陀螺幅值均值下限/上限 (rad/s)，用于与「静止」区分
+  double pure_rot_gyro_min = 0.05;
+  double pure_rot_gyro_max = 3.0;
+
+  /// 纯旋转：线速度 v≈0 伪观测标准差 (m/s)
+  double pure_rot_vel_sigma = 0.1;
+
+  /// 纯旋转：测量噪声 R 标量倍率（与 ZUPT 的 zupt_noise_multiplier 独立）
+  double pure_rot_noise_multiplier = 1.0;
+
+  /// 是否启用图像门：光流与相对主点径向垂直度（绕光轴转）
+  bool pure_rot_use_image_gate = true;
+
+  /// 光流垂直置信：mean(1-|cos∠(r,f)|) 下限 [0,1]
+  double pure_rot_flow_perp_min = 0.55;
+
+  /// r×f 符号与多数一致的比例下限 [0,1]（向量叉积保证绕光轴转向一致）
+  double pure_rot_flow_sign_consistency_min = 0.75;
+
+  /// 参与上述统计的最少特征段数
+  int pure_rot_min_flow_features = 12;
+
+  /// 相对主点半径小于此像素则跳过（避免光心附近不可靠）
+  double pure_rot_flow_min_r_px = 80.0;
+
+  /// 位移模长小于此像素则跳过（噪声）
+  double pure_rot_flow_min_mag_px = 0.4;
+
+  /// 是否启用 IMU 门：角速度在 ref 相机系下光轴分量 |ωz|/|ω|
+  bool pure_rot_use_cam_z_gyro_gate = true;
+
+  /// 光轴角速度占比下限 [0,1]
+  double pure_rot_min_omega_cam_z_ratio = 0.65;
+
+  /// 上述陀螺门使用的参考相机 ID（与 T_imu_cam 一致）
+  int pure_rot_ref_cam_id = 0;
+
+  /// 是否打印 [PureRot] 门限与成功位姿
+  bool print_pure_rot = false;
+
   /// 每次 IMU 传播后对速度误差协方差对角增加 (m^2/s^2)/轴；0=关闭。略增大可降低对纯 IMU 积分速度的置信度，使 MSCKF/SLAM 更易校正速度、减轻位置漂移
   double post_propagate_vel_cov_diag_add = 0.0;
 
@@ -247,6 +296,34 @@ struct VioManagerOptions {
       parser->parse_config("print_triangulated_points", print_triangulated_points,
                            false);
       parser->parse_config("print_zupt", print_zupt, false);
+      parser->parse_config("try_pure_rot", try_pure_rot, false);
+      parser->parse_config("pure_rot_only_after_zupt_fail",
+                           pure_rot_only_after_zupt_fail, false);
+      parser->parse_config("pure_rot_max_velocity", pure_rot_max_velocity,
+                           false);
+      parser->parse_config("pure_rot_gyro_min", pure_rot_gyro_min, false);
+      parser->parse_config("pure_rot_gyro_max", pure_rot_gyro_max, false);
+      parser->parse_config("pure_rot_vel_sigma", pure_rot_vel_sigma, false);
+      parser->parse_config("pure_rot_noise_multiplier",
+                           pure_rot_noise_multiplier, false);
+      parser->parse_config("pure_rot_use_image_gate", pure_rot_use_image_gate,
+                           false);
+      parser->parse_config("pure_rot_flow_perp_min", pure_rot_flow_perp_min,
+                           false);
+      parser->parse_config("pure_rot_flow_sign_consistency_min",
+                           pure_rot_flow_sign_consistency_min, false);
+      parser->parse_config("pure_rot_min_flow_features",
+                           pure_rot_min_flow_features, false);
+      parser->parse_config("pure_rot_flow_min_r_px", pure_rot_flow_min_r_px,
+                           false);
+      parser->parse_config("pure_rot_flow_min_mag_px",
+                           pure_rot_flow_min_mag_px, false);
+      parser->parse_config("pure_rot_use_cam_z_gyro_gate",
+                           pure_rot_use_cam_z_gyro_gate, false);
+      parser->parse_config("pure_rot_min_omega_cam_z_ratio",
+                           pure_rot_min_omega_cam_z_ratio, false);
+      parser->parse_config("pure_rot_ref_cam_id", pure_rot_ref_cam_id, false);
+      parser->parse_config("print_pure_rot", print_pure_rot, false);
       parser->parse_config("post_propagate_vel_cov_diag_add",
                            post_propagate_vel_cov_diag_add, false);
     }
@@ -299,6 +376,8 @@ struct VioManagerOptions {
     PRINT_DEBUG("  - 打印跟踪统计([VM]帧/[跟踪]更新)?: %d\n", (int)print_tracking_stats);
     PRINT_DEBUG("  - 打印三角化点云 p_FinG?: %d\n", (int)print_triangulated_points);
     PRINT_DEBUG("  - 打印 ZUPT 日志?: %d\n", (int)print_zupt);
+    PRINT_DEBUG("  - 纯旋转更新 try_pure_rot: %d（仅 ZUPT 失败后: %d）\n",
+                (int)try_pure_rot, (int)pure_rot_only_after_zupt_fail);
     PRINT_DEBUG("  - 传播后速度协方差对角膨胀: %.6f (m^2/s^2)/轴（0=关）\n",
                 post_propagate_vel_cov_diag_add);
   }
@@ -325,6 +404,9 @@ struct VioManagerOptions {
   /// 零速度更新的选项（chi2乘数）
   /// Update options for zero velocity (chi2 multiplier)
   UpdaterOptions zupt_options;
+
+  /// 纯旋转更新的 χ² 倍率（见噪声段 pure_rot_chi2_multipler）
+  UpdaterOptions pure_rot_options;
 
   /// 静止门恒为 gate_agree||gate_strict；将辅助量写回 zupt_*（须在解析完 chi² 后调用）
   void apply_zupt_active_branch() {
@@ -376,6 +458,8 @@ struct VioManagerOptions {
                            false);
       parser->parse_config("zupt_and_chi2_multipler", zupt_strict_chi2_multipler,
                            false);
+      parser->parse_config("pure_rot_chi2_multipler",
+                           pure_rot_options.chi2_multipler, false);
     } else {
       zupt_agree_chi2_multipler = zupt_options.chi2_multipler;
       zupt_strict_chi2_multipler = zupt_options.chi2_multipler;
@@ -387,6 +471,15 @@ struct VioManagerOptions {
     slam_options.print();
     PRINT_DEBUG("  ARUCO标签更新器:\n");
     aruco_options.print();
+    if (print_pure_rot && try_pure_rot) {
+      PRINT_DEBUG("  纯旋转更新器 (PureRot):\n");
+      PRINT_DEBUG("    - chi2_mult: %.4f\n", pure_rot_options.chi2_multipler);
+      PRINT_DEBUG("    - |v|≤%.4f m/s  |ω|∈[%.4f, %.4f] rad/s  v_sigma=%.4f m/s  R倍率=%.4f\n",
+                  pure_rot_max_velocity, pure_rot_gyro_min, pure_rot_gyro_max,
+                  pure_rot_vel_sigma, pure_rot_noise_multiplier);
+      PRINT_DEBUG("    - 图像：perp_min=%.3f  sign_consistency_min=%.3f\n",
+                  pure_rot_flow_perp_min, pure_rot_flow_sign_consistency_min);
+    }
     if (print_zupt) {
       PRINT_DEBUG("  零速度更新器 (ZUPT):\n");
       PRINT_DEBUG("    - 门限：chi2 ≤ mult × χ²_0.95(残差维)；赞同/否决各用各自 mult 得到 gate_agree / gate_strict\n");

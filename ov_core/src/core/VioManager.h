@@ -53,6 +53,7 @@ class StateHelper;
 class UpdaterMSCKF;
 class UpdaterSLAM;
 class UpdaterZeroVelocity;
+class UpdaterPureRotation;
 class Propagator;
 
 /**
@@ -290,6 +291,9 @@ protected:
   /// Our zero velocity tracker
   std::shared_ptr<UpdaterZeroVelocity> updaterZUPT;
 
+  /// 纯旋转（原地转）更新器，与 ZUPT 独立
+  std::shared_ptr<UpdaterPureRotation> updaterPureRot;
+
   /// 自开始初始化以来收到的测量时间队列
   /// 初始化后，我们希望快速传播和更新到最新时间戳
   /// This is the queue of measurement times that have come in since we starting doing initialization
@@ -321,6 +325,8 @@ protected:
   // 是否执行了零速度更新
   // If we did a zero velocity update
   bool did_zupt_update = false;
+  /// 本帧是否执行了纯旋转更新
+  bool did_pure_rot_update = false;
   bool has_moved_since_zupt = false;
 
   // 上次更新中使用的好特征点（用于可视化）

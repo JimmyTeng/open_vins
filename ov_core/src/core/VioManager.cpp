@@ -48,6 +48,7 @@
 #include "types/LandmarkRepresentation.h"
 #include "update/UpdaterMSCKF.h"
 #include "update/UpdaterSLAM.h"
+#include "update/UpdaterPureRotation.h"
 #include "update/UpdaterZeroVelocity.h"
 #include "utils/colors.h"
 #include "utils/opencv_lambda_body.h"
@@ -309,6 +310,21 @@ VioManager::VioManager(VioManagerOptions &params_)
         params.zupt_exit_cov_inflation,
         params.print_zupt);
   }
+
+  if (params.try_pure_rot) {
+    updaterPureRot = std::make_shared<UpdaterPureRotation>(
+        params.pure_rot_options, params.imu_noises,
+        trackFEATS->get_feature_database(), params.gravity_mag,
+        params.pure_rot_max_velocity, params.pure_rot_gyro_min,
+        params.pure_rot_gyro_max, params.pure_rot_vel_sigma,
+        params.pure_rot_noise_multiplier, params.print_pure_rot,
+        params.pure_rot_use_image_gate, params.pure_rot_flow_perp_min,
+        params.pure_rot_flow_sign_consistency_min,
+        params.pure_rot_min_flow_features, params.pure_rot_flow_min_r_px,
+        params.pure_rot_flow_min_mag_px, params.pure_rot_use_cam_z_gyro_gate,
+        params.pure_rot_min_omega_cam_z_ratio,
+        (size_t)std::max(0, params.pure_rot_ref_cam_id));
+  }
 }
 
 VioManager::~VioManager() {
@@ -461,6 +477,10 @@ void VioManager::feed_measurement_imu(const ov_core::ImuData &message) {
       (!params.zupt_only_at_beginning || !has_moved_since_zupt)) {
     updaterZUPT->feed_imu(message, oldest_time);
   }
+  if (is_initialized_vio && updaterPureRot != nullptr &&
+      (!params.zupt_only_at_beginning || !has_moved_since_zupt)) {
+    updaterPureRot->feed_imu(message, oldest_time);
+  }
 }
 
 /**
@@ -508,6 +528,20 @@ void VioManager::feed_measurement_simulation(
           params.zupt_exit_cov_inflation,
           params.print_zupt);
     }
+    if (params.try_pure_rot) {
+      updaterPureRot = std::make_shared<UpdaterPureRotation>(
+          params.pure_rot_options, params.imu_noises,
+          trackFEATS->get_feature_database(), params.gravity_mag,
+          params.pure_rot_max_velocity, params.pure_rot_gyro_min,
+          params.pure_rot_gyro_max, params.pure_rot_vel_sigma,
+          params.pure_rot_noise_multiplier, params.print_pure_rot,
+          params.pure_rot_use_image_gate, params.pure_rot_flow_perp_min,
+          params.pure_rot_flow_sign_consistency_min,
+          params.pure_rot_min_flow_features, params.pure_rot_flow_min_r_px,
+          params.pure_rot_flow_min_mag_px, params.pure_rot_use_cam_z_gyro_gate,
+          params.pure_rot_min_omega_cam_z_ratio,
+          (size_t)std::max(0, params.pure_rot_ref_cam_id));
+    }
     PRINT_WARNING(RED "[仿真]: 将跟踪器转换为TrackSIM对象！\n" RESET);
   }
 
@@ -537,6 +571,35 @@ void VioManager::feed_measurement_simulation(
       propagator->clean_old_imu_measurements(
           timestamp + state->_calib_dt_CAMtoIMU->value()(0) - 0.10);
       updaterZUPT->clean_old_imu_measurements(
+          timestamp + state->_calib_dt_CAMtoIMU->value()(0) - 0.10);
+      propagator->invalidate_cache();
+      return;
+    }
+  }
+
+  if (is_initialized_vio && updaterPureRot != nullptr &&
+      (!params.zupt_only_at_beginning || !has_moved_since_zupt)) {
+    bool pr_allow = true;
+    if (params.pure_rot_only_after_zupt_fail && params.try_zupt &&
+        updaterZUPT != nullptr) {
+      pr_allow = !did_zupt_update;
+    }
+    if (pr_allow && state->_timestamp != timestamp) {
+      did_pure_rot_update = updaterPureRot->try_update(state, timestamp);
+    }
+    if (did_pure_rot_update) {
+      assert(state->_timestamp == timestamp);
+      if (params.print_pure_rot) {
+        Eigen::Vector3d rpy_deg =
+            rot2rpy(quat_2_Rot(state->_imu->quat())) * 180.0 / M_PI;
+        PRINT_INFO(GREEN "[PureRot]: RPY(deg)=%.3f,%.3f,%.3f | "
+                         "p_IinG = %.3f,%.3f,%.3f\n" RESET,
+                   rpy_deg(0), rpy_deg(1), rpy_deg(2), state->_imu->pos()(0),
+                   state->_imu->pos()(1), state->_imu->pos()(2));
+      }
+      propagator->clean_old_imu_measurements(
+          timestamp + state->_calib_dt_CAMtoIMU->value()(0) - 0.10);
+      updaterPureRot->clean_old_imu_measurements(
           timestamp + state->_calib_dt_CAMtoIMU->value()(0) - 0.10);
       propagator->invalidate_cache();
       return;
@@ -742,6 +805,36 @@ void VioManager::track_image_and_update(
       propagator->clean_old_imu_measurements(
           message.timestamp + state->_calib_dt_CAMtoIMU->value()(0) - 0.10);
       updaterZUPT->clean_old_imu_measurements(
+          message.timestamp + state->_calib_dt_CAMtoIMU->value()(0) - 0.10);
+      propagator->invalidate_cache();
+      return;
+    }
+  }
+
+  if (is_initialized_vio && updaterPureRot != nullptr &&
+      (!params.zupt_only_at_beginning || !has_moved_since_zupt)) {
+    bool pr_allow = true;
+    if (params.pure_rot_only_after_zupt_fail && params.try_zupt &&
+        updaterZUPT != nullptr) {
+      pr_allow = !did_zupt_update;
+    }
+    if (pr_allow && state->_timestamp != message.timestamp) {
+      did_pure_rot_update =
+          updaterPureRot->try_update(state, message.timestamp);
+    }
+    if (did_pure_rot_update) {
+      assert(state->_timestamp == message.timestamp);
+      if (params.print_pure_rot) {
+        Eigen::Vector3d rpy_deg =
+            rot2rpy(quat_2_Rot(state->_imu->quat())) * 180.0 / M_PI;
+        PRINT_INFO(GREEN "[PureRot]: RPY(deg)=%.3f,%.3f,%.3f | "
+                         "p_IinG = %.3f,%.3f,%.3f\n" RESET,
+                   rpy_deg(0), rpy_deg(1), rpy_deg(2), state->_imu->pos()(0),
+                   state->_imu->pos()(1), state->_imu->pos()(2));
+      }
+      propagator->clean_old_imu_measurements(
+          message.timestamp + state->_calib_dt_CAMtoIMU->value()(0) - 0.10);
+      updaterPureRot->clean_old_imu_measurements(
           message.timestamp + state->_calib_dt_CAMtoIMU->value()(0) - 0.10);
       propagator->invalidate_cache();
       return;
