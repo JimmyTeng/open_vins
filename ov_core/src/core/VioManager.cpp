@@ -323,7 +323,14 @@ VioManager::VioManager(VioManagerOptions &params_)
         params.pure_rot_min_flow_features, params.pure_rot_flow_min_r_px,
         params.pure_rot_flow_min_mag_px, params.pure_rot_use_cam_z_gyro_gate,
         params.pure_rot_min_omega_cam_z_ratio,
-        (size_t)std::max(0, params.pure_rot_ref_cam_id));
+        (size_t)std::max(0, params.pure_rot_ref_cam_id),
+        params.pure_rot_use_visual_ref_rotation,
+        params.pure_rot_visual_min_matches,
+        params.pure_rot_visual_min_inliers, params.pure_rot_visual_sigma_rad,
+        params.pure_rot_visual_noise_multiplier,
+        params.pure_rot_visual_chi2_multiplier,
+        params.pure_rot_visual_max_ref_age_sec,
+        params.pure_rot_visual_ransac_thresh_norm);
   }
 }
 
@@ -540,7 +547,15 @@ void VioManager::feed_measurement_simulation(
           params.pure_rot_min_flow_features, params.pure_rot_flow_min_r_px,
           params.pure_rot_flow_min_mag_px, params.pure_rot_use_cam_z_gyro_gate,
           params.pure_rot_min_omega_cam_z_ratio,
-          (size_t)std::max(0, params.pure_rot_ref_cam_id));
+          (size_t)std::max(0, params.pure_rot_ref_cam_id),
+          params.pure_rot_use_visual_ref_rotation,
+          params.pure_rot_visual_min_matches,
+          params.pure_rot_visual_min_inliers,
+          params.pure_rot_visual_sigma_rad,
+          params.pure_rot_visual_noise_multiplier,
+          params.pure_rot_visual_chi2_multiplier,
+          params.pure_rot_visual_max_ref_age_sec,
+          params.pure_rot_visual_ransac_thresh_norm);
     }
     PRINT_WARNING(RED "[仿真]: 将跟踪器转换为TrackSIM对象！\n" RESET);
   }
@@ -568,6 +583,8 @@ void VioManager::feed_measurement_simulation(
       if (params.print_zupt) {
         print_zupt_pose_line_after_success(state);
       }
+      if (updaterPureRot != nullptr)
+        updaterPureRot->record_reference(state, timestamp);
       propagator->clean_old_imu_measurements(
           timestamp + state->_calib_dt_CAMtoIMU->value()(0) - 0.10);
       updaterZUPT->clean_old_imu_measurements(
@@ -802,6 +819,8 @@ void VioManager::track_image_and_update(
       if (params.print_state_calib) {
         print_zupt_pose_line_after_success(state);
       }
+      if (updaterPureRot != nullptr)
+        updaterPureRot->record_reference(state, message.timestamp);
       propagator->clean_old_imu_measurements(
           message.timestamp + state->_calib_dt_CAMtoIMU->value()(0) - 0.10);
       updaterZUPT->clean_old_imu_measurements(
@@ -892,6 +911,10 @@ void VioManager::do_feature_propagate_update(
       StateHelper::inflate_covariance_diagonal(
           state, state->_imu->v(), params.post_propagate_vel_cov_diag_add);
     }
+  }
+  if (is_initialized_vio && updaterPureRot != nullptr &&
+      state->_timestamp == message.timestamp) {
+    updaterPureRot->record_reference(state, message.timestamp);
   }
   rT3 = rtime_now();
 

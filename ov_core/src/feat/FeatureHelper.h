@@ -327,6 +327,52 @@ public:
     sign_consistency = (double)n_agree / (double)signs.size();
   }
 
+  /**
+   * @brief 在指定相机上收集同时见于 time_ref 与 time_cur 的特征，并输出去畸变归一化像面坐标（z=1）
+   * @return 匹配对数
+   */
+  static int collect_normalized_correspondences(
+      std::shared_ptr<FeatureDatabase> db, double time_ref, double time_cur,
+      size_t cam_id,
+      const std::unordered_map<size_t, std::shared_ptr<CamBase>> &cams,
+      std::vector<Eigen::Vector2d> &pts_ref,
+      std::vector<Eigen::Vector2d> &pts_cur) {
+
+    pts_ref.clear();
+    pts_cur.clear();
+    if (db == nullptr || cams.empty())
+      return 0;
+    auto it_cam = cams.find(cam_id);
+    if (it_cam == cams.end())
+      return 0;
+
+    std::vector<std::shared_ptr<Feature>> feats0 =
+        db->features_containing(time_ref, false, true);
+
+    for (auto &feat : feats0) {
+      auto it_ts = feat->timestamps.find(cam_id);
+      if (it_ts == feat->timestamps.end())
+        continue;
+      auto it0 = std::find(it_ts->second.begin(), it_ts->second.end(),
+                           time_ref);
+      auto it1 = std::find(it_ts->second.begin(), it_ts->second.end(),
+                           time_cur);
+      if (it0 == it_ts->second.end() || it1 == it_ts->second.end())
+        continue;
+      auto idx0 = std::distance(it_ts->second.begin(), it0);
+      auto idx1 = std::distance(it_ts->second.begin(), it1);
+      Eigen::Vector2f uv_ref =
+          feat->uvs.at(cam_id).at(idx0).block(0, 0, 2, 1);
+      Eigen::Vector2f uv_cur =
+          feat->uvs.at(cam_id).at(idx1).block(0, 0, 2, 1);
+      Eigen::Vector2f n_ref = it_cam->second->undistort_f(uv_ref);
+      Eigen::Vector2f n_cur = it_cam->second->undistort_f(uv_cur);
+      pts_ref.emplace_back(n_ref.cast<double>());
+      pts_cur.emplace_back(n_cur.cast<double>());
+    }
+    return (int)pts_ref.size();
+  }
+
 private:
   // Cannot construct this class
   FeatureHelper() {}

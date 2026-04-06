@@ -17,6 +17,8 @@
 #include "utils/print.h"
 #include "utils/quat_ops.h"
 
+#include <opencv2/calib3d.hpp>
+
 #include <algorithm>
 #include <cmath>
 
@@ -32,7 +34,11 @@ UpdaterPureRotation::UpdaterPureRotation(
     bool use_image_gate, double flow_perp_min,
     double flow_sign_consistency_min, int min_flow_feats, double min_r_px,
     double min_flow_px, bool use_cam_z_gyro_gate,
-    double min_omega_cam_z_ratio, size_t ref_cam_id)
+    double min_omega_cam_z_ratio, size_t ref_cam_id,
+    bool use_visual_ref_rotation, int visual_min_matches,
+    int visual_min_inliers, double visual_sigma_rad,
+    double visual_noise_multiplier, double visual_chi2_multiplier,
+    double visual_max_ref_age_sec, double visual_ransac_thresh_norm)
     : _options(options), _noises(noises), _db(std::move(db)),
       _max_velocity(max_velocity), _gyro_mag_min(gyro_mag_min),
       _gyro_mag_max(gyro_mag_max), _vel_sigma(std::max(1e-6, vel_sigma)),
@@ -41,12 +47,32 @@ UpdaterPureRotation::UpdaterPureRotation(
       _flow_sign_consistency_min(flow_sign_consistency_min),
       _min_flow_feats(min_flow_feats), _min_r_px(min_r_px),
       _min_flow_px(min_flow_px), _use_cam_z_gyro_gate(use_cam_z_gyro_gate),
-      _min_omega_cam_z_ratio(min_omega_cam_z_ratio), _ref_cam_id(ref_cam_id) {
+      _min_omega_cam_z_ratio(min_omega_cam_z_ratio), _ref_cam_id(ref_cam_id),
+      _use_visual_ref_rotation(use_visual_ref_rotation),
+      _visual_min_matches(std::max(8, visual_min_matches)),
+      _visual_min_inliers(std::max(6, visual_min_inliers)),
+      _visual_sigma_rad(std::max(1e-6, visual_sigma_rad)),
+      _visual_noise_multiplier(
+          std::max(1e-6, visual_noise_multiplier)),
+      _visual_chi2_multiplier(std::max(1e-6, visual_chi2_multiplier)),
+      _visual_max_ref_age_sec(
+          std::max(0.1, visual_max_ref_age_sec)),
+      _visual_ransac_thresh_norm(
+          std::max(1e-6, visual_ransac_thresh_norm)) {
   _gravity << 0.0, 0.0, gravity_mag;
   _noises.sigma_w_2 = std::pow(_noises.sigma_w, 2);
   _noises.sigma_a_2 = std::pow(_noises.sigma_a, 2);
   _noises.sigma_wb_2 = std::pow(_noises.sigma_wb, 2);
   _noises.sigma_ab_2 = std::pow(_noises.sigma_ab, 2);
+}
+
+void UpdaterPureRotation::record_reference(std::shared_ptr<State> state,
+                                           double cam_timestamp) {
+  if (state == nullptr)
+    return;
+  _ref_valid = true;
+  _ref_cam_time = cam_timestamp;
+  _q_GtoI_ref = state->_imu->quat();
 }
 
 void UpdaterPureRotation::feed_imu(const ov_core::ImuData &message,
@@ -244,6 +270,10 @@ bool UpdaterPureRotation::try_update(std::shared_ptr<State> state,
   _last_debug.img_ok = img_ok;
   _last_debug.omega_cam_z_ratio = omega_cam_z_ratio;
   _last_debug.imu_axis_ok = imu_axis_ok;
+  _last_debug.visual_rotation_used = false;
+  _last_debug.visual_n_matches = 0;
+  _last_debug.visual_chi2 = 0.0;
+  _last_debug.visual_res_norm = 0.0;
 
   if (_print_pure_rot) {
     const char *ok = "通过";
@@ -284,15 +314,135 @@ bool UpdaterPureRotation::try_update(std::shared_ptr<State> state,
   if (!gate_passed)
     return false;
 
+  Eigen::MatrixXd H_use = H;
+  Eigen::VectorXd res_use = res;
+  bool visual_applied = false;
+
+  if (_use_visual_ref_rotation && _ref_valid && _db != nullptr &&
+      state->_calib_IMUtoCAM.find(_ref_cam_id) !=
+          state->_calib_IMUtoCAM.end() &&
+      !state->_cam_intrinsics_cameras.empty() &&
+      timestamp > _ref_cam_time + 1e-9 &&
+      (timestamp - _ref_cam_time) <= _visual_max_ref_age_sec) {
+
+    std::vector<Eigen::Vector2d> pref, pcur;
+    const int npair = FeatureHelper::collect_normalized_correspondences(
+        _db, _ref_cam_time, timestamp, _ref_cam_id,
+        state->_cam_intrinsics_cameras, pref, pcur);
+    _last_debug.visual_n_matches = npair;
+
+    if (npair >= _visual_min_matches) {
+      cv::Mat pts1(npair, 2, CV_64F);
+      cv::Mat pts2(npair, 2, CV_64F);
+      for (int i = 0; i < npair; i++) {
+        pts1.at<double>(i, 0) = pref[i](0);
+        pts1.at<double>(i, 1) = pref[i](1);
+        pts2.at<double>(i, 0) = pcur[i](0);
+        pts2.at<double>(i, 1) = pcur[i](1);
+      }
+      cv::Mat inliers;
+      cv::Mat E = cv::findEssentialMat(
+          pts1, pts2, 1.0, cv::Point2d(0, 0), cv::RANSAC, 0.999,
+          _visual_ransac_thresh_norm, inliers);
+      if (!E.empty() && E.cols == 3 && E.rows >= 3) {
+        cv::Mat E3 = E.rowRange(0, 3).clone();
+        cv::Mat R_cv, t_cv;
+        const int n_inliers = cv::recoverPose(E3, pts1, pts2, R_cv, t_cv, 1.0,
+                                              cv::Point2d(0, 0), inliers);
+        if (n_inliers >= _visual_min_inliers) {
+          Eigen::Matrix3d R_meas;
+          for (int r = 0; r < 3; r++)
+            for (int c = 0; c < 3; c++)
+              R_meas(r, c) = R_cv.at<double>(r, c);
+          if (R_meas.determinant() > 0.5) {
+            Eigen::Matrix3d R_ItoC =
+                state->_calib_IMUtoCAM.at(_ref_cam_id)->Rot();
+            Eigen::Matrix3d R_CtoI = R_ItoC.transpose();
+            Eigen::Matrix3d R_GtoI0 = quat_2_Rot(_q_GtoI_ref);
+            Eigen::Matrix3d R_GtoI1 = state->_imu->Rot();
+            Eigen::Matrix3d R_pred =
+                R_ItoC * R_GtoI1 * R_GtoI0.transpose() * R_CtoI;
+
+            const Eigen::Vector3d r0 =
+                log_so3(R_meas.transpose() * R_pred);
+
+            const double eps = 1e-5;
+            Eigen::Matrix3d Hq = Eigen::Matrix3d::Zero();
+            for (int c = 0; c < 3; c++) {
+              Eigen::Vector3d dq = Eigen::Vector3d::Zero();
+              dq(c) = eps;
+              const Eigen::Matrix3d R_GtoI1p = exp_so3(dq) * R_GtoI1;
+              const Eigen::Matrix3d R_pred_p =
+                  R_ItoC * R_GtoI1p * R_GtoI0.transpose() * R_CtoI;
+              const Eigen::Vector3d rp =
+                  log_so3(R_meas.transpose() * R_pred_p);
+              Hq.col(c) = (rp - r0) / eps;
+            }
+
+            const Eigen::MatrixXd P_q = P_marg.block(0, 0, 3, 3);
+            const Eigen::Matrix3d R_noise =
+                Eigen::Matrix3d::Identity() * std::pow(_visual_sigma_rad, 2) *
+                _visual_noise_multiplier;
+            const Eigen::Matrix3d S_vis = Hq * P_q * Hq.transpose() + R_noise;
+            Eigen::LLT<Eigen::Matrix3d> llt_S(S_vis);
+            if (llt_S.info() == Eigen::Success) {
+              const double chi2_v = r0.dot(llt_S.solve(r0));
+              const double lim_v = _visual_chi2_multiplier *
+                                   ov_core::chi2_quantile_095(3);
+              _last_debug.visual_chi2 = chi2_v;
+              _last_debug.visual_res_norm = r0.norm();
+              if (chi2_v <= lim_v && r0.norm() < 1.5) {
+                Eigen::MatrixXd Hv = Eigen::MatrixXd::Zero(3, 12);
+                Hv.block(0, 0, 3, 3) = Hq;
+                const int n0 = (int)H_use.rows();
+                Eigen::MatrixXd H_stacked(n0 + 3, 12);
+                H_stacked.topRows(n0) = H_use;
+                H_stacked.bottomRows(3) = Hv;
+                Eigen::VectorXd res_stacked(n0 + 3);
+                res_stacked.head(n0) = res_use;
+                res_stacked.tail(3) = r0;
+                H_use = H_stacked;
+                res_use = res_stacked;
+                visual_applied = true;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  _last_debug.visual_rotation_used = visual_applied;
+  if (visual_applied && _print_pure_rot) {
+    PRINT_INFO("  [PureRot-视觉] 相对参考帧 t_ref=%.6f  匹配=%d  "
+               "χ²_vis=%.3f  |log_so3|=%.4f rad\n",
+               _ref_cam_time, _last_debug.visual_n_matches,
+               _last_debug.visual_chi2, _last_debug.visual_res_norm);
+  }
+
   Eigen::MatrixXd Phi_bias = Eigen::MatrixXd::Identity(6, 6);
   std::vector<std::shared_ptr<Type>> Phi_order;
   Phi_order.push_back(state->_imu->bg());
   Phi_order.push_back(state->_imu->ba());
   StateHelper::EKFPropagation(state, Phi_order, Phi_order, Phi_bias, Q_bias);
 
-  R = _noise_multiplier * Eigen::MatrixXd::Identity(res.rows(), res.rows());
-  StateHelper::EKFUpdate(state, Hx_order, H, res, R);
+  Eigen::MatrixXd R_final;
+  const int nr = (int)res_use.rows();
+  if (visual_applied) {
+    R_final = Eigen::MatrixXd::Zero(nr, nr);
+    const int n_imu = nr - 3;
+    R_final.topLeftCorner(n_imu, n_imu) =
+        _noise_multiplier * Eigen::MatrixXd::Identity(n_imu, n_imu);
+    R_final.bottomRightCorner(3, 3) =
+        Eigen::Matrix3d::Identity() * std::pow(_visual_sigma_rad, 2) *
+        _visual_noise_multiplier;
+  } else {
+    R_final = _noise_multiplier * Eigen::MatrixXd::Identity(nr, nr);
+  }
+
+  StateHelper::EKFUpdate(state, Hx_order, H_use, res_use, R_final);
   state->_timestamp = timestamp;
   _last_debug.ekf_updated = true;
+  _last_debug.residual_rows = nr;
   return true;
 }

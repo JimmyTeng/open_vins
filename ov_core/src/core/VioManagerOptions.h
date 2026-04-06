@@ -178,6 +178,23 @@ struct VioManagerOptions {
   /// 上述陀螺门使用的参考相机 ID（与 T_imu_cam 一致）
   int pure_rot_ref_cam_id = 0;
 
+  /// 是否启用「相对最近非纯旋转帧」的视觉相对旋转残差（本质矩阵+RANSAC，log-so3）
+  bool pure_rot_use_visual_ref_rotation = false;
+  /// 参与本质矩阵估计的最少匹配对数
+  int pure_rot_visual_min_matches = 12;
+  /// recoverPose 内点下限
+  int pure_rot_visual_min_inliers = 8;
+  /// 视觉旋转残差（log-so3）各轴测量噪声 σ (rad)
+  double pure_rot_visual_sigma_rad = 0.02;
+  /// 视觉旋转 R 相对 pure_rot_visual_sigma_rad 的倍率（与 IMU 段 noise_multiplier 独立）
+  double pure_rot_visual_noise_multiplier = 1.0;
+  /// 视觉 3 维残差 χ² 门限倍率（相对 χ²_0.95(3)）
+  double pure_rot_visual_chi2_multiplier = 2.0;
+  /// 参考帧超过该时间间隔 (s) 则不再使用视觉约束
+  double pure_rot_visual_max_ref_age_sec = 30.0;
+  /// 归一化坐标下本质矩阵 RANSAC 阈值
+  double pure_rot_visual_ransac_thresh_norm = 0.01;
+
   /// 是否打印 [PureRot] 门限与成功位姿
   bool print_pure_rot = false;
 
@@ -323,6 +340,22 @@ struct VioManagerOptions {
       parser->parse_config("pure_rot_min_omega_cam_z_ratio",
                            pure_rot_min_omega_cam_z_ratio, false);
       parser->parse_config("pure_rot_ref_cam_id", pure_rot_ref_cam_id, false);
+      parser->parse_config("pure_rot_use_visual_ref_rotation",
+                           pure_rot_use_visual_ref_rotation, false);
+      parser->parse_config("pure_rot_visual_min_matches",
+                           pure_rot_visual_min_matches, false);
+      parser->parse_config("pure_rot_visual_min_inliers",
+                           pure_rot_visual_min_inliers, false);
+      parser->parse_config("pure_rot_visual_sigma_rad",
+                           pure_rot_visual_sigma_rad, false);
+      parser->parse_config("pure_rot_visual_noise_multiplier",
+                           pure_rot_visual_noise_multiplier, false);
+      parser->parse_config("pure_rot_visual_chi2_multiplier",
+                           pure_rot_visual_chi2_multiplier, false);
+      parser->parse_config("pure_rot_visual_max_ref_age_sec",
+                           pure_rot_visual_max_ref_age_sec, false);
+      parser->parse_config("pure_rot_visual_ransac_thresh_norm",
+                           pure_rot_visual_ransac_thresh_norm, false);
       parser->parse_config("print_pure_rot", print_pure_rot, false);
       parser->parse_config("post_propagate_vel_cov_diag_add",
                            post_propagate_vel_cov_diag_add, false);
@@ -479,6 +512,13 @@ struct VioManagerOptions {
                   pure_rot_vel_sigma, pure_rot_noise_multiplier);
       PRINT_DEBUG("    - 图像：perp_min=%.3f  sign_consistency_min=%.3f\n",
                   pure_rot_flow_perp_min, pure_rot_flow_sign_consistency_min);
+      PRINT_DEBUG("    - 视觉相对旋转 ref: %d  min_match=%d  σ_rad=%.4f  "
+                  "vis_R×%.3f  vis_χ²×%.3f  ref_max_age=%.1fs\n",
+                  (int)pure_rot_use_visual_ref_rotation,
+                  pure_rot_visual_min_matches, pure_rot_visual_sigma_rad,
+                  pure_rot_visual_noise_multiplier,
+                  pure_rot_visual_chi2_multiplier,
+                  pure_rot_visual_max_ref_age_sec);
     }
     if (print_zupt) {
       PRINT_DEBUG("  零速度更新器 (ZUPT):\n");

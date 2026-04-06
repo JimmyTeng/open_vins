@@ -12,6 +12,7 @@
 #ifndef OV_MSCKF_UPDATER_PURE_ROTATION_H
 #define OV_MSCKF_UPDATER_PURE_ROTATION_H
 
+#include <Eigen/Eigen>
 #include <memory>
 
 #include "utils/sensor_data.h"
@@ -50,6 +51,11 @@ struct PureRotDebugSnapshot {
   /// 陀螺在参考相机系下 |ωz|/|ω|（光轴分量占比）
   double omega_cam_z_ratio = 0.0;
   bool imu_axis_ok = false;
+  /// 是否并入视觉相对旋转残差（相对非纯旋转参考帧）
+  bool visual_rotation_used = false;
+  int visual_n_matches = 0;
+  double visual_chi2 = 0.0;
+  double visual_res_norm = 0.0;
 };
 
 /**
@@ -57,6 +63,8 @@ struct PureRotDebugSnapshot {
  *
  * 检测与 ZUPT 完全独立。门限：可选图像 perp 置信、可选 ω 光轴占比、|v|、陀螺幅值、χ²。
  * 测量模型：加计对齐重力 + v≈0，无陀螺零速残差。
+ * 可选：相对「最近一次非纯旋转帧」保存的 IMU 姿态，用特征匹配估计的相机相对旋转
+ * 与当前状态预测之差作 log-so3 残差，约束绕视轴分量（下视场景即航向）。
  */
 class UpdaterPureRotation {
 
@@ -69,11 +77,20 @@ public:
       bool use_image_gate, double flow_perp_min, double flow_sign_consistency_min,
       int min_flow_feats, double min_r_px, double min_flow_px,
       bool use_cam_z_gyro_gate,
-      double min_omega_cam_z_ratio, size_t ref_cam_id);
+      double min_omega_cam_z_ratio, size_t ref_cam_id,
+      bool use_visual_ref_rotation, int visual_min_matches,
+      int visual_min_inliers, double visual_sigma_rad,
+      double visual_noise_multiplier, double visual_chi2_multiplier,
+      double visual_max_ref_age_sec, double visual_ransac_thresh_norm);
 
   void feed_imu(const ov_core::ImuData &message, double oldest_time = -1);
 
   void clean_old_imu_measurements(double oldest_time);
+
+  /**
+   * @brief 在普通 VIO / ZUPT 等「非本帧 PureRot 成功」路径上调用，保存参考相机时刻与 IMU 姿态
+   */
+  void record_reference(std::shared_ptr<State> state, double cam_timestamp);
 
   /**
    * @return 若本帧执行了纯旋转更新则为 true（并将 state 时间推进到 timestamp）
@@ -105,6 +122,20 @@ protected:
   bool _use_cam_z_gyro_gate = true;
   double _min_omega_cam_z_ratio = 0.65;
   size_t _ref_cam_id = 0;
+
+  bool _use_visual_ref_rotation = false;
+  int _visual_min_matches = 12;
+  int _visual_min_inliers = 8;
+  double _visual_sigma_rad = 0.02;
+  double _visual_noise_multiplier = 1.0;
+  double _visual_chi2_multiplier = 2.0;
+  double _visual_max_ref_age_sec = 30.0;
+  double _visual_ransac_thresh_norm = 0.01;
+
+  bool _ref_valid = false;
+  double _ref_cam_time = -1.0;
+  Eigen::Matrix<double, 4, 1> _q_GtoI_ref =
+      Eigen::Matrix<double, 4, 1>::Zero();
 
   std::vector<ov_core::ImuData> imu_data;
 

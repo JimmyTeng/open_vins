@@ -80,6 +80,16 @@ pure_rot_flow_min_mag_px: 0.35 # 位移过小视为噪声
 pure_rot_use_cam_z_gyro_gate: true
 pure_rot_min_omega_cam_z_ratio: 0.5 # |ωz|/|ω| 下限；安装角大时可略降
 pure_rot_ref_cam_id: 0 # 与 kalibr_imucam 中相机 id 一致
+# 相对「最近一次非 PureRot 成功帧」保存的位姿，用匹配点估计本质矩阵 + recoverPose 得 R_meas，
+# 与状态预测的 R_pred 作 log-so3 残差（3 维），约束绕视轴旋转（下视即航向）
+pure_rot_use_visual_ref_rotation: false
+pure_rot_visual_min_matches: 12
+pure_rot_visual_min_inliers: 8
+pure_rot_visual_sigma_rad: 0.02 # 约 1.1°/轴
+pure_rot_visual_noise_multiplier: 1.0
+pure_rot_visual_chi2_multiplier: 2.0
+pure_rot_visual_max_ref_age_sec: 30.0
+pure_rot_visual_ransac_thresh_norm: 0.01
 
 # ==================================================================
 # ==================================================================
