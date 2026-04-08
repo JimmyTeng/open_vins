@@ -21,3 +21,4 @@ script/vcpkg-downloads/
 /data/
 /thirdparty/
 /install/
+/logs/
