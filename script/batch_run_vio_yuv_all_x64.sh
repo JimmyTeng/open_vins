@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
 # 对 init 下发现的每个数据集，调用 run_vio_yuv_runner_x64.sh 重复运行多次；
-# 使用单进程串行执行（避免并发引发资源/稳定性问题）。
+# 默认单进程串行；可通过第二个参数指定并发进程数（需 Bash ≥ 4.3，支持 wait -n）。
 #
 # 用法:
 #   ./script/batch_run_vio_yuv_all_x64.sh
+#   ./script/batch_run_vio_yuv_all_x64.sh <重复次数>
+#   ./script/batch_run_vio_yuv_all_x64.sh <重复次数> <并发进程数>
 #   REPEATS=100 ./script/batch_run_vio_yuv_all_x64.sh
 #   LOG_ROOT=/path/to/logs ./script/batch_run_vio_yuv_all_x64.sh
-#   ./script/batch_run_vio_yuv_all_x64.sh -- 额外参数会传给每次 vio_yuv_runner（如 --no-display）
+#   ./script/batch_run_vio_yuv_all_x64.sh 20 4 -- 额外参数会传给每次 vio_yuv_runner（如 --no-display）
 #
 # 环境变量:
-#   REPEATS         每个数据集运行次数，默认 100
+#   REPEATS         每个数据集运行次数（可被第一个数字参数覆盖），默认 10
+#   JOBS            并发进程数（可被第二个数字参数覆盖），默认 1
 #   LOG_ROOT        日志根目录；默认 <仓库>/logs/vio_yuv_batch_<时间戳>
 #   SKIP_BATCH_METRICS  设为 1 则跳过批次结束后的指标 CSV + Markdown 报告
 #   THRESH_TIGHT_M / THRESH_LOOSE_M  飘移门限（米），传给 export_vio_log_metrics.py，默认 0.3 / 10
@@ -22,7 +25,8 @@ WS_ROOT="$(cd "$ROOT/.." && pwd)"
 RUNNER="$SCRIPT_DIR/run_vio_yuv_runner_x64.sh"
 DEFAULT_CONFIG="$ROOT/ov_yuv_parser/config/openvins/estimator_config.yaml"
 
-REPEATS="${REPEATS:-100}"
+REPEATS="${REPEATS:-10}"
+JOBS="${JOBS:-1}"
 
 # run 序号文件名宽度：1–99 两位，≥100 三位（如 run100）
 run_suffix() {
@@ -52,15 +56,31 @@ discover_dataset_roots() {
   done | LC_ALL=C sort -u
 }
 
-# ---------- 解析：-- 之后为传给 runner 的额外参数 ----------
+# ---------- 解析：可选 1～2 个正整数（重复次数、并发数），-- 之后为传给 runner 的额外参数 ----------
 EXTRA=()
+HAVE_REPEAT_ARG=0
+HAVE_JOBS_ARG=0
 while [ $# -gt 0 ]; do
   if [ "$1" = "--" ]; then
     shift
     EXTRA=("$@")
     break
   fi
-  echo "未知参数: $1（可用 -- 传递 runner 选项）" >&2
+  if [[ "$1" =~ ^[0-9]+$ ]]; then
+    if [ "$HAVE_REPEAT_ARG" -eq 0 ]; then
+      REPEATS="$1"
+      HAVE_REPEAT_ARG=1
+    elif [ "$HAVE_JOBS_ARG" -eq 0 ]; then
+      JOBS="$1"
+      HAVE_JOBS_ARG=1
+    else
+      echo "多余参数: $1（最多两个数字：重复次数、并发进程数）" >&2
+      exit 1
+    fi
+    shift
+    continue
+  fi
+  echo "未知参数: $1（先写重复次数/并发数，或用 -- 传递 runner 选项）" >&2
   exit 1
 done
 
@@ -81,6 +101,10 @@ if ! [[ "$REPEATS" =~ ^[0-9]+$ ]] || [ "$REPEATS" -lt 1 ]; then
   echo "错误: REPEATS 须为正整数" >&2
   exit 1
 fi
+if ! [[ "$JOBS" =~ ^[0-9]+$ ]] || [ "$JOBS" -lt 1 ]; then
+  echo "错误: JOBS（并发进程数）须为正整数" >&2
+  exit 1
+fi
 TS="$(date +%Y%m%d_%H%M%S)"
 LOG_ROOT="${LOG_ROOT:-$ROOT/logs/vio_yuv_batch_$TS}"
 mkdir -p "$LOG_ROOT"
@@ -95,8 +119,15 @@ append_summary() {
   flock "$SUMMARY_LOCK" sh -c 'echo "$1" >> "$2"' _ "$line" "$LOG_ROOT/summary.txt"
 }
 
+if [ "$JOBS" -eq 1 ]; then
+  _mode_desc="单进程串行"
+  _run_mode_tag="single_process_serial"
+else
+  _mode_desc="并发 ${JOBS} 进程（Bash wait -n）"
+  _run_mode_tag="parallel_jobs_${JOBS}"
+fi
 echo "数据根: $INIT_BASE"
-echo "数据集数量: $n，每个跑 $REPEATS 次，执行模式: 单进程串行"
+echo "数据集数量: $n，每个跑 $REPEATS 次，执行模式: $_mode_desc"
 echo "日志目录: $LOG_ROOT"
 echo "汇总: $LOG_ROOT/summary.txt"
 echo ""
@@ -105,7 +136,8 @@ echo ""
   echo "batch_start_ts=$TS"
   echo "init_base=$INIT_BASE"
   echo "repeats=$REPEATS"
-  echo "run_mode=single_process_serial"
+  echo "parallel_jobs=$JOBS"
+  echo "run_mode=$_run_mode_tag"
   echo "extra_args=${EXTRA[*]-}"
   echo ""
 } >"$LOG_ROOT/summary.txt"
@@ -149,7 +181,15 @@ run_one_task() {
   fi
 }
 
+if [ "$JOBS" -gt 1 ]; then
+  if ! bash -c 'help wait' 2>/dev/null | grep -q -- '-n'; then
+    echo "错误: 并发 JOBS=$JOBS 需要 Bash 4.3+（内置 wait -n）" >&2
+    exit 1
+  fi
+fi
+
 ds_idx=0
+running=0
 for D in "${DATASETS[@]}"; do
   ds_idx=$((ds_idx + 1))
   rel="${D#$INIT_BASE/}"
@@ -158,9 +198,15 @@ for D in "${DATASETS[@]}"; do
   echo "排队: [$ds_idx/$n] $rel × $REPEATS 次"
 
   for r in $(seq 1 "$REPEATS"); do
-    run_one_task "$ds_idx" "$D" "$rel" "$r"
+    while [ "$running" -ge "$JOBS" ]; do
+      wait -n
+      running=$((running - 1))
+    done
+    run_one_task "$ds_idx" "$D" "$rel" "$r" &
+    running=$((running + 1))
   done
 done
+wait
 
 echo ""
 echo "全部完成。日志: $LOG_ROOT"

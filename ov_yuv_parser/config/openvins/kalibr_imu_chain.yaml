@@ -10,11 +10,9 @@ imu0:
   # 连续时间噪声；若纯积分速度漂移仍明显可略增大 accelerometer_*，使滤波更不信加计、更多靠视觉约束
   accelerometer_noise_density: 0.001 # [ m / s^2 / sqrt(Hz) ]
   accelerometer_random_walk: 0.001 # [ m / s^3 / sqrt(Hz) ]
-  gyroscope_noise_density: 0.00045 # [ rad / s / sqrt(Hz) ]
-  gyroscope_random_walk: 0.0000045 # [ rad / s^2 / sqrt(Hz) ]
+  gyroscope_noise_density: 0.0045 # [ rad / s / sqrt(Hz) ]
+  gyroscope_random_walk: 0.00045 # [ rad / s^2 / sqrt(Hz) ]
   rostopic: /imu0 # ROS 话题名（若不用 ROS 可忽略）
-  # 与 imucam 链中 timeshift_cam_imu 一致：t_imu = t_cam + shift
-  time_offset: 0.002116458780350451
   update_rate: 500.0
   model: "calibrated"
   # 报告未给出额外 IMU 内参矩阵，此处为单位阵

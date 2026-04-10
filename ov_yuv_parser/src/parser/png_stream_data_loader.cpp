@@ -34,7 +34,8 @@ PngStreamDataLoader::PngStreamDataLoader(const std::string& png_dir,
     for (size_t i = 0; i < infos.size(); ++i) {
       FrameRef ref;
       ref.info = infos[i];
-      ref.timestamp = infos[i].vi_pts;
+      ref.timestamp = YUVParser::compensatedImageTimestamp(infos[i].vi_pts,
+                                                            infos[i].exp_time);
       frame_refs_.push_back(ref);
     }
   }

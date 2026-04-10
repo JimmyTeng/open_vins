@@ -91,9 +91,9 @@ pure_rot_use_accel_mean_gate: true
 pure_rot_accel_mean_g_tol: 0.3 # m/s²
 # 连续 PureRot 段内：线速度≈0、位置相对本段首帧软锚定（EKF 伪观测 σ）
 pure_rot_lock_vel_pos: true
-pure_rot_zero_vel_sigma: 0.05 # m/s，零速伪观测 R=σ²（越小越把 v 拉向 0）
+pure_rot_zero_vel_sigma: 0.02 # m/s，零速伪观测 R=σ²（越小越把 v 拉向 0）
 pure_rot_vel_cov_diag_min: 0.01 # (m/s)²，伪观测后对 P_vii 下限，避免速度不确定度过尖
-pure_rot_anchor_pos_sigma: 0.15 # m
+pure_rot_anchor_pos_sigma: 0.05 # m
 # ---------- PureRot：单应 H 更新（检验通过后统一走 IMU 传播 → H 分解 R_meas → log_so3 EKF）----------
 # pure_rot_visual_*：匹配数、单应 RANSAC 内点数下限、log-so3 测量噪声与 χ² 倍率（更新段共用）。
 # 门控③（相邻帧）用 pure_rot_f_ransac_thresh_norm；若 pure_rot_use_visual_ref_rotation 且参考帧有效，更新段匹配 t_ref↔当前，RANSAC 用 pure_rot_visual_ransac_thresh_norm。
@@ -201,7 +201,8 @@ print_tracking_stats: true # 是否打印 [VM] 帧与 [跟踪] 周期日志
 # true：每帧 retriangulate 后打印线性三角化 p_FinG（全局系 m；活动 MSCKF + SLAM）；输出量大，仅调试
 print_triangulated_points: false
 
-debug_display_waitkey_ms: 0 # 调试窗口 waitKey 时长（毫秒）；0=不等待，仅处理GUI事件
+debug_display_imshow: false # false 时关闭 x86_64 下调试窗口（不调用 imshow/waitKey，且不再拼合显示用缓冲）
+debug_display_waitkey_ms: 0 # 调试窗口 waitKey 时长（毫秒）；0=不等待，仅处理GUI事件；仅 debug_display_imshow 为 true 时有效
 imu_klt_prior_debug: false # 打印 IMU 预测与原始值残差日志
 
 record_timing_information: true # 是否在结束时写计时统计

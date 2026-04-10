@@ -47,6 +47,30 @@ set_target_properties(yuv_to_png PROPERTIES INSTALL_RPATH "${OV_YUV_PARSER_INSTA
 install(TARGETS yuv_to_png RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 # =============================================================================
+# Executable: yuv_timestamp_interval_test（半曝光时间戳 + 帧间隔自检）
+# =============================================================================
+add_executable(yuv_timestamp_interval_test src/app/yuv_timestamp_interval_test.cpp)
+target_link_libraries(yuv_timestamp_interval_test PRIVATE ov_yuv_parser_lib)
+target_compile_options(yuv_timestamp_interval_test PRIVATE -Wall -Wextra)
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS "8")
+  target_link_libraries(yuv_timestamp_interval_test PRIVATE stdc++fs)
+endif()
+set_target_properties(yuv_timestamp_interval_test PROPERTIES INSTALL_RPATH "${OV_YUV_PARSER_INSTALL_RPATH}")
+install(TARGETS yuv_timestamp_interval_test RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+
+# =============================================================================
+# Executable: yuv_init_datasets_test（批量校验 init 下所有 dump_yuv 数据集）
+# =============================================================================
+add_executable(yuv_init_datasets_test src/app/yuv_init_datasets_test.cpp)
+target_link_libraries(yuv_init_datasets_test PRIVATE ov_yuv_parser_lib)
+target_compile_options(yuv_init_datasets_test PRIVATE -Wall -Wextra)
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS "8")
+  target_link_libraries(yuv_init_datasets_test PRIVATE stdc++fs)
+endif()
+set_target_properties(yuv_init_datasets_test PROPERTIES INSTALL_RPATH "${OV_YUV_PARSER_INSTALL_RPATH}")
+install(TARGETS yuv_init_datasets_test RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+
+# =============================================================================
 # Executable: data_bridge_example (data_bridge.h 使用示例)
 # =============================================================================
 add_executable(data_bridge_example src/example/data_bridge_example.cpp)

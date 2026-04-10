@@ -86,14 +86,16 @@ void VioInterface::OnImage(const vio_image_msg_t& image) {
   }
   // OpenCV highgui：imshow/waitKey 须在主线程；由调用方保证 OnImage 在主线程执行
 #if OV_VIO_DEBUG_DISPLAY_X64
+  const bool show_debug =
+      vio_manager_options_ && vio_manager_options_->debug_display_imshow;
   cv::Mat to_show;
-  {
+  if (show_debug) {
     std::lock_guard<std::mutex> lock(display_mtx_);
     if (!debug_display_combo_.empty()) {
       to_show = debug_display_combo_.clone();
     }
   }
-  if (!to_show.empty()) {
+  if (show_debug && !to_show.empty()) {
     static bool window_initialized = false;
     if (!window_initialized) {
       const std::string window_name = "VIO: prev raw | track";
@@ -322,7 +324,9 @@ void VioInterface::Run() {
       app_->feed_measurement_camera(cam_data);
       InvokeStateCallback(cam_data);
 #if OV_VIO_DEBUG_DISPLAY_X64
-      UpdateDebugDisplayBuffer();
+      if (vio_manager_options_->debug_display_imshow) {
+        UpdateDebugDisplayBuffer();
+      }
 #endif
       if (!cam_data.images.empty()) {
         prev_raw_gray_ = cam_data.images[0].clone();

@@ -12,8 +12,6 @@ imu0:
   gyroscope_noise_density: 0.00045    # [ rad / s / sqrt(Hz) ] - Noise density: 0.0045
   gyroscope_random_walk: 0.000045     # [ rad / s^2 / sqrt(Hz) ] - Random walk: 0.00045
   rostopic: /imu0
-  # Time offset from Kalibr report: timeshift cam0 to imu0 (t_imu = t_cam + shift)
-  time_offset: 0.0004526049510845013
   update_rate: 500.0
   # three different modes supported:
   # "calibrated" (same as "kalibr"), "kalibr", "rpng"

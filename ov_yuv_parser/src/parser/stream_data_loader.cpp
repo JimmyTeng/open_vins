@@ -25,7 +25,8 @@ StreamDataLoader::StreamDataLoader(YUVParser* yuv_parser,
       ref.yuv_path = yuv_path;
       ref.frame_index = static_cast<int>(i);
       ref.info = infos[i];
-      ref.timestamp = infos[i].vi_pts;
+      ref.timestamp = YUVParser::compensatedImageTimestamp(infos[i].vi_pts,
+                                                            infos[i].exp_time);
       frame_refs_.push_back(ref);
     }
   }

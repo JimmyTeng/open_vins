@@ -23,6 +23,10 @@ YUVParser::YUVParser(int width, int height) : width_(width), height_(height) {
   frame_size_ = width_ * height_;  // YUV400: only Y component, 1 byte per pixel
 }
 
+long long YUVParser::compensatedImageTimestamp(long long vi_pts, int exp_time) {
+  return vi_pts - static_cast<long long>(exp_time) / 2;
+}
+
 std::vector<FrameInfo> YUVParser::parseFrameInfo(const std::string& info_file) {
   std::vector<FrameInfo> frame_infos;
   std::ifstream file(info_file);
@@ -182,7 +186,8 @@ std::vector<FrameData> YUVParser::parseAllFrames(
       FrameData frame_data;
       frame_data.info = info;
       frame_data.frame_data = frames[static_cast<size_t>(idx)];
-      frame_data.timestamp = info.vi_pts;
+      frame_data.timestamp =
+          compensatedImageTimestamp(info.vi_pts, info.exp_time);
       all_frames.push_back(frame_data);
     }
   }

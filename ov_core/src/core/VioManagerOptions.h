@@ -891,6 +891,9 @@ struct VioManagerOptions {
   /// Frequency we want to track images at (higher freq ones will be dropped)
   double track_frequency = 20.0;
 
+  /// 是否启用 x86_64 下调试 imshow 窗口（false 时不拼合显示缓冲、不调用 highgui）
+  bool debug_display_imshow = true;
+
   /// 调试显示窗口 waitKey 等待时长（毫秒，0=不等待/仅处理事件）
   int debug_display_waitkey_ms = 1;
 
@@ -956,6 +959,7 @@ struct VioManagerOptions {
       }
       parser->parse_config("knn_ratio", knn_ratio);
       parser->parse_config("track_frequency", track_frequency);
+      parser->parse_config("debug_display_imshow", debug_display_imshow, false);
       parser->parse_config("debug_display_waitkey_ms", debug_display_waitkey_ms,
                            false);
       parser->parse_config("use_imu_klt_prior", use_imu_klt_prior, false);
@@ -980,6 +984,7 @@ struct VioManagerOptions {
     PRINT_DEBUG("  - 直方图方法: %d\n", (int)histogram_method);
     PRINT_DEBUG("  - KNN比率: %.3f\n", knn_ratio);
     PRINT_DEBUG("  - 跟踪频率: %.1f\n", track_frequency);
+    PRINT_DEBUG("  - 调试显示 imshow: %d\n", (int)debug_display_imshow);
     PRINT_DEBUG("  - 调试显示 waitKey 时长(ms): %d\n",
                 debug_display_waitkey_ms);
     PRINT_DEBUG("  - 启用IMU-KLT先验: %d\n", (int)use_imu_klt_prior);

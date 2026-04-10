@@ -2,7 +2,10 @@
 # -*- coding: utf-8 -*-
 """
 VIO 批次日志解析核心（初始化时间、飘移、exit_code），供 export_vio_log_metrics.py 使用。
-与 analyze_vio_log_zupt_state.py 中 init_drift 逻辑保持一致。
+
+说明：成功初始化不仅依赖 `[VM] 帧 ... Init: 1`（初始化当帧往往仍打印 Init: 0，
+且初始化后该统计行可能改为每 200 帧才打印一次）。因此同时识别日志中的
+「动态/静态初始化成功」等标记，并与最早的 Init:1 行取更早者作为边界。
 """
 
 from __future__ import annotations
@@ -26,6 +29,23 @@ PIN_RE = re.compile(
 EXIT_RE = re.compile(r"exit_code=(\d+)")
 
 TIGHT_SCENARIO_NAMES = frozenset({"takeoff", "hover", "landing", "static"})
+
+
+def _line_has_init_success_marker(ln: str) -> bool:
+    """与 C++ 中 PRINT 文案一致：动态/静态/真值初始化成功。"""
+    return (
+        ("[DynamicInitializer]" in ln and "动态初始化成功" in ln)
+        or ("[静态初始化]" in ln and "静态初始化成功" in ln)
+        or ("从真值文件初始化成功" in ln)
+    )
+
+
+def _first_vm_timestamp_after(clean: list[str], after_idx: int) -> float | None:
+    for j in range(after_idx + 1, len(clean)):
+        m = VM_LINE_RE.search(clean[j]) or VM_LINE_LOOSE_RE.search(clean[j])
+        if m:
+            return float(m.group(2))
+    return None
 
 
 def strip_ansi(s: str) -> str:
@@ -58,6 +78,13 @@ def compute_init_drift_metrics(
     t_init: float | None = None
     init_line_idx: int | None = None
 
+    marker_idx: int | None = None
+    for i, ln in enumerate(clean):
+        if _line_has_init_success_marker(ln):
+            marker_idx = i
+            break
+
+    vm_init1_idx: int | None = None
     for i, ln in enumerate(clean):
         m = VM_LINE_RE.search(ln) or VM_LINE_LOOSE_RE.search(ln)
         if not m:
@@ -66,9 +93,22 @@ def compute_init_drift_metrics(
         init_flag = int(m.group(3))
         if t_start is None:
             t_start = ts
-        if init_flag == 1 and t_init is None:
-            t_init = ts
-            init_line_idx = i
+        if init_flag == 1 and vm_init1_idx is None:
+            vm_init1_idx = i
+
+    boundary_candidates = [x for x in (marker_idx, vm_init1_idx) if x is not None]
+    if boundary_candidates:
+        init_line_idx = min(boundary_candidates)
+        if vm_init1_idx is not None and init_line_idx == vm_init1_idx:
+            m = VM_LINE_RE.search(clean[init_line_idx]) or VM_LINE_LOOSE_RE.search(
+                clean[init_line_idx]
+            )
+            if m is not None:
+                t_init = float(m.group(2))
+            else:
+                t_init = _first_vm_timestamp_after(clean, init_line_idx)
+        else:
+            t_init = _first_vm_timestamp_after(clean, init_line_idx)
 
     init_duration_s: float | None = None
     if t_start is not None and t_init is not None:

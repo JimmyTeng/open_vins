@@ -23,8 +23,9 @@ struct FrameInfo {
 struct FrameData {
     FrameInfo info;
     std::vector<unsigned char> frame_data;
-    long long timestamp;  // 使用 vi_pts 作为时间戳
-    
+    /// 图像测量时间：vi_pts 减去半档曝光（与 vi_pts、exp_time 同单位，一般为微秒）
+    long long timestamp;
+
     // 用于时间戳比较
     bool operator<(const FrameData& other) const {
         return timestamp < other.timestamp;
@@ -39,6 +40,12 @@ private:
     
 public:
     YUVParser(int width = 640, int height = 480);
+
+    /**
+     * @brief 将帧时间对齐到曝光中点：timestamp = vi_pts - exp_time/2（整数除法）。
+     * vi_pts 与 exp_time 须为同一时间单位（通常为微秒）。
+     */
+    static long long compensatedImageTimestamp(long long vi_pts, int exp_time);
     
     /**
      * @brief Parse FrameInfo.txt file

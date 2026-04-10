@@ -17,7 +17,7 @@
 /**
  * @brief 与 StreamDataLoader 相同的时间线调度，但帧在 reader 线程内用 cv::imread 从 png 目录加载。
  *
- * 约定：png 目录下文件名为 \<vi_pts\>.png（与 yuv_parser::exportFramesToPNG 一致），
+ * 约定：png 目录下文件名为 \<timestamp\>.png（vi_pts - exp/2，与 exportFramesToPNG 一致），
  * FrameInfo 仍从 dump_yuv 目录的 FrameInfo.txt 读取（与 YUV 流共用同一时间轴）。
  */
 class PngStreamDataLoader {
