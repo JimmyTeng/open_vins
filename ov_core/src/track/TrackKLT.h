@@ -161,8 +161,8 @@ protected:
   int min_px_dist;
 
   // How many pyramid levels to track
-  int pyr_levels = 5;
-  cv::Size win_size = cv::Size(11, 11);
+  int pyr_levels = 3;
+  cv::Size win_size = cv::Size(7, 7);
 
   // Last set of image pyramids
   std::map<size_t, std::vector<cv::Mat>> img_pyramid_last;

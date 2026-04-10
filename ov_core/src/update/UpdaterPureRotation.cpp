@@ -521,27 +521,24 @@ bool UpdaterPureRotation::verify_pure_rot_gates(
                gyro_ok ? ok : no, gyro_avg, _gyro_mag_min, _gyro_mag_max);
     if (_use_accel_mean_gate) {
       PRINT_INFO(
-          "  ├─ [加计均值] %s  mean(a)=[%.4f,%.4f,%.4f] m/s²  |mean|=%.4f  |g|=%.4f  "
-          "判据: abs(|mean|-|g|)≤%.4f\n",
+          "  ├─ [加计均值] %s  mean(a)=[%.4f,%.4f,%.4f] |mean|=%.4f |g|=%.4f "
+          " %.4f ≤threthold %.4f\n",
           accel_mean_ok ? ok : no, a_mean(0), a_mean(1), a_mean(2),
-          a_mean_norm, g_mag, _accel_mean_g_tol);
+          a_mean_norm, g_mag,abs(abs(a_mean_norm) - abs(g_mag)), _accel_mean_g_tol);
     } else {
       PRINT_INFO(
           "  ├─ [加计均值] 已关闭 gate  mean(a)=[%.4f,%.4f,%.4f] m/s²  |mean|=%.4f  |g|=%.4f\n",
           a_mean(0), a_mean(1), a_mean(2), a_mean_norm, g_mag);
     }
     if (_use_image_gate) {
-      const char *h3_suffix = _last_debug.verify_h_ransac_has_matrix
-                                  ? "  （findHomography+decomposeHomographyMat, K=I）\n"
-                                  : "\n";
+
       PRINT_INFO(
-          "  ├─ [H检验·门③] %s  RANSAC=%s  几何合并=%s  匹配=%d  内点=%d  "
-          "比例=%.3f  需≥%d对 ≥%.0f%%内点 RANSAC阈=%.4f%s",
-          img_ok ? ok : no, f_gate_ok ? ok : no, h_merge_geom ? ok : no, f_pairs,
-          f_inl, f_ratio, _f_min_pairs, _f_min_inlier_ratio * 100.0,
-          _f_ransac_thresh_norm, h3_suffix);
+          "  └─ [H检验] %s  匹配=%d  内点=%d  "
+          "比例=%.3f  需≥%d对 ≥%.0f%%内点 RANSAC阈=%.4f\n",
+          img_ok ? ok : no, f_pairs, f_inl, f_ratio, _f_min_pairs,
+          _f_min_inlier_ratio * 100.0, _f_ransac_thresh_norm);
     } else {
-      PRINT_INFO("  ├─ [图像] 已关闭 (pure_rot_use_image_gate=0)\n");
+      PRINT_INFO("  └─ [图像] 已关闭 (pure_rot_use_image_gate=0)\n");
     }
     // 门③：相邻帧时间基；赞同/否决/合并与总门 img_ok 使用同一套几何判据
     if (_last_debug.verify_h_ransac_has_matrix) {
@@ -581,80 +578,75 @@ bool UpdaterPureRotation::verify_pure_rot_gates(
       const char *t_a = t_ok_agree ? ok : no;
       const char *t_s = t_ok_strict ? ok : no;
 
-      PRINT_INFO("  │   ├─ 时段            t0=%.6f s → t1=%.6f s\n",
+      // 树形：与上行「  ├─ [H检验]」对齐 — 「  │ 」为竖线，其后固定两格再接 ├/└
+      PRINT_INFO("     ├─ 时段            t0=%.6f s → t1=%.6f s\n",
                  pr_h_span_t0, pr_h_span_t1);
 
       if (!decomp_ok) {
-        PRINT_INFO(YELLOW "  │   ├─ H 分解          失败（det(R) 等），|t|/∠R_H "
+        PRINT_INFO(YELLOW "     ├─ H 分解          失败（det(R) 等），|t|/∠R_H "
                           "支路无有效值\n" RESET);
       }
 
       if (decomp_ok) {
         if (_last_debug.verify_h_imu_rpy_valid) {
-          PRINT_INFO("  │   ├─ RPY (deg)       相机  r=%.4f  p=%.4f  y=%.4f\n",
+          PRINT_INFO("     ├─ RPY (deg)       相机  r=%.4f  p=%.4f  y=%.4f\n",
                      _last_debug.verify_h_cam_rpy_roll_deg,
                      _last_debug.verify_h_cam_rpy_pitch_deg,
                      _last_debug.verify_h_cam_rpy_yaw_deg);
           PRINT_INFO(
-              "  │   │                  IMU等价 r=%.4f  p=%.4f  y=%.4f  "
+              "     │  IMU等价           r=%.4f  p=%.4f  y=%.4f  "
               "(R_CtoI·R·R_ItoC)\n",
               _last_debug.verify_h_imu_rpy_roll_deg,
               _last_debug.verify_h_imu_rpy_pitch_deg,
               _last_debug.verify_h_imu_rpy_yaw_deg);
         } else {
-          PRINT_INFO("  │   ├─ RPY (deg)       相机  r=%.4f  p=%.4f  y=%.4f\n",
+          PRINT_INFO("     ├─ RPY (deg)       相机  r=%.4f  p=%.4f  y=%.4f\n",
                      _last_debug.verify_h_cam_rpy_roll_deg,
                      _last_debug.verify_h_cam_rpy_pitch_deg,
                      _last_debug.verify_h_cam_rpy_yaw_deg);
-          PRINT_INFO("  │   │                  IMU等价 n/a（无 IMU↔CAM 标定）\n");
+          PRINT_INFO("     │  IMU等价           n/a（无 IMU↔CAM 标定）\n");
         }
         PRINT_INFO(
-            "  │   ├─ 分解平移 t      tx=%.8f  ty=%.8f  tz=%.8f  |t|=%.5f  "
+            "     ├─ 分解平移 t      tx=%.8f  ty=%.8f  tz=%.8f  |t|=%.5f  "
             "（归一化模型，非米）\n",
             _last_debug.verify_h_t_x, _last_debug.verify_h_t_y,
             _last_debug.verify_h_t_z, _last_debug.verify_h_decomp_t_norm);
       }
 
-      PRINT_INFO("  │   ├─ [赞同支路]      %s\n", res_agree_geom);
+      PRINT_INFO("     ├─ [赞同支路]      %s\n", res_agree_geom);
       if (decomp_ok) {
-        PRINT_INFO("  │   │    |t|           %s  %.5f 门限≤%.5f "
+        PRINT_INFO("     │  |t|             %s  %.5f 门限≤%.5f "
                    "(赞同·归一化非米)\n",
                    t_a, tnorm, thr_t_a);
       } else {
-        PRINT_INFO("  │   │    |t|           未通过  n/a\n");
+        PRINT_INFO("     │  |t|             未通过  n/a\n");
       }
 
-      PRINT_INFO("  │   ├─ [否决支路]      %s\n", res_strict_geom);
+      PRINT_INFO("     ├─ [否决支路]      %s\n", res_strict_geom);
       PRINT_INFO(
-          "  │   │    内点/占比     %s  需≥%d对 ≥%d内点 ≥%.0f%%(与门③ f_gate 同)  "
+          "     │  内点/占比         %s  需≥%d对 ≥%d内点 ≥%.0f%%(与门③ f_gate 同)  "
           "当前=%d/%d 占比=%.4f\n",
           inl_s, _f_min_pairs, _f_min_inliers, _f_min_inlier_ratio * 100.0,
           f_pairs, f_inl, f_ratio);
       if (reproj_p >= 0.0) {
-        PRINT_INFO("  │   │    重投影        %s  mean=%.5f 门限≤%.5f "
+        PRINT_INFO("     │  重投影           %s  mean=%.5f 门限≤%.5f "
                    "(否决·归一化绝对阈)\n",
                    rp_s, reproj_p, thr_reproj_s);
       } else {
-        PRINT_INFO("  │   │    重投影        未通过  mean=n/a 门限≤%.5f (否决)\n",
+        PRINT_INFO("     │  重投影           未通过  mean=n/a 门限≤%.5f (否决)\n",
                    thr_reproj_s);
       }
       if (decomp_ok) {
-        PRINT_INFO("  │   │    |t|           %s  %.5f 门限≤%.5f "
+        PRINT_INFO("     │  |t|             %s  %.5f 门限≤%.5f "
                    "(否决·归一化非米)\n",
                    t_s, tnorm, thr_t_s);
       } else {
-        PRINT_INFO("  │   │    |t|           未通过  n/a\n");
+        PRINT_INFO("     │  |t|             未通过  n/a\n");
       }
 
-      if (decomp_ok) {
-        PRINT_INFO("  │   ├─ [合并]          赞同||否决=%s  (f_gate+重投影+|t|，"
-                    "仅诊断)\n",
-                   res_merge_geom);
-      } else {
-        PRINT_INFO("  │   └─ [合并]          赞同||否决=%s  (f_gate+重投影+|t|，"
-                    "仅诊断)\n",
-                   res_merge_geom);
-      }
+      PRINT_INFO("     └─ [合并]          赞同||否决=%s  (f_gate+重投影+|t|，"
+                 "仅诊断)\n",
+                 res_merge_geom);
     }
   }
 
