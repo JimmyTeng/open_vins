@@ -28,6 +28,7 @@
 #include "state/State.h"
 #include "state/StateHelper.h"
 #include "types/LandmarkRepresentation.h"
+#include "utils/acc_bias_soft_limit.h"
 #include "utils/print.h"
 #include "utils/quat_ops.h"
 
@@ -91,9 +92,17 @@ void VioManager::initialize_with_gt(Eigen::Matrix<double, 17, 1> imustate) {
   PRINT_DEBUG(GREEN "[VMH]: 速度 = %.4f, %.4f, %.4f\n" RESET,
               state->_imu->vel()(0), state->_imu->vel()(1),
               state->_imu->vel()(2));
-  PRINT_DEBUG(GREEN "[VMH]: 加速度计偏差 = %.4f, %.4f, %.4f\n" RESET,
-              state->_imu->bias_a()(0), state->_imu->bias_a()(1),
-              state->_imu->bias_a()(2));
+  {
+    double ba0 = state->_imu->bias_a()(0), ba1 = state->_imu->bias_a()(1),
+           ba2 = state->_imu->bias_a()(2);
+    if (params.export_acc_bias_sqrt_soft_limit) {
+      ov_core::acc_bias_sqrt_soft_limit_xyz(
+          ba0, ba1, ba2, params.export_acc_bias_soft_limit_L,
+          params.export_acc_bias_soft_limit_k, &ba0, &ba1, &ba2);
+    }
+    PRINT_DEBUG(GREEN "[VMH]: 加速度计偏差 = %.4f, %.4f, %.4f\n" RESET, ba0,
+                ba1, ba2);
+  }
   PRINT_DEBUG(GREEN "[VMH]: 位置 = %.4f, %.4f, %.4f\n" RESET,
               state->_imu->pos()(0), state->_imu->pos()(1),
               state->_imu->pos()(2));
@@ -199,12 +208,20 @@ bool VioManager::try_to_initialize(const ov_core::CameraData &message) {
                  RESET,
                  state->_imu->vel()(0), state->_imu->vel()(1),
                  state->_imu->vel()(2), rpy_deg(0), rpy_deg(1), rpy_deg(2));
-      PRINT_INFO(GREEN
-                 "[VMH] 陀螺 (% 8.4f, % 8.4f, % 8.4f) 加计 (% 8.4f, % 8.4f, % "
-                 "8.4f)\n" RESET,
-                 state->_imu->bias_g()(0), state->_imu->bias_g()(1),
-                 state->_imu->bias_g()(2), state->_imu->bias_a()(0),
-                 state->_imu->bias_a()(1), state->_imu->bias_a()(2));
+      {
+        double ba0 = state->_imu->bias_a()(0), ba1 = state->_imu->bias_a()(1),
+               ba2 = state->_imu->bias_a()(2);
+        if (params.export_acc_bias_sqrt_soft_limit) {
+          ov_core::acc_bias_sqrt_soft_limit_xyz(
+              ba0, ba1, ba2, params.export_acc_bias_soft_limit_L,
+              params.export_acc_bias_soft_limit_k, &ba0, &ba1, &ba2);
+        }
+        PRINT_INFO(GREEN
+                   "[VMH] 陀螺 (% 8.4f, % 8.4f, % 8.4f) 加计 (% 8.4f, % 8.4f, % "
+                   "8.4f)\n" RESET,
+                   state->_imu->bias_g()(0), state->_imu->bias_g()(1),
+                   state->_imu->bias_g()(2), ba0, ba1, ba2);
+      }
       PRINT_INFO(GREEN "========================================\n" RESET);
 
       // 移除早于初始化时间的相机时间戳

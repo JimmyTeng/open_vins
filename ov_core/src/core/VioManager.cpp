@@ -43,6 +43,7 @@
 #include "track/TrackDescriptor.h"
 #include "track/TrackKLT.h"
 #include "track/TrackSIM.h"
+#include "utils/acc_bias_soft_limit.h"
 #include "types/Landmark.h"
 #include "update/UpdaterMSCKF.h"
 #include "update/UpdaterSLAM.h"
@@ -1485,6 +1486,13 @@ void VioManager::do_feature_propagate_update(
     std::ostringstream ss;
     Eigen::Vector3d rpy_deg =
         rot2rpy(quat_2_Rot(state->_imu->quat())) * 180.0 / M_PI;
+    double ba0 = state->_imu->bias_a()(0), ba1 = state->_imu->bias_a()(1),
+           ba2 = state->_imu->bias_a()(2);
+    if (params.export_acc_bias_sqrt_soft_limit) {
+      ov_core::acc_bias_sqrt_soft_limit_xyz(
+          ba0, ba1, ba2, params.export_acc_bias_soft_limit_L,
+          params.export_acc_bias_soft_limit_k, &ba0, &ba1, &ba2);
+    }
     ss << std::fixed << std::setprecision(3)
        << "[VM]: RPY(deg)=" << rpy_deg(0) << ","
        << rpy_deg(1) << "," << rpy_deg(2) << " | p_IinG = "
@@ -1493,8 +1501,7 @@ void VioManager::do_feature_propagate_update(
        << distance
        << " s | bg = " << std::setprecision(4) << state->_imu->bias_g()(0)
        << "," << state->_imu->bias_g()(1) << "," << state->_imu->bias_g()(2)
-       << " | ba = " << state->_imu->bias_a()(0) << ","
-       << state->_imu->bias_a()(1) << "," << state->_imu->bias_a()(2);
+       << " | ba = " << ba0 << "," << ba1 << "," << ba2;
     if(false){   
       if (state->_options.do_calib_camera_intrinsics) {
         for (int i = 0; i < state->_options.num_cameras; i++) {

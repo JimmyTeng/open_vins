@@ -222,6 +222,13 @@ struct VioManagerOptions {
   /// 每次 IMU 传播后对速度误差协方差对角增加 (m^2/s^2)/轴；0=关闭。略增大可降低对纯 IMU 积分速度的置信度，使 MSCKF/SLAM 更易校正速度、减轻位置漂移
   double post_propagate_vel_cov_diag_add = 0.0;
 
+  /// 为 true：VIO 状态回调与 print_state_calib 的 [VM]/[VMH] 中 ba 经根式软限幅；保方向，各轴正负不变；滤波器内部状态仍为大值
+  bool export_acc_bias_sqrt_soft_limit = false;
+  /// 根式软限幅渐近模长 L（与 ba 同单位）；输出满足 ||ba_out|| = L·||ba||/√(||ba||²+k²) < L
+  double export_acc_bias_soft_limit_L = 0.5;
+  /// 根式软限幅参数 k（>0，与 ||ba|| 同量纲）；k 越大饱和越晚、小 ||ba|| 时缩放越接近 L/k
+  double export_acc_bias_soft_limit_k = 0.15;
+
   /// 是否将时间性能记录到文件
   /// If we should record the timing performance to file
   bool record_timing_information = false;
@@ -409,6 +416,12 @@ struct VioManagerOptions {
       parser->parse_config("print_pure_rot", print_pure_rot, false);
       parser->parse_config("post_propagate_vel_cov_diag_add",
                            post_propagate_vel_cov_diag_add, false);
+      parser->parse_config("export_acc_bias_sqrt_soft_limit",
+                           export_acc_bias_sqrt_soft_limit, false);
+      parser->parse_config("export_acc_bias_soft_limit_L",
+                           export_acc_bias_soft_limit_L, false);
+      parser->parse_config("export_acc_bias_soft_limit_k",
+                           export_acc_bias_soft_limit_k, false);
     }
     PRINT_DEBUG("  - SLAM延迟时间: %.1f\n", dt_slam_delay);
     if (print_zupt) {
@@ -463,6 +476,9 @@ struct VioManagerOptions {
                 (int)try_pure_rot, (int)pure_rot_only_after_zupt_fail);
     PRINT_DEBUG("  - 传播后速度协方差对角膨胀: %.6f (m^2/s^2)/轴（0=关）\n",
                 post_propagate_vel_cov_diag_add);
+    PRINT_DEBUG("  - 回调 acc_bias 根式软限幅: %d（L=%.4f k=%.4f，仅上报）\n",
+                (int)export_acc_bias_sqrt_soft_limit, export_acc_bias_soft_limit_L,
+                export_acc_bias_soft_limit_k);
   }
 
   // NOISE / CHI2 ============================

@@ -8,6 +8,7 @@
 #include "state/State.h"
 #include "system/data_bridge.h"
 #include "utils/opencv_yaml_parse.h"
+#include "utils/acc_bias_soft_limit.h"
 #include "utils/sensor_data.h"
 
 // 调试窗口（highgui）仅在 64 位 x86 上启用；ARM 等架构编译为无操作
@@ -172,9 +173,18 @@ void VioInterface::InvokeStateCallback(const ov_core::CameraData& cam_data) {
     state_out.gyro_bias.data[0] = imu->bias_g()(0);
     state_out.gyro_bias.data[1] = imu->bias_g()(1);
     state_out.gyro_bias.data[2] = imu->bias_g()(2);
-    state_out.acc_bias.data[0] = imu->bias_a()(0);
-    state_out.acc_bias.data[1] = imu->bias_a()(1);
-    state_out.acc_bias.data[2] = imu->bias_a()(2);
+    if (vio_manager_options_ && vio_manager_options_->export_acc_bias_sqrt_soft_limit) {
+      ov_core::acc_bias_sqrt_soft_limit_xyz(
+          imu->bias_a()(0), imu->bias_a()(1), imu->bias_a()(2),
+          vio_manager_options_->export_acc_bias_soft_limit_L,
+          vio_manager_options_->export_acc_bias_soft_limit_k,
+          &state_out.acc_bias.data[0], &state_out.acc_bias.data[1],
+          &state_out.acc_bias.data[2]);
+    } else {
+      state_out.acc_bias.data[0] = imu->bias_a()(0);
+      state_out.acc_bias.data[1] = imu->bias_a()(1);
+      state_out.acc_bias.data[2] = imu->bias_a()(2);
+    }
   } else {
     state_out.position.data[0] = state_out.position.data[1] =
         state_out.position.data[2] = 0.0;

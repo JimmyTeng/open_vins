@@ -26,6 +26,12 @@ gravity_mag: 9.82
 # 传播后对速度 v 的误差协方差按轴增加方差 (m^2/s^2)；0=关闭。略增大可降低「只靠 IMU 积分」对速度的过信，便于视觉/SLAM 拉回速度、减轻位置发散（与 kalibr 加计噪声、up_msckf_chi2 等一起调）
 post_propagate_vel_cov_diag_add: 0.02
 
+# ---------- 状态回调 acc_bias（ba）上报软限幅（不改滤波器内部状态）----------
+# 根式：ba_out = ba * L / sqrt(||ba||^2 + k^2)，方向不变、各轴正负保留，||ba_out|| 渐近 L 且恒 < L
+export_acc_bias_sqrt_soft_limit: true
+export_acc_bias_soft_limit_L: 0.5
+export_acc_bias_soft_limit_k: 0.15
+
 # ---------- 特征参数化（勿随意改，需与前端/后端一致）----------
 feat_rep_msckf: "GLOBAL_3D" # MSCKF 特征表示方式
 feat_rep_slam: "ANCHORED_MSCKF_INVERSE_DEPTH" # SLAM 路标表示
@@ -61,7 +67,6 @@ zupt_strict_max_disparity: 0.5 # 否决：视差阈值（px）
 # 流程：检验（陀螺/图像/可选加计均值）→ 单应 H + IMU 传播 + log_so3；门控③与相邻帧更新可复用同一次 findHomography。
 try_pure_rot: true # 启用后，在 ZUPT 未更新本帧时尝试（见 pure_rot_only_after_zupt_fail）
 pure_rot_only_after_zupt_fail: true # true：仅当 try_zupt 且本帧 ZUPT 失败时才跑 PureRot
-print_pure_rot: true # 终端打印 [PureRot] 门限；调试图仅 zvupt/pure_rot/CAM 等简短状态
 # 图像：绕光轴时光流近似切向（f ⟂ 从主点到特征点的径向）
 pure_rot_use_image_gate: true
 pure_rot_flow_perp_min: 0.45 # 垂直度均值下限；过高易误杀，过低易与平移混淆
@@ -196,6 +201,7 @@ sim_traj_path: "" # 仿真轨迹文件；实机/离线留空
 verbosity: "INFO" # 日志级别：ALL, DEBUG, INFO, WARNING, ERROR, SILENT
 print_state_calib: true # 每次更新后是否打印状态与标定
 print_zupt: true # 是否启用 ZUPT
+print_pure_rot: true # 终端打印 [PureRot] 门限；调试图仅 zvupt/pure_rot/CAM 等简短状态
 print_timing: false # 是否打印各阶段耗时
 print_tracking_stats: true # 是否打印 [VM] 帧与 [跟踪] 周期日志
 # true：每帧 retriangulate 后打印线性三角化 p_FinG（全局系 m；活动 MSCKF + SLAM）；输出量大，仅调试
