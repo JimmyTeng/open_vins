@@ -125,6 +125,32 @@ public:
   void propagate_and_clone(std::shared_ptr<State> state, double timestamp);
 
   /**
+   * @brief 与 propagate_and_clone 相同的 IMU 链式 Φ、Q 与均值积分，但不执行克隆。
+   *        供 PureRot 等「先预测再视觉更新」的路径使用。
+   * @param last_w_out 若非空，写入区间最后一段角速度（与 augment_clone 所需一致）
+   * @return 区间内 IMU 不足时 false，且**不修改** state
+   */
+  bool propagate_to_time_no_clone(std::shared_ptr<State> state, double timestamp,
+                                  Eigen::Vector3d *last_w_out = nullptr);
+
+  /**
+   * @brief 与 propagate_to_time_no_clone 相同，但 IMU 区间由调用方给定（与 PureRot 门控用同一批样本）。
+   */
+  bool propagate_using_selected_imu(
+      std::shared_ptr<State> state, double timestamp,
+      const std::vector<ov_core::ImuData> &prop_data,
+      Eigen::Vector3d *last_w_out = nullptr);
+
+  /**
+   * @brief 与 UpdaterPureRotation 共用一段 IMU 时，将本帧用于 time0 的 CAM–IMU 偏移与 PureRot 一致
+   *        （须与 select_imu_readings 使用的 time0=state_t+off 相同）
+   */
+  void sync_last_prop_time_offset_for_sibling(double offset_for_time0) {
+    last_prop_time_offset = offset_for_time0;
+    have_last_prop_time_offset = true;
+  }
+
+  /**
    * @brief Gets what the state and its covariance will be at a given timestamp
    * 获取在给定时间戳处的状态及其协方差
    *

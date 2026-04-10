@@ -213,27 +213,32 @@ public:
    * - 垂直度：perp_score = 1 - |cos∠(r,f)|，f 应近似沿切向故与 r 垂直。
    * - 方向一致性：二维叉积 s = r×f = r.x*f.y - r.y*f.x（标量，与视轴角速度同号），
    *   刚体绕固定光轴转动时各点 s 应同号；输出 sign_consistency = 与多数符号一致的样本占比。
+   * - 位移方向一致性 parallel_align：各点 f 归一化后与平均方向点积均值 [0,1]，接近 1 表示
+   *   像点位移近似同向（近似无绕光轴分量、或整体平移主导），与「绕 Z 轴转」的切向流场互补。
    *
    * 仅使用距主点径向距离 **大于** min_r_px 像素的点；|f| 过小跳过。
    *
    * @param mean_perp 垂直度均值 [0,1]；-1 无样本
    * @param sign_consistency [0,1] 旋转方向一致比例；-1 无有效叉积符号
+   * @param parallel_align 位移方向一致性 [0,1]；-1 无样本或有效向量不足
    * @param n_used 样本数
    */
-  static void compute_optical_axis_flow_confidence(
+  static void compute_optical_axis_flow_metrics(
       std::shared_ptr<FeatureDatabase> db, double time0, double time1,
       const std::unordered_map<size_t, std::shared_ptr<CamBase>> &cams,
       double min_r_px, double min_flow_px, double &mean_perp,
-      double &sign_consistency, int &n_used) {
+      double &sign_consistency, double &parallel_align, int &n_used) {
 
     mean_perp = -1.0;
     sign_consistency = -1.0;
+    parallel_align = -1.0;
     n_used = 0;
     if (db == nullptr || cams.empty())
       return;
 
     std::vector<double> perp_scores;
     std::vector<float> cross_zs;
+    std::vector<Eigen::Vector2f> flows;
     std::vector<std::shared_ptr<Feature>> feats0 =
         db->features_containing(time0, false, true);
 
@@ -279,6 +284,7 @@ public:
 
         perp_scores.push_back((double)perp_score);
         cross_zs.push_back(cross_z);
+        flows.push_back(f);
       }
     }
 
@@ -286,6 +292,7 @@ public:
     if (n < 1) {
       mean_perp = -1.0;
       sign_consistency = -1.0;
+      parallel_align = -1.0;
       n_used = 0;
       return;
     }
@@ -309,22 +316,68 @@ public:
     }
     if (signs.empty()) {
       sign_consistency = 0.0;
-      return;
+    } else {
+      int n_plus = 0, n_minus = 0;
+      for (int s : signs) {
+        if (s > 0)
+          n_plus++;
+        else
+          n_minus++;
+      }
+      const int ref_sign = (n_plus >= n_minus) ? 1 : -1;
+      int n_agree = 0;
+      for (int s : signs) {
+        if (s == ref_sign)
+          n_agree++;
+      }
+      sign_consistency = (double)n_agree / (double)signs.size();
     }
-    int n_plus = 0, n_minus = 0;
-    for (int s : signs) {
-      if (s > 0)
-        n_plus++;
-      else
-        n_minus++;
+
+    // 位移方向一致性：mean_i | cos(∠(f_i, d)) |，d 为归一化位移向量和的方向
+    if (flows.size() >= 2) {
+      Eigen::Vector2d sum_dir = Eigen::Vector2d::Zero();
+      for (const auto &ff : flows) {
+        double fn = static_cast<double>(ff.norm());
+        if (fn < 1e-9)
+          continue;
+        sum_dir(0) += static_cast<double>(ff.x()) / fn;
+        sum_dir(1) += static_cast<double>(ff.y()) / fn;
+      }
+      const double sn = sum_dir.norm();
+      if (sn < 1e-9) {
+        parallel_align = 0.0;
+      } else {
+        sum_dir /= sn;
+        double acc = 0.0;
+        int cnt = 0;
+        for (const auto &ff : flows) {
+          double fn = static_cast<double>(ff.norm());
+          if (fn < 1e-9)
+            continue;
+          Eigen::Vector2d fd(static_cast<double>(ff.x()) / fn,
+                             static_cast<double>(ff.y()) / fn);
+          acc += std::abs(fd.dot(sum_dir));
+          cnt++;
+        }
+        parallel_align = (cnt > 0) ? (acc / (double)cnt) : -1.0;
+      }
+    } else {
+      parallel_align = -1.0;
     }
-    const int ref_sign = (n_plus >= n_minus) ? 1 : -1;
-    int n_agree = 0;
-    for (int s : signs) {
-      if (s == ref_sign)
-        n_agree++;
-    }
-    sign_consistency = (double)n_agree / (double)signs.size();
+  }
+
+  /**
+   * @brief 同 compute_optical_axis_flow_metrics，但不返回 parallel_align（兼容旧调用）
+   */
+  static void compute_optical_axis_flow_confidence(
+      std::shared_ptr<FeatureDatabase> db, double time0, double time1,
+      const std::unordered_map<size_t, std::shared_ptr<CamBase>> &cams,
+      double min_r_px, double min_flow_px, double &mean_perp,
+      double &sign_consistency, int &n_used) {
+    double parallel_unused = -1.0;
+    compute_optical_axis_flow_metrics(db, time0, time1, cams, min_r_px,
+                                      min_flow_px, mean_perp, sign_consistency,
+                                      parallel_unused, n_used);
   }
 
   /**

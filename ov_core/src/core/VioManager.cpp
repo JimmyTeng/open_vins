@@ -36,7 +36,6 @@
 #include "feat/FeatureDatabase.h"
 #include "feat/FeatureInitializer.h"
 #include "init/InertialInitializer.h"
-#include "opencv2/highgui.hpp"
 #include "state/Propagator.h"
 #include "state/State.h"
 #include "state/StateHelper.h"
@@ -45,13 +44,11 @@
 #include "track/TrackKLT.h"
 #include "track/TrackSIM.h"
 #include "types/Landmark.h"
-#include "types/LandmarkRepresentation.h"
 #include "update/UpdaterMSCKF.h"
 #include "update/UpdaterSLAM.h"
 #include "update/UpdaterPureRotation.h"
 #include "update/UpdaterZeroVelocity.h"
 #include "utils/colors.h"
-#include "utils/opencv_lambda_body.h"
 #include "utils/print.h"
 #include "utils/quat_ops.h"
 #include "utils/sensor_data.h"
@@ -313,24 +310,38 @@ VioManager::VioManager(VioManagerOptions &params_)
 
   if (params.try_pure_rot) {
     updaterPureRot = std::make_shared<UpdaterPureRotation>(
-        params.pure_rot_options, params.imu_noises,
         trackFEATS->get_feature_database(), params.gravity_mag,
-        params.pure_rot_max_velocity, params.pure_rot_gyro_min,
-        params.pure_rot_gyro_max, params.pure_rot_vel_sigma,
-        params.pure_rot_noise_multiplier, params.print_pure_rot,
+        params.pure_rot_gyro_min,
+        params.pure_rot_gyro_max, params.print_pure_rot,
         params.pure_rot_use_image_gate, params.pure_rot_flow_perp_min,
         params.pure_rot_flow_sign_consistency_min,
         params.pure_rot_min_flow_features, params.pure_rot_flow_min_r_px,
-        params.pure_rot_flow_min_mag_px, params.pure_rot_use_cam_z_gyro_gate,
-        params.pure_rot_min_omega_cam_z_ratio,
+        params.pure_rot_flow_min_mag_px,
         (size_t)std::max(0, params.pure_rot_ref_cam_id),
+        params.pure_rot_use_accel_mean_gate,
+        params.pure_rot_accel_mean_g_tol,
+        params.pure_rot_img_branch_parallel,
+        params.pure_rot_img_branch_z_rot,
+        params.pure_rot_img_branch_f,
+        params.pure_rot_flow_parallel_align_min,
+        params.pure_rot_f_min_pairs,
+        params.pure_rot_f_min_inliers,
+        params.pure_rot_f_min_inlier_ratio,
+        params.pure_rot_f_ransac_thresh_norm,
         params.pure_rot_use_visual_ref_rotation,
         params.pure_rot_visual_min_matches,
         params.pure_rot_visual_min_inliers, params.pure_rot_visual_sigma_rad,
         params.pure_rot_visual_noise_multiplier,
         params.pure_rot_visual_chi2_multiplier,
         params.pure_rot_visual_max_ref_age_sec,
-        params.pure_rot_visual_ransac_thresh_norm);
+        params.pure_rot_visual_ransac_thresh_norm,
+        params.pure_rot_h_verify_agree_max_reproj,
+        params.pure_rot_h_verify_strict_max_reproj,
+        params.pure_rot_h_verify_agree_max_t_norm,
+        params.pure_rot_h_verify_strict_max_t_norm,
+        params.pure_rot_lock_vel_pos, params.pure_rot_zero_vel_sigma,
+        params.pure_rot_vel_cov_diag_min, params.pure_rot_anchor_pos_sigma,
+        propagator);
   }
 }
 
@@ -537,17 +548,24 @@ void VioManager::feed_measurement_simulation(
     }
     if (params.try_pure_rot) {
       updaterPureRot = std::make_shared<UpdaterPureRotation>(
-          params.pure_rot_options, params.imu_noises,
           trackFEATS->get_feature_database(), params.gravity_mag,
-          params.pure_rot_max_velocity, params.pure_rot_gyro_min,
-          params.pure_rot_gyro_max, params.pure_rot_vel_sigma,
-          params.pure_rot_noise_multiplier, params.print_pure_rot,
+          params.pure_rot_gyro_min,
+          params.pure_rot_gyro_max, params.print_pure_rot,
           params.pure_rot_use_image_gate, params.pure_rot_flow_perp_min,
           params.pure_rot_flow_sign_consistency_min,
           params.pure_rot_min_flow_features, params.pure_rot_flow_min_r_px,
-          params.pure_rot_flow_min_mag_px, params.pure_rot_use_cam_z_gyro_gate,
-          params.pure_rot_min_omega_cam_z_ratio,
+          params.pure_rot_flow_min_mag_px,
           (size_t)std::max(0, params.pure_rot_ref_cam_id),
+          params.pure_rot_use_accel_mean_gate,
+          params.pure_rot_accel_mean_g_tol,
+          params.pure_rot_img_branch_parallel,
+          params.pure_rot_img_branch_z_rot,
+          params.pure_rot_img_branch_f,
+          params.pure_rot_flow_parallel_align_min,
+          params.pure_rot_f_min_pairs,
+          params.pure_rot_f_min_inliers,
+          params.pure_rot_f_min_inlier_ratio,
+          params.pure_rot_f_ransac_thresh_norm,
           params.pure_rot_use_visual_ref_rotation,
           params.pure_rot_visual_min_matches,
           params.pure_rot_visual_min_inliers,
@@ -555,7 +573,14 @@ void VioManager::feed_measurement_simulation(
           params.pure_rot_visual_noise_multiplier,
           params.pure_rot_visual_chi2_multiplier,
           params.pure_rot_visual_max_ref_age_sec,
-          params.pure_rot_visual_ransac_thresh_norm);
+          params.pure_rot_visual_ransac_thresh_norm,
+          params.pure_rot_h_verify_agree_max_reproj,
+          params.pure_rot_h_verify_strict_max_reproj,
+          params.pure_rot_h_verify_agree_max_t_norm,
+          params.pure_rot_h_verify_strict_max_t_norm,
+          params.pure_rot_lock_vel_pos, params.pure_rot_zero_vel_sigma,
+          params.pure_rot_vel_cov_diag_min, params.pure_rot_anchor_pos_sigma,
+          propagator);
     }
     PRINT_WARNING(RED "[仿真]: 将跟踪器转换为TrackSIM对象！\n" RESET);
   }
@@ -564,6 +589,9 @@ void VioManager::feed_measurement_simulation(
   // Feed our simulation tracker
   trackSIM->feed_measurement_simulation(timestamp, camids, feats);
   rT2 = rtime_now();
+
+  did_zupt_update = false;
+  did_pure_rot_update = false;
 
   // 检查是否应该进行零速度更新，如果是则更新状态
   // 注意：如果只在初始化阶段使用，且已经移动过，则不应该尝试零速度更新
@@ -610,9 +638,10 @@ void VioManager::feed_measurement_simulation(
         Eigen::Vector3d rpy_deg =
             rot2rpy(quat_2_Rot(state->_imu->quat())) * 180.0 / M_PI;
         PRINT_INFO(GREEN "[PureRot]: RPY(deg)=%.3f,%.3f,%.3f | "
-                         "p_IinG = %.3f,%.3f,%.3f\n" RESET,
+                         "p_IinG = %.3f,%.3f,%.3f  |p|=%.3f m\n" RESET,
                    rpy_deg(0), rpy_deg(1), rpy_deg(2), state->_imu->pos()(0),
-                   state->_imu->pos()(1), state->_imu->pos()(2));
+                   state->_imu->pos()(1), state->_imu->pos()(2),
+                   state->_imu->pos().norm());
       }
       propagator->clean_old_imu_measurements(
           timestamp + state->_calib_dt_CAMtoIMU->value()(0) - 0.10);
@@ -801,6 +830,11 @@ void VioManager::track_image_and_update(
   }
   rT2 = rtime_now();
 
+  // 每帧先清零；仅在本帧 try_update 成功时置 true。否则沿用上一帧会导致
+  // get_historical_viz_image 仍显示 zvupt、掩盖本帧 pure_rot。
+  did_zupt_update = false;
+  did_pure_rot_update = false;
+
   // 检查是否应该进行零速度更新，如果是则更新状态
   // 注意：如果只在初始化阶段使用，且已经移动过，则不应该尝试零速度更新
   // Check if we should do zero-velocity, if so update the state with it
@@ -847,9 +881,10 @@ void VioManager::track_image_and_update(
         Eigen::Vector3d rpy_deg =
             rot2rpy(quat_2_Rot(state->_imu->quat())) * 180.0 / M_PI;
         PRINT_INFO(GREEN "[PureRot]: RPY(deg)=%.3f,%.3f,%.3f | "
-                         "p_IinG = %.3f,%.3f,%.3f\n" RESET,
+                         "p_IinG = %.3f,%.3f,%.3f  |p|=%.3f m\n" RESET,
                    rpy_deg(0), rpy_deg(1), rpy_deg(2), state->_imu->pos()(0),
-                   state->_imu->pos()(1), state->_imu->pos()(2));
+                   state->_imu->pos()(1), state->_imu->pos()(2),
+                   state->_imu->pos().norm());
       }
       propagator->clean_old_imu_measurements(
           message.timestamp + state->_calib_dt_CAMtoIMU->value()(0) - 0.10);

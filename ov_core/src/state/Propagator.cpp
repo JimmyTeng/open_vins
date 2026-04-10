@@ -30,49 +30,26 @@ using namespace ov_core;
 using namespace ov_type;
 using namespace ov_msckf;
 
-void Propagator::propagate_and_clone(std::shared_ptr<State> state,
-                                     double timestamp) {
-  // If the difference between the current update time and state is zero
-  // We should crash, as this means we would have two clones at the same
-  // time!!!!
-  // 如果当前更新时间与状态时间差为零，应该崩溃，因为这意味着在同一时间会有两个克隆！
+bool Propagator::propagate_to_time_no_clone(std::shared_ptr<State> state,
+                                            double timestamp,
+                                            Eigen::Vector3d *last_w_out) {
   if (state->_timestamp == timestamp) {
     PRINT_ERROR(RED
-                "Propagator::propagate_and_clone(): Propagation called again "
-                "at same timestep at last update timestep!!!!\n" RESET);
+                "Propagator::propagate_to_time_no_clone(): same timestep\n" RESET);
     std::exit(EXIT_FAILURE);
   }
-
-  // We should crash if we are trying to propagate backwards
-  // 如果尝试向后传播，应该崩溃
   if (state->_timestamp > timestamp) {
     PRINT_ERROR(RED
-                "Propagator::propagate_and_clone(): Propagation called trying "
-                "to propagate backwards in time!!!!\n" RESET);
-    PRINT_ERROR(
-        RED
-        "Propagator::propagate_and_clone(): desired propagation = %.4f\n" RESET,
-        (timestamp - state->_timestamp));
+                "Propagator::propagate_to_time_no_clone(): backwards\n" RESET);
     std::exit(EXIT_FAILURE);
   }
 
-  //===================================================================================
-  //===================================================================================
-  //===================================================================================
-
-  // Set the last time offset value if we have just started the system up
-  // 如果系统刚刚启动，设置上次时间偏移值
   if (!have_last_prop_time_offset) {
     last_prop_time_offset = state->_calib_dt_CAMtoIMU->value()(0);
     have_last_prop_time_offset = true;
   }
 
-  // Get what our IMU-camera offset should be (t_imu = t_cam + calib_dt)
-  // 获取IMU-相机偏移量（t_imu = t_cam + calib_dt）
   double t_off_new = state->_calib_dt_CAMtoIMU->value()(0);
-
-  // First lets construct an IMU vector of measurements we need
-  // 首先构建所需的IMU测量值向量
   double time0 = state->_timestamp + last_prop_time_offset;
   double time1 = timestamp + t_off_new;
   std::vector<ov_core::ImuData> prop_data;
@@ -81,70 +58,65 @@ void Propagator::propagate_and_clone(std::shared_ptr<State> state,
     prop_data = Propagator::select_imu_readings(imu_data, time0, time1);
   }
 
-  // We are going to sum up all the state transition matrices, so we can do a
-  // single large multiplication at the end Phi_summed = Phi_i*Phi_summed
-  // Q_summed = Phi_i*Q_summed*Phi_i^T + Q_i
-  // After summing we can multiple the total phi to get the updated covariance
-  // We will then add the noise to the IMU portion of the state
-  // 我们将累加所有状态转移矩阵，以便在最后进行一次大矩阵乘法
-  // Phi_summed = Phi_i*Phi_summed
-  // Q_summed = Phi_i*Q_summed*Phi_i^T + Q_i
-  // 累加后，我们可以将总phi相乘以获得更新的协方差
-  // 然后将噪声添加到状态的IMU部分
+  return propagate_using_selected_imu(state, timestamp, prop_data, last_w_out);
+}
+
+bool Propagator::propagate_using_selected_imu(
+    std::shared_ptr<State> state, double timestamp,
+    const std::vector<ov_core::ImuData> &prop_data,
+    Eigen::Vector3d *last_w_out) {
+  if (state->_timestamp == timestamp) {
+    PRINT_ERROR(RED
+                "Propagator::propagate_using_selected_imu(): same timestep\n" RESET);
+    std::exit(EXIT_FAILURE);
+  }
+  if (state->_timestamp > timestamp) {
+    PRINT_ERROR(RED
+                "Propagator::propagate_using_selected_imu(): backwards\n" RESET);
+    std::exit(EXIT_FAILURE);
+  }
+
+  if (!have_last_prop_time_offset) {
+    last_prop_time_offset = state->_calib_dt_CAMtoIMU->value()(0);
+    have_last_prop_time_offset = true;
+  }
+
+  if (prop_data.size() < 2)
+    return false;
+
+  double t_off_new = state->_calib_dt_CAMtoIMU->value()(0);
+
   Eigen::MatrixXd Phi_summed = Eigen::MatrixXd::Identity(
       state->imu_intrinsic_size() + 15, state->imu_intrinsic_size() + 15);
   Eigen::MatrixXd Qd_summed = Eigen::MatrixXd::Zero(
       state->imu_intrinsic_size() + 15, state->imu_intrinsic_size() + 15);
   double dt_summed = 0;
 
-  // Loop through all IMU messages, and use them to move the state forward in
-  // time This uses the zero'th order quat, and then constant acceleration
-  // discrete 遍历所有IMU消息，使用它们将状态向前推进
-  // 使用零阶四元数，然后使用恒定加速度离散方法
-  if (prop_data.size() > 1) {
-    for (size_t i = 0; i < prop_data.size() - 1; i++) {
-      // Get the next state Jacobian and noise Jacobian for this IMU reading
-      // 获取此IMU读数的状态雅可比和噪声雅可比
-      Eigen::MatrixXd F, Qdi;
-      predict_and_compute(state, prop_data.at(i), prop_data.at(i + 1), F, Qdi);
-
-      // Next we should propagate our IMU covariance
-      // Pii' = F*Pii*F.transpose() + G*Q*G.transpose()
-      // Pci' = F*Pci and Pic' = Pic*F.transpose()
-      // NOTE: Here we are summing the state transition F so we can do a single
-      // mutiplication later NOTE: Phi_summed = Phi_i*Phi_summed NOTE: Q_summed
-      // = Phi_i*Q_summed*Phi_i^T + G*Q_i*G^T 接下来我们应该传播IMU协方差 Pii' =
-      // F*Pii*F.transpose() + G*Q*G.transpose() Pci' = F*Pci 和 Pic' =
-      // Pic*F.transpose() 注意：这里我们累加状态转移F，以便稍后进行单次乘法
-      Phi_summed = F * Phi_summed;
-      Qd_summed = F * Qd_summed * F.transpose() + Qdi;
-      Qd_summed = 0.5 * (Qd_summed + Qd_summed.transpose());
-      dt_summed += prop_data.at(i + 1).timestamp - prop_data.at(i).timestamp;
-    }
+  for (size_t i = 0; i < prop_data.size() - 1; i++) {
+    Eigen::MatrixXd F, Qdi;
+    predict_and_compute(state, prop_data.at(i), prop_data.at(i + 1), F, Qdi);
+    Phi_summed = F * Phi_summed;
+    Qd_summed = F * Qd_summed * F.transpose() + Qdi;
+    Qd_summed = 0.5 * (Qd_summed + Qd_summed.transpose());
+    dt_summed += prop_data.at(i + 1).timestamp - prop_data.at(i).timestamp;
   }
-  assert(std::abs((time1 - time0) - dt_summed) < 1e-4);
+  assert(std::abs((timestamp + t_off_new) -
+                  (state->_timestamp + last_prop_time_offset) - dt_summed) <
+         1e-4);
 
-  // Last angular velocity (used for cloning when estimating time offset)
-  // Remember to correct them before we store them
-  // 最后的角速度（用于估计时间偏移时的克隆）
-  // 记住在存储之前校正它们
   Eigen::Vector3d last_a = Eigen::Vector3d::Zero();
   Eigen::Vector3d last_w = Eigen::Vector3d::Zero();
-  if (!prop_data.empty()) {
-    Eigen::Matrix3d Dw =
-        State::Dm(state->_options.imu_model, state->_calib_imu_dw->value());
-    Eigen::Matrix3d Da =
-        State::Dm(state->_options.imu_model, state->_calib_imu_da->value());
-    Eigen::Matrix3d Tg = State::Tg(state->_calib_imu_tg->value());
-    last_a = state->_calib_imu_ACCtoIMU->Rot() * Da *
-             (prop_data.at(prop_data.size() - 1).am - state->_imu->bias_a());
-    last_w = state->_calib_imu_GYROtoIMU->Rot() * Dw *
-             (prop_data.at(prop_data.size() - 1).wm - state->_imu->bias_g() -
-              Tg * last_a);
-  }
+  Eigen::Matrix3d Dw =
+      State::Dm(state->_options.imu_model, state->_calib_imu_dw->value());
+  Eigen::Matrix3d Da =
+      State::Dm(state->_options.imu_model, state->_calib_imu_da->value());
+  Eigen::Matrix3d Tg = State::Tg(state->_calib_imu_tg->value());
+  last_a = state->_calib_imu_ACCtoIMU->Rot() * Da *
+           (prop_data.at(prop_data.size() - 1).am - state->_imu->bias_a());
+  last_w = state->_calib_imu_GYROtoIMU->Rot() * Dw *
+           (prop_data.at(prop_data.size() - 1).wm - state->_imu->bias_g() -
+            Tg * last_a);
 
-  // Do the update to the covariance with our "summed" state transition and IMU
-  // noise addition... 使用"累加"的状态转移和IMU噪声更新协方差
   std::vector<std::shared_ptr<Type>> Phi_order;
   Phi_order.push_back(state->_imu);
   if (state->_options.do_calib_imu_intrinsics) {
@@ -160,15 +132,23 @@ void Propagator::propagate_and_clone(std::shared_ptr<State> state,
     }
   }
   StateHelper::EKFPropagation(state, Phi_order, Phi_order, Phi_summed,
-                              Qd_summed);
+                            Qd_summed);
 
-  // Set timestamp data
-  // 设置时间戳数据
   state->_timestamp = timestamp;
   last_prop_time_offset = t_off_new;
 
-  // Now perform stochastic cloning
-  // 现在执行随机克隆
+  if (last_w_out != nullptr)
+    *last_w_out = last_w;
+  return true;
+}
+
+void Propagator::propagate_and_clone(std::shared_ptr<State> state,
+                                     double timestamp) {
+  Eigen::Vector3d last_w = Eigen::Vector3d::Zero();
+  if (!propagate_to_time_no_clone(state, timestamp, &last_w)) {
+    PRINT_ERROR(RED "Propagator::propagate_and_clone(): IMU 区间不足，无法传播\n" RESET);
+    std::exit(EXIT_FAILURE);
+  }
   StateHelper::augment_clone(state, last_w);
 }
 

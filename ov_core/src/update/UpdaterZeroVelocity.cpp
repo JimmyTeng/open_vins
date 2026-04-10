@@ -344,34 +344,53 @@ bool UpdaterZeroVelocity::try_update(std::shared_ptr<State> state,
 
   // 静止门判定日志（pose 在 try_update 成功时由 VioManager 打印）
   if (_print_zupt) {
-    const char *gate_res = stationary_gate_passed ? "PASS" : "FAIL";
-    const int merge = (gate_agree || gate_strict) ? 1 : 0;
+    const char *overall = stationary_gate_passed ? "通过" : "未通过";
+    const char *agree_res = gate_agree ? "通过" : "未通过";
+    const char *strict_res = gate_strict ? "通过" : "未通过";
+    const char *disp_agree_res = disp_agree ? "通过" : "未通过";
+    const char *chi2_agree_res = chi2_agree ? "通过" : "未通过";
+    const char *vel_agree_res = vel_agree ? "通过" : "未通过";
+    const char *disp_strict_res = disp_strict ? "通过" : "未通过";
+    const char *chi2_strict_res = chi2_strict ? "通过" : "未通过";
+    const char *vel_strict_res = vel_strict ? "通过" : "未通过";
+    const char *bypass_veto_res = agree_bypass_veto ? "是" : "否";
     if (override_with_disparity_check) {
       PRINT_INFO(CYAN
-                 "[ZUPT]: gate %s merge=(赞同||否决)=%d | 赞同: disp=%d chi2=%d "
-                 "vel=%d bypass_veto=%d -> agree=%d | 否决: disp=%d chi2=%d "
-                 "vel=%d -> strict=%d | disp=%.3f nf=%d | chi2=%.3f "
-                 "lim_agree=%.3f lim_strict=%.3f | |v|=%.3f v_lim_agree=%.3f "
-                 "v_lim_strict=%.3f | d_lim_agree=%.3f d_lim_strict=%.3f\n"
+                 "[ZUPT] 总判定: %s\n"
+                 "  ├─ [赞同支路] %s\n"
+                 "  │    视差 %s  disp=%.3f  门限<%.3f 且 nf=%d > 20\n"
+                 "  │    χ² %s  %.3f / %.3f (agree_mult×χ²_0.95)\n"
+                 "  │    速度 %s  |v|=%.3f m/s  门限≤%.3f\n"
+                 "  │    bypass_veto=%s (nf>20 且 disp>=%.3f)\n"
+                 "  ├─ [否决支路] %s\n"
+                 "  │    视差 %s  disp=%.3f  门限<%.3f 且 nf=%d > 20\n"
+                 "  │    χ² %s  %.3f / %.3f (strict_mult×χ²_0.95)\n"
+                 "  │    速度 %s  |v|=%.3f m/s  门限≤%.3f\n"
+                 "  └─ [合并] 赞同||否决=%s\n"
                  RESET,
-                 gate_res, merge, disp_agree ? 1 : 0, chi2_agree ? 1 : 0,
-                 vel_agree ? 1 : 0, agree_bypass_veto ? 1 : 0,
-                 gate_agree ? 1 : 0, disp_strict ? 1 : 0, chi2_strict ? 1 : 0,
-                 vel_strict ? 1 : 0, gate_strict ? 1 : 0, disp_avg, num_features,
-                 chi2, chi2_lim_agree, chi2_lim_strict,
-                 state->_imu->vel().norm(), _agree_max_velocity, _strict_max_velocity,
-                 _agree_max_disparity, _strict_max_disparity);
+                 overall, agree_res, disp_agree_res, disp_avg,
+                 _agree_max_disparity, num_features, chi2_agree_res, chi2,
+                 chi2_lim_agree, vel_agree_res, state->_imu->vel().norm(),
+                 _agree_max_velocity, bypass_veto_res, _agree_max_disparity,
+                 strict_res, disp_strict_res, disp_avg, _strict_max_disparity,
+                 num_features, chi2_strict_res, chi2, chi2_lim_strict,
+                 vel_strict_res, state->_imu->vel().norm(),
+                 _strict_max_velocity, overall);
     } else {
       PRINT_INFO(CYAN
-                 "[ZUPT]: gate %s merge=(赞同||否决)=%d | 赞同: chi2=%d vel=%d "
-                 "-> agree=%d | 否决: chi2=%d vel=%d -> strict=%d | chi2=%.3f "
-                 "lim_agree=%.3f lim_strict=%.3f | |v|=%.3f v_lim_agree=%.3f "
-                 "v_lim_strict=%.3f\n" RESET,
-                 gate_res, merge, chi2_agree ? 1 : 0, vel_agree ? 1 : 0,
-                 gate_agree ? 1 : 0, chi2_strict ? 1 : 0, vel_strict ? 1 : 0,
-                 gate_strict ? 1 : 0, chi2, chi2_lim_agree, chi2_lim_strict,
-                 state->_imu->vel().norm(), _agree_max_velocity,
-                 _strict_max_velocity);
+                 "[ZUPT] 总判定: %s\n"
+                 "  ├─ [赞同支路] %s\n"
+                 "  │    χ² %s  %.3f / %.3f (agree_mult×χ²_0.95)\n"
+                 "  │    速度 %s  |v|=%.3f m/s  门限≤%.3f\n"
+                 "  ├─ [否决支路] %s\n"
+                 "  │    χ² %s  %.3f / %.3f (strict_mult×χ²_0.95)\n"
+                 "  │    速度 %s  |v|=%.3f m/s  门限≤%.3f\n"
+                 "  └─ [合并] 赞同||否决=%s\n" RESET,
+                 overall, agree_res, chi2_agree_res, chi2, chi2_lim_agree,
+                 vel_agree_res, state->_imu->vel().norm(), _agree_max_velocity,
+                 strict_res, chi2_strict_res, chi2, chi2_lim_strict,
+                 vel_strict_res, state->_imu->vel().norm(),
+                 _strict_max_velocity, overall);
     }
   }
 
