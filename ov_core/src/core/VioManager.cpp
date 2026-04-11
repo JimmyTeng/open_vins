@@ -314,6 +314,7 @@ VioManager::VioManager(VioManagerOptions &params_)
         trackFEATS->get_feature_database(), params.gravity_mag,
         params.pure_rot_gyro_min,
         params.pure_rot_gyro_max, params.print_pure_rot,
+        params.print_state_calib,
         params.pure_rot_use_image_gate, params.pure_rot_flow_perp_min,
         params.pure_rot_flow_sign_consistency_min,
         params.pure_rot_min_flow_features, params.pure_rot_flow_min_r_px,
@@ -321,6 +322,7 @@ VioManager::VioManager(VioManagerOptions &params_)
         (size_t)std::max(0, params.pure_rot_ref_cam_id),
         params.pure_rot_use_accel_mean_gate,
         params.pure_rot_accel_mean_g_tol,
+        params.pure_rot_accel_perp_g_max,
         params.pure_rot_img_branch_parallel,
         params.pure_rot_img_branch_z_rot,
         params.pure_rot_img_branch_f,
@@ -483,8 +485,12 @@ void VioManager::feed_measurement_imu(const ov_core::ImuData &message) {
 
   // 如果未初始化，将IMU数据传递给初始化器
   // Push back to our initializer
+  // 传播器仍按 init_keep 裁剪；初始化器在动态初始化阶段需要「窗口起点之前」的 IMU
+  // 供 DynamicInitializer 擦除并确认覆盖到 oldest_cam（have_old_imu_readings）。
+  // 若与传播器共用同一 oldest_time，在 IMU 时间戳略领先相机时，缓冲最旧 IMU
+  // 可能已不早于窗口左缘，导致动态初始化永久失败。
   if (!is_initialized_vio) {
-    initializer->feed_imu(message, oldest_time);
+    initializer->feed_imu(message, -1);
   }
 
   // 如果启用了零速度更新器，将IMU数据传递给它
@@ -552,6 +558,7 @@ void VioManager::feed_measurement_simulation(
           trackFEATS->get_feature_database(), params.gravity_mag,
           params.pure_rot_gyro_min,
           params.pure_rot_gyro_max, params.print_pure_rot,
+          params.print_state_calib,
           params.pure_rot_use_image_gate, params.pure_rot_flow_perp_min,
           params.pure_rot_flow_sign_consistency_min,
           params.pure_rot_min_flow_features, params.pure_rot_flow_min_r_px,
@@ -559,6 +566,7 @@ void VioManager::feed_measurement_simulation(
           (size_t)std::max(0, params.pure_rot_ref_cam_id),
           params.pure_rot_use_accel_mean_gate,
           params.pure_rot_accel_mean_g_tol,
+          params.pure_rot_accel_perp_g_max,
           params.pure_rot_img_branch_parallel,
           params.pure_rot_img_branch_z_rot,
           params.pure_rot_img_branch_f,
@@ -635,7 +643,7 @@ void VioManager::feed_measurement_simulation(
     }
     if (did_pure_rot_update) {
       assert(state->_timestamp == timestamp);
-      if (params.print_pure_rot) {
+      if (params.print_pure_rot && params.print_state_calib) {
         Eigen::Vector3d rpy_deg =
             rot2rpy(quat_2_Rot(state->_imu->quat())) * 180.0 / M_PI;
         PRINT_INFO(GREEN "[PureRot]: RPY(deg)=%.3f,%.3f,%.3f | "
@@ -878,7 +886,7 @@ void VioManager::track_image_and_update(
     }
     if (did_pure_rot_update) {
       assert(state->_timestamp == message.timestamp);
-      if (params.print_pure_rot) {
+      if (params.print_state_calib) {
         Eigen::Vector3d rpy_deg =
             rot2rpy(quat_2_Rot(state->_imu->quat())) * 180.0 / M_PI;
         PRINT_INFO(GREEN "[PureRot]: RPY(deg)=%.3f,%.3f,%.3f | "

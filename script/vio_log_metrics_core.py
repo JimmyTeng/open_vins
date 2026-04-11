@@ -57,6 +57,7 @@ def scenario_and_threshold(
     tight_m: float,
     loose_m: float,
 ) -> tuple[str, float]:
+    """按日志文件名前缀选飘移门限：tight 类用 tight_m；move / integrate 用 loose_m（默认 5m）。"""
     base = Path(source).name.lower()
     prefix = base.split("__", 1)[0] if "__" in base else ""
     if prefix in TIGHT_SCENARIO_NAMES:
@@ -168,7 +169,7 @@ def analyze_text_for_export(
     source: str,
     *,
     tight_m: float = 0.3,
-    loose_m: float = 10.0,
+    loose_m: float = 5.0,
 ) -> dict[str, Any]:
     """供 CSV 导出：仅 init_drift + exit_code。"""
     clean = [strip_ansi(ln) for ln in text.splitlines()]
@@ -191,7 +192,8 @@ def gather_files(paths: list[str]) -> list[Path]:
         if pp.is_file():
             out.append(pp)
         elif pp.is_dir():
-            out.extend(sorted(pp.glob("*.log")))
+            # 递归收集子目录中的 *.log（与批次脚本按数据集分子目录存放一致）
+            out.extend(sorted(pp.rglob("*.log")))
         else:
             if Path(p).exists():
                 out.append(Path(p))

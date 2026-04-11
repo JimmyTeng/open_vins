@@ -94,7 +94,8 @@ downsize_aruco: true
 # ==================================================================
 # ==================================================================
 
-# camera noises and chi-squared threshold multipliers
+# camera noises and chi-squared threshold 500 m)
+    锚点 p_anchor=[-0.4051,0.6209,0.0339]  |v|前=0.02331  |p-p_anchor|前=0.02256multipliers
 up_msckf_sigma_px: 1
 up_msckf_chi2_multipler: 1
 up_slam_sigma_px: 1

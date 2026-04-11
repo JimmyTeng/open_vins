@@ -141,11 +141,12 @@ public:
   UpdaterPureRotation(
       std::shared_ptr<ov_core::FeatureDatabase> db, double gravity_mag,
       double gyro_mag_min, double gyro_mag_max,
-      bool print_pure_rot,
+      bool print_pure_rot, bool print_state_calib,
       bool use_image_gate, double flow_perp_min, double flow_sign_consistency_min,
       int min_flow_feats, double min_r_px, double min_flow_px,
       size_t ref_cam_id,
       bool use_accel_mean_gate, double accel_mean_g_tol,
+      double accel_perp_g_max,
       bool img_branch_parallel, bool img_branch_z_rot, bool img_branch_f,
       double flow_parallel_align_min, int f_min_pairs, int f_min_inliers,
       double f_min_inlier_ratio, double f_ransac_thresh_norm,
@@ -194,6 +195,7 @@ protected:
   double _gyro_mag_min = 0.05;
   double _gyro_mag_max = 3.0;
   bool _print_pure_rot = false;
+  bool _print_state_calib = false;
 
   bool _use_image_gate = true;
   double _flow_perp_min = 0.55;
@@ -206,6 +208,11 @@ protected:
   /// 窗口内 mean(a) 的模长与 |g| 之差上限 (m/s²)；关闭 gate 时仍打印 mean(a)
   bool _use_accel_mean_gate = false;
   double _accel_mean_g_tol = 1.0;
+  /// 世界系 |a_W⊥g| 上限 (m/s²)；与 _accel_mean_g_tol 为 OR（任一满足则加计均值门通过）
+  double _accel_perp_g_max = 0.25;
+  /// 加计门控诊断：|g| 加权 = (1/3)×上周期 + (2/3)×本帧 |mean(a)|，首帧上周期取 |g_标称|
+  double _pure_rot_g_abs_blend = 0.0;
+  bool _pure_rot_have_g_abs_blend = false;
 
   /// 保留配置项（光流三路已不在门控中使用；图像门仅 H RANSAC）
   bool _img_branch_parallel = true;

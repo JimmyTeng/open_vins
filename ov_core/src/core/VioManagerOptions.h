@@ -163,10 +163,12 @@ struct VioManagerOptions {
   /// 纯旋转图像门 / H 矩阵支路使用的参考相机 ID（与 T_imu_cam 一致）
   int pure_rot_ref_cam_id = 0;
 
-  /// 是否启用「窗口内比力分量均值」门：| |mean(a)| - |g| | ≤ tol（a 为与残差一致的加计读数，单位 m/s²）
+  /// 是否启用「窗口内比力分量均值」门：下列二子判据满足其一即可（OR）（a 为与残差一致的加计读数，单位 m/s²）
   bool pure_rot_use_accel_mean_gate = false;
-  /// 与 |g| 允许偏差 (m/s²)，过小易误杀平移/冲击，过大则门控失效
+  /// 子判据1：||mean(a)| - |g|| ≤ tol (m/s²)；门③「赞同支路」通过时该阈按 2× 生效（代码内写死倍率）
   double pure_rot_accel_mean_g_tol = 1.0;
+  /// 子判据2：世界系 |a_W⊥g| ≤ 此值 (m/s²)。与上项为 OR；某子判据设极大值可近似关闭该支路
+  double pure_rot_accel_perp_g_max = 0.25;
 
   /// 图像门三路分支开关（按序择一：①位移同向 → ②绕光轴光流 → ③H 矩阵）
   bool pure_rot_img_branch_parallel = true;
@@ -224,8 +226,8 @@ struct VioManagerOptions {
 
   /// 为 true：VIO 状态回调与 print_state_calib 的 [VM]/[VMH] 中 ba 经根式软限幅；保方向，各轴正负不变；滤波器内部状态仍为大值
   bool export_acc_bias_sqrt_soft_limit = false;
-  /// 根式软限幅渐近模长 L（与 ba 同单位）；输出满足 ||ba_out|| = L·||ba||/√(||ba||²+k²) < L
-  double export_acc_bias_soft_limit_L = 0.5;
+  /// 根式软限幅渐近目标模长（与 ba 同单位，YAML 可用 export_acc_bias_soft_limit_target 或 export_acc_bias_soft_limit_L）；||ba_out|| = L·||ba||/√(||ba||²+k²) < L
+  double export_acc_bias_soft_limit_L = 0.2;
   /// 根式软限幅参数 k（>0，与 ||ba|| 同量纲）；k 越大饱和越晚、小 ||ba|| 时缩放越接近 L/k
   double export_acc_bias_soft_limit_k = 0.15;
 
@@ -363,6 +365,8 @@ struct VioManagerOptions {
                            pure_rot_use_accel_mean_gate, false);
       parser->parse_config("pure_rot_accel_mean_g_tol",
                            pure_rot_accel_mean_g_tol, false);
+      parser->parse_config("pure_rot_accel_perp_g_max",
+                           pure_rot_accel_perp_g_max, false);
       parser->parse_config("pure_rot_img_branch_parallel",
                            pure_rot_img_branch_parallel, false);
       parser->parse_config("pure_rot_img_branch_z_rot",
@@ -420,6 +424,9 @@ struct VioManagerOptions {
                            export_acc_bias_sqrt_soft_limit, false);
       parser->parse_config("export_acc_bias_soft_limit_L",
                            export_acc_bias_soft_limit_L, false);
+      // 与 L 同义：渐近目标模长；同时配置时本项覆盖 L
+      parser->parse_config("export_acc_bias_soft_limit_target",
+                           export_acc_bias_soft_limit_L, false);
       parser->parse_config("export_acc_bias_soft_limit_k",
                            export_acc_bias_soft_limit_k, false);
     }
@@ -476,7 +483,7 @@ struct VioManagerOptions {
                 (int)try_pure_rot, (int)pure_rot_only_after_zupt_fail);
     PRINT_DEBUG("  - 传播后速度协方差对角膨胀: %.6f (m^2/s^2)/轴（0=关）\n",
                 post_propagate_vel_cov_diag_add);
-    PRINT_DEBUG("  - 回调 acc_bias 根式软限幅: %d（L=%.4f k=%.4f，仅上报）\n",
+    PRINT_DEBUG("  - 回调 acc_bias 根式软限幅: %d（目标模长=%.4f k=%.4f，仅上报）\n",
                 (int)export_acc_bias_sqrt_soft_limit, export_acc_bias_soft_limit_L,
                 export_acc_bias_soft_limit_k);
   }
@@ -575,9 +582,9 @@ struct VioManagerOptions {
       PRINT_DEBUG("    - chi2_mult: %.4f\n", pure_rot_options.chi2_multipler);
       PRINT_DEBUG("    - |ω|∈[%.4f, %.4f] rad/s\n", pure_rot_gyro_min,
                   pure_rot_gyro_max);
-      PRINT_DEBUG("    - 加计均值门: %d  abs(|mean(a)|-|g|)≤%.4f m/s²\n",
+      PRINT_DEBUG("    - 加计均值门: %d  (||mean|-|g||≤%.4f) 或 (|a_W⊥g|≤%.4f) m/s²\n",
                   (int)pure_rot_use_accel_mean_gate,
-                  pure_rot_accel_mean_g_tol);
+                  pure_rot_accel_mean_g_tol, pure_rot_accel_perp_g_max);
       PRINT_DEBUG("    - 图像分支: parallel=%d z_rot=%d F=%d  align_min=%.3f  "
                   "F: pairs≥%d inliers≥%d ratio≥%.2f\n",
                   (int)pure_rot_img_branch_parallel,

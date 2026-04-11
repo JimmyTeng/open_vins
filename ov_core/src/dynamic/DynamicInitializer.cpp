@@ -95,6 +95,25 @@ bool DynamicInitializer::initialize(
   // (oldest_time + calib_camimu_dt) 的 IMU
   // 数据并被擦除，说明缓冲曾覆盖到窗口起点，才能从窗口起点做前向传播
   if (imu_data->size() < 2 || !have_old_imu_readings) {
+    static double s_last_imu_fail_diag_cam = -1.0;
+    const double t_bound = oldest_time + params.calib_camimu_dt;
+    const double t_imu0 =
+        imu_data->empty() ? -1.0 : imu_data->front().timestamp;
+    const double t_imu1 =
+        imu_data->empty() ? -1.0 : imu_data->back().timestamp;
+    if (newest_cam_time < 0.0 || newest_cam_time - s_last_imu_fail_diag_cam > 1.5) {
+      s_last_imu_fail_diag_cam = newest_cam_time;
+      PRINT_INFO(
+          YELLOW
+          "[DynamicInitializer] IMU检查失败(节流): newest_cam=%.6f 窗口左缘 oldest=%.6f "
+          "擦除阈=%.6f(=oldest+calib_dt) dyn_win=%.3fs imu[最旧,最新]=[%.6f,%.6f] "
+          "samples=%zu have_old=%d\n"
+          "  说明: have_old 要求曾存在 ts<擦除阈 的 IMU 并被擦除；若最旧 IMU≥擦除阈，"
+          "常见原因是初始化前 feed_imu 过早丢弃左缘外数据，或 IMU 时间领先相机、"
+          "会话尚短于 init_dyn_window_time。\n" RESET,
+          newest_cam_time, oldest_time, t_bound, dynamic_window_time, t_imu0,
+          t_imu1, imu_data->size(), (int)have_old_imu_readings);
+    }
     if (print_debug) {
       PRINT_INFO(
           YELLOW

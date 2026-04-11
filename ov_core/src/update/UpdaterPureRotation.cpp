@@ -104,11 +104,11 @@ bool pure_rot_homography_estimate_R(
 UpdaterPureRotation::UpdaterPureRotation(
     std::shared_ptr<ov_core::FeatureDatabase> db, double gravity_mag,
     double gyro_mag_min, double gyro_mag_max,
-    bool print_pure_rot,
+    bool print_pure_rot, bool print_state_calib,
     bool use_image_gate, double flow_perp_min,
     double flow_sign_consistency_min, int min_flow_feats, double min_r_px,
     double min_flow_px, size_t ref_cam_id,
-    bool use_accel_mean_gate, double accel_mean_g_tol,
+    bool use_accel_mean_gate, double accel_mean_g_tol, double accel_perp_g_max,
     bool img_branch_parallel, bool img_branch_z_rot, bool img_branch_f,
     double flow_parallel_align_min, int f_min_pairs, int f_min_inliers,
     double f_min_inlier_ratio, double f_ransac_thresh_norm,
@@ -123,12 +123,14 @@ UpdaterPureRotation::UpdaterPureRotation(
     : _db(std::move(db)),
       _gyro_mag_min(gyro_mag_min),
       _gyro_mag_max(gyro_mag_max), _print_pure_rot(print_pure_rot),
+      _print_state_calib(print_state_calib),
       _use_image_gate(use_image_gate), _flow_perp_min(flow_perp_min),
       _flow_sign_consistency_min(flow_sign_consistency_min),
       _min_flow_feats(min_flow_feats), _min_r_px(min_r_px),
       _min_flow_px(min_flow_px), _ref_cam_id(ref_cam_id),
       _use_accel_mean_gate(use_accel_mean_gate),
       _accel_mean_g_tol(std::max(0.0, accel_mean_g_tol)),
+      _accel_perp_g_max(std::max(0.0, accel_perp_g_max)),
       _img_branch_parallel(img_branch_parallel),
       _img_branch_z_rot(img_branch_z_rot), _img_branch_f(img_branch_f),
       _flow_parallel_align_min(
@@ -272,6 +274,13 @@ bool UpdaterPureRotation::verify_pure_rot_gates(
   const Eigen::Vector3d a_mean = a_sum / (double)std::max(1, nseg);
   const double a_mean_norm = a_mean.norm();
   const double g_mag = _gravity.norm();
+  // 世界系：R_ItoG * mean(a)，去掉与标称重力 _gravity 平行分量后的模（水平面内非重力分量）
+  const Eigen::Matrix3d R_GtoI_a = state->_imu->Rot();
+  const Eigen::Vector3d a_mean_in_G = R_GtoI_a.transpose() * a_mean;
+  const Eigen::Vector3d g_hat =
+      (g_mag > 1e-12) ? (_gravity / g_mag) : Eigen::Vector3d(0.0, 0.0, 1.0);
+  const double a_mean_perp_g_norm =
+      (a_mean_in_G - a_mean_in_G.dot(g_hat) * g_hat).norm();
 
   bool f_gate_ok = false;
   int f_pairs = 0;
@@ -322,10 +331,14 @@ bool UpdaterPureRotation::verify_pure_rot_gates(
   const bool gyro_ok =
       (gyro_avg >= _gyro_mag_min) && (gyro_avg <= _gyro_mag_max);
 
-  bool accel_mean_ok = true;
-  if (_use_accel_mean_gate) {
-    accel_mean_ok = std::abs(a_mean_norm - g_mag) <= _accel_mean_g_tol;
+  // |g| 加权：上周期占 1/3、本帧 |mean(a)| 占 2/3；首帧「上周期」用标称 |g|
+  if (!_pure_rot_have_g_abs_blend) {
+    _pure_rot_g_abs_blend = g_mag;
+    _pure_rot_have_g_abs_blend = true;
   }
+  _pure_rot_g_abs_blend =
+      (1.0 / 3.0) * _pure_rot_g_abs_blend + (2.0 / 3.0) * a_mean_norm;
+  const double g_weighted_abs = _pure_rot_g_abs_blend;
 
   _last_debug = PureRotDebugSnapshot{};
   _last_debug.has_data = true;
@@ -344,7 +357,6 @@ bool UpdaterPureRotation::verify_pure_rot_gates(
   _last_debug.accel_mean_y = a_mean(1);
   _last_debug.accel_mean_z = a_mean(2);
   _last_debug.accel_mean_norm = a_mean_norm;
-  _last_debug.accel_mean_ok = accel_mean_ok;
   _last_debug.flow_perp_mean = -1.0;
   _last_debug.flow_sign_consistency = -1.0;
   _last_debug.flow_parallel_align = -1.0;
@@ -431,6 +443,7 @@ bool UpdaterPureRotation::verify_pure_rot_gates(
   }
 
   /// 与下方 [PureRot-H·检验]「赞同||否决」合并一致：RANSAC 通过且（重投影+|t|）至少一路满足
+  bool gate_agree_geom = false;
   bool h_merge_geom = false;
   if (branch3_ransac_has_h && f_gate_ok) {
     const double reproj_p = _last_debug.verify_h_reproj_mean;
@@ -449,12 +462,22 @@ bool UpdaterPureRotation::verify_pure_rot_gates(
     const bool t_ok_agree = decomp_ok && (tnorm <= thr_t_a);
     const bool t_ok_strict = decomp_ok && (tnorm <= thr_t_s);
 
-    const bool gate_agree_geom =
-        f_gate_ok && reproj_ok_agree && t_ok_agree;
+    gate_agree_geom = f_gate_ok && reproj_ok_agree && t_ok_agree;
     const bool gate_strict_geom =
         f_gate_ok && reproj_ok_strict && t_ok_strict;
     h_merge_geom = gate_agree_geom || gate_strict_geom;
   }
+
+  // 加计均值子判据1：赞同支路通过时 ||mean|-|g|| 阈值为配置的 2 倍（与门③几何一致后再判定）
+  bool accel_mean_ok = true;
+  if (_use_accel_mean_gate) {
+    const double tol_mean_g =
+        gate_agree_geom ? (2.0 * _accel_mean_g_tol) : _accel_mean_g_tol;
+    const bool tol_ok = std::abs(a_mean_norm - g_mag) <= tol_mean_g;
+    const bool perp_ok = a_mean_perp_g_norm <= _accel_perp_g_max;
+    accel_mean_ok = tol_ok || perp_ok;
+  }
+  _last_debug.accel_mean_ok = accel_mean_ok;
 
   int img_gate_branch = 0;
   bool img_ok = true;
@@ -520,15 +543,33 @@ bool UpdaterPureRotation::verify_pure_rot_gates(
     PRINT_INFO("  ├─ [陀螺幅值] %s  avg|ω|=%.4f rad/s  区间[%.4f, %.4f]\n",
                gyro_ok ? ok : no, gyro_avg, _gyro_mag_min, _gyro_mag_max);
     if (_use_accel_mean_gate) {
+      const size_t n_imu_win = imu_recent.size();
+      const double win_dt_s =
+          (n_imu_win >= 2)
+              ? (imu_recent.back().timestamp - imu_recent.front().timestamp)
+              : 0.0;
+      const double tol_mean_g_eff =
+          gate_agree_geom ? (2.0 * _accel_mean_g_tol) : _accel_mean_g_tol;
+      const bool tol_sub =
+          std::abs(a_mean_norm - g_mag) <= tol_mean_g_eff;
+      const bool perp_sub = a_mean_perp_g_norm <= _accel_perp_g_max;
       PRINT_INFO(
-          "  ├─ [加计均值] %s  mean(a)=[%.4f,%.4f,%.4f] |mean|=%.4f |g|=%.4f "
-          " %.4f ≤threthold %.4f\n",
-          accel_mean_ok ? ok : no, a_mean(0), a_mean(1), a_mean(2),
-          a_mean_norm, g_mag,abs(abs(a_mean_norm) - abs(g_mag)), _accel_mean_g_tol);
+          "  ├─ [加计均值] %s  窗口 IMU=%zu点 参与均值累加=%d个 Δt=%.4fs "
+          "mean(a)=[%.4f,%.4f,%.4f] |mean|=%.4f |g|加权=%.4f(|g|标称=%.4f,上1/3+本|mean|2/3) "
+          " ||mean|-|g||=%.4f 阈%.4f%s→%s  |a_W⊥g|=%.4f 阈%.4f→%s  (OR 任一通过则本门通过)\n",
+          accel_mean_ok ? ok : no, n_imu_win, nseg, win_dt_s, a_mean(0), a_mean(1),
+          a_mean(2), a_mean_norm, g_weighted_abs, g_mag,
+          std::abs(a_mean_norm - g_mag), tol_mean_g_eff,
+          gate_agree_geom ? " [赞同支路|Δ|阈×2]" : "", tol_sub ? ok : no,
+          a_mean_perp_g_norm, _accel_perp_g_max, perp_sub ? ok : no);
     } else {
       PRINT_INFO(
-          "  ├─ [加计均值] 已关闭 gate  mean(a)=[%.4f,%.4f,%.4f] m/s²  |mean|=%.4f  |g|=%.4f\n",
-          a_mean(0), a_mean(1), a_mean(2), a_mean_norm, g_mag);
+          "  ├─ [加计均值] 已关闭 gate  mean(a)=[%.4f,%.4f,%.4f] m/s²  "
+          "|mean|=%.4f |g|加权=%.4f |g|标称=%.4f  ||mean|-|g||=%.4f  |a_W⊥g|=%.4f "
+          "(若开门：阈%.4f 或 %.4f，OR)\n",
+          a_mean(0), a_mean(1), a_mean(2), a_mean_norm, g_weighted_abs, g_mag,
+          std::abs(a_mean_norm - g_mag), a_mean_perp_g_norm, _accel_mean_g_tol,
+          _accel_perp_g_max);
     }
     if (_use_image_gate) {
 
@@ -794,7 +835,7 @@ bool UpdaterPureRotation::apply_pure_rot_homography_update(
   _last_debug.preint_h_quat_jpl_3 = q_jpl_h(3);
 
   // 相邻帧时 RPY 已在 [PureRot-H·检验] 与 R、t 一并打印；参考帧几何与检验时间基不同，仅此时补一行 RPY
-  if (_print_pure_rot && use_ref) {
+  if (_print_pure_rot && _print_state_calib && use_ref) {
     PRINT_INFO(CYAN "  [PureRot-H·更新·参考帧] RPY相机(deg) roll=%.4f pitch=%.4f "
                     "yaw=%.4f | IMU等价 roll=%.4f pitch=%.4f yaw=%.4f\n" RESET,
                _last_debug.preint_h_rpy_roll_deg, _last_debug.preint_h_rpy_pitch_deg,
@@ -878,7 +919,7 @@ bool UpdaterPureRotation::apply_pure_rot_homography_update(
   _last_debug.ekf_updated = did_meas;
   _last_debug.residual_rows = did_meas ? 3 : 0;
   _last_debug.visual_rotation_used = did_meas;
-  if (_print_pure_rot && did_meas) {
+  if (_print_pure_rot && _print_state_calib && did_meas) {
     PRINT_INFO(GREEN "  [PureRot-H] t0=%.6f→t1=%.6f  匹配=%d  H内点=%d  "
                      "∠R_H=%.3f°  H重投影均值=%.5f  分解|t|=%.5f  χ²=%.3f  "
                      "|log_so3|=%.4f rad\n" RESET,

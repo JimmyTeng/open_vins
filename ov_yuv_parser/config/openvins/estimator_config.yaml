@@ -27,9 +27,10 @@ gravity_mag: 9.82
 post_propagate_vel_cov_diag_add: 0.02
 
 # ---------- 状态回调 acc_bias（ba）上报软限幅（不改滤波器内部状态）----------
-# 根式：ba_out = ba * L / sqrt(||ba||^2 + k^2)，方向不变、各轴正负保留，||ba_out|| 渐近 L 且恒 < L
+# 根式：ba_out = ba * 目标模长 / sqrt(||ba||^2 + k^2)，方向不变、各轴正负保留，输出范数渐近目标值且恒小于目标值
 export_acc_bias_sqrt_soft_limit: true
-export_acc_bias_soft_limit_L: 0.5
+# 渐近目标模长（与 ba 同单位）；等价键名 export_acc_bias_soft_limit_L；若两项都配置，以 export_acc_bias_soft_limit_target 为准
+export_acc_bias_soft_limit_target: 0.2
 export_acc_bias_soft_limit_k: 0.15
 
 # ---------- 特征参数化（勿随意改，需与前端/后端一致）----------
@@ -91,13 +92,14 @@ pure_rot_h_verify_strict_max_reproj: 0.008 # 否决：同上，阈值更严
 pure_rot_h_verify_agree_max_t_norm: 0.005 # 赞同：H 分解平移模长 |t| ≤ 此值（归一化模型）
 pure_rot_h_verify_strict_max_t_norm: 0.05 # 否决：|t| 更严
 pure_rot_ref_cam_id: 0 # H 矩阵支路 / 图像统计用 ref 相机，与 kalibr_imucam 中相机 id 一致
-# IMU 窗口内比力分量均值 mean(a)，判据 abs(|mean(a)|-|g|)≤tol（无平移时 |mean|≈|g|；强线加/冲击会偏离）
+# IMU 窗口内比力 mean(a) 加计门：||mean|-|g||≤tol 与 |a_W⊥g|≤max 二选一满足即可（OR）
 pure_rot_use_accel_mean_gate: true
-pure_rot_accel_mean_g_tol: 0.3 # m/s²
+pure_rot_accel_mean_g_tol: 0.3 # m/s²，子判据1；H 赞同支路通过时该阈按×2 用于 |Δ| 判定
+pure_rot_accel_perp_g_max: 0.5 # m/s²，子判据2（世界系去重力分量模）；设极大可近似关掉该支路
 # 连续 PureRot 段内：线速度≈0、位置相对本段首帧软锚定（EKF 伪观测 σ）
 pure_rot_lock_vel_pos: true
 pure_rot_zero_vel_sigma: 0.02 # m/s，零速伪观测 R=σ²（越小越把 v 拉向 0）
-pure_rot_vel_cov_diag_min: 0.01 # (m/s)²，伪观测后对 P_vii 下限，避免速度不确定度过尖
+pure_rot_vel_cov_diag_min: 0.001 # (m/s)²，伪观测后对 P_vii 下限，避免速度不确定度过尖
 pure_rot_anchor_pos_sigma: 0.05 # m
 # ---------- PureRot：单应 H 更新（检验通过后统一走 IMU 传播 → H 分解 R_meas → log_so3 EKF）----------
 # pure_rot_visual_*：匹配数、单应 RANSAC 内点数下限、log-so3 测量噪声与 χ² 倍率（更新段共用）。
@@ -145,8 +147,8 @@ init_dyn_triang_depth_max_m: 5
 init_dyn_min_valid_features: 8
 
 # 动态初始化 bias 初值（PDF 未给 bias 时作起点；可与在线估计对齐）
-init_dyn_bias_g: [-0.0011146074690264833, -0.011300524581876343, 0.008723352067730063]
-init_dyn_bias_a: [-0.053302996178729294, -0.015902613210897493, 0.07961711223434825]
+init_dyn_bias_g: [-0.0, -0.0, 0.0]
+init_dyn_bias_a: [-0.0, -0.0, 0.0]
 
 # ==================================================================
 # ==================================================================
@@ -200,18 +202,18 @@ sim_traj_path: "" # 仿真轨迹文件；实机/离线留空
 # ==================================================================
 verbosity: "INFO" # 日志级别：ALL, DEBUG, INFO, WARNING, ERROR, SILENT
 print_state_calib: true # 每次更新后是否打印状态与标定
-print_zupt: true # 是否启用 ZUPT
+print_zupt: false # 是否启用 ZUPT
 print_pure_rot: true # 终端打印 [PureRot] 门限；调试图仅 zvupt/pure_rot/CAM 等简短状态
 print_timing: false # 是否打印各阶段耗时
-print_tracking_stats: true # 是否打印 [VM] 帧与 [跟踪] 周期日志
+print_tracking_stats: false # 是否打印 [VM] 帧与 [跟踪] 周期日志
 # true：每帧 retriangulate 后打印线性三角化 p_FinG（全局系 m；活动 MSCKF + SLAM）；输出量大，仅调试
 print_triangulated_points: false
 
-debug_display_imshow: false # false 时关闭 x86_64 下调试窗口（不调用 imshow/waitKey，且不再拼合显示用缓冲）
+debug_display_imshow: true # false 时关闭 x86_64 下调试窗口（不调用 imshow/waitKey，且不再拼合显示用缓冲）
 debug_display_waitkey_ms: 0 # 调试窗口 waitKey 时长（毫秒）；0=不等待，仅处理GUI事件；仅 debug_display_imshow 为 true 时有效
 imu_klt_prior_debug: false # 打印 IMU 预测与原始值残差日志
 
-record_timing_information: true # 是否在结束时写计时统计
+record_timing_information: false # 是否在结束时写计时统计
 record_timing_filepath: "/tmp/traj_timing.txt" # 计时输出路径
 
 # VIO 原始数据落盘（imu.csv、camera_index.csv、mosaics）；见 ov_core VioDataRecorder

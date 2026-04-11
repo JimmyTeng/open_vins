@@ -6,7 +6,7 @@
 
 用法:
   python3 script/export_vio_log_metrics.py -o metrics.csv logs/vio_yuv_batch_xxx/
-  python3 script/export_vio_log_metrics.py -o out.csv --tight-m 0.3 --loose-m 10 path/to/logs/
+  python3 script/export_vio_log_metrics.py -o out.csv --tight-m 0.3 --loose-m 5 path/to/logs/
 
 输出列（UTF-8，首列为 BOM 便于 Excel）:
   log_file, dataset_key, run_id, scenario, drift_threshold_m,
@@ -52,7 +52,7 @@ def main() -> int:
     ap.add_argument(
         "paths",
         nargs="+",
-        help="日志文件或目录（目录下 *.log，不含 summary.txt）",
+        help="日志文件或目录（目录下递归收集 *.log，不含 summary.txt）",
     )
     ap.add_argument(
         "-o",
@@ -68,7 +68,8 @@ def main() -> int:
     ap.add_argument(
         "--loose-m",
         type=float,
-        default=float(os.environ.get("THRESH_LOOSE_M", "10.0")),
+        default=float(os.environ.get("THRESH_LOOSE_M", "5.0")),
+        help="move / integrate 场景飘移门限（米）；takeoff/hover 等仍用 --tight-m",
     )
     args = ap.parse_args()
 
